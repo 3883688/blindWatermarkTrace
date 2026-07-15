@@ -116,8 +116,20 @@ def test_release_archive_excludes_private_runtime_files_when_present() -> None:
     archive = ROOT / "release" / "trace-v4-centos-20260715.zip"
     if not archive.exists():
         return
+    leaked_entries = []
     with zipfile.ZipFile(archive) as package:
         names = {name.replace("\\", "/").lstrip("./") for name in package.namelist()}
+        for entry in package.infolist():
+            suffix = Path(entry.filename).suffix.lower()
+            if entry.is_dir() or suffix not in TEXT_SUFFIXES:
+                continue
+            try:
+                content = package.read(entry).decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            if _contains_sensitive_fingerprint(content):
+                leaked_entries.append(entry.filename)
     assert ".env" not in names
     assert not any(name.startswith("data/") and name.endswith(".json") for name in names)
     assert "tools/migrate_json_to_mysql.py" in names
+    assert leaked_entries == []
