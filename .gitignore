@@ -1,0 +1,19 @@
+# Local environment and secrets
+.env
+
+# Python bytecode and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local browser automation state
+.playwright-cli/
+
+# Runtime logs
+*.log
+
+# Generated runtime data
+output/
+test_output/
+uploads/
+backups/
