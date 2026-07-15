@@ -669,7 +669,7 @@ body{font-family:var(--font-sans);background:#0f1117;min-height:100vh;color:#e2e
   <div class="page" id="page-role">
     <div class="page-header">
       <div class="page-title">角色管理</div>
-      <div class="page-subtitle">为不同角色分配可访问菜单，仅管理员 REMOVED_ADMIN_USER 可见</div>
+      <div class="page-subtitle">为不同角色分配可访问菜单，仅管理员可见</div>
     </div>
     <div class="card" style="margin-bottom:24px">
       <div class="section-title">用户管理</div>
@@ -703,7 +703,7 @@ body{font-family:var(--font-sans);background:#0f1117;min-height:100vh;color:#e2e
     <div class="login-title">图片溯源系统</div>
     <div class="field-group">
       <label>用户名</label>
-      <input class="field-input" id="loginUsername" value="REMOVED_ADMIN_USER" autocomplete="username">
+      <input class="field-input" id="loginUsername" autocomplete="username">
     </div>
     <div class="field-group">
       <label>密码</label>
@@ -728,7 +728,6 @@ let tableData=[];
 let activeFilter='全部';
 let currentPage=1;
 const PAGE_SIZE=10;
-const ADMIN_USER='REMOVED_ADMIN_USER';
 const THEME_STORAGE_KEY='siteTheme';
 const selectedImageIds=new Set();
 const previewUrls={};
@@ -762,7 +761,7 @@ function previewImageUrl(d){
   return d.download_url||d.original_url||d.thumbnail_url||'';
 }
 function canSeeRoleMenu(){
-  return currentUser?.username===ADMIN_USER;
+  return currentUser?.role==='admin';
 }
 function visibleMenus(){
   const menus=currentUser?.menus||['watermark','trace','manage'];

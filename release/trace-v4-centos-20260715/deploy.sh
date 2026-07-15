@@ -5,11 +5,11 @@ SERVICE_NAME="${SERVICE_NAME:-trace-system}"
 PORT="${PORT:-6868}"
 HOST_ADDRESS="${HOST_ADDRESS:-0.0.0.0}"
 APP_NAME="${APP_NAME:-WatermarkSystem}"
-DB_NAME="${DB_NAME:-trace}"
+DB_NAME=""
 DB_USER=""
-DB_PASS="${DB_PASS:-REMOVED_PASSWORD}"
-DB_HOST="${DB_HOST:-127.0.0.1}"
-DB_PORT="${DB_PORT:-3306}"
+DB_PASS=""
+DB_HOST=""
+DB_PORT=""
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_USER="${SERVICE_USER:-${SUDO_USER:-root}}"
 PYTHON_BIN="${PYTHON_BIN:-}"
@@ -22,15 +22,14 @@ Usage:
   sudo ./deploy.sh install-service   Back up runtime data, prepare V4, and restart systemd
   ./deploy.sh run                    Run V4 uvicorn in the foreground
   ./deploy.sh check-db               Validate the existing MySQL/MariaDB database
+  ./deploy.sh migrate-data            Import five JSON files into database tables
   sudo ./deploy.sh status            Show service status
 
 Defaults:
   SERVICE_NAME=${SERVICE_NAME}
   HOST_ADDRESS=${HOST_ADDRESS}
   PORT=${PORT}
-  DB_HOST=${DB_HOST}
-  DB_NAME=${DB_NAME}
-  DB_USER=${DB_USER}
+  Database settings are read from .env only.
 EOF
 }
 
@@ -141,6 +140,18 @@ check_database() {
     return 1
   fi
   echo "Existing database connection verified: ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+}
+
+migrate_data() {
+  select_python
+  write_env
+  prepare_deployment_environment
+  check_database
+  install_python_environment
+  "${ROOT}/.venv/bin/python" "${ROOT}/tools/migrate_json_to_mysql.py" \
+    --env-file "${ROOT}/.env" \
+    --data-dir "${ROOT}/data" \
+    --backup-dir "${ROOT}/../trace-private-migration-backups"
 }
 
 backup_runtime_state() {
@@ -266,6 +277,9 @@ case "${1:-install-service}" in
     write_env
     prepare_deployment_environment
     check_database
+    ;;
+  migrate-data)
+    migrate_data
     ;;
   run)
     run_server

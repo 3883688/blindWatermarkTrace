@@ -232,8 +232,8 @@ def test_install_service_polls_local_http_health() -> None:
 
 
 def test_existing_database_and_admin_defaults_are_retained() -> None:
-    assert 'DB_PASS="${DB_PASS:-REMOVED_PASSWORD}"' in SCRIPT
-    assert "ADMIN_PASS=REMOVED_PASSWORD" in SCRIPT
+    assert 'DB_PASS=""' in SCRIPT
+    assert "ADMIN_PASS=" in ENV_EXAMPLE
 ```
 
 - [ ] **Step 2: Run contract tests and verify RED**

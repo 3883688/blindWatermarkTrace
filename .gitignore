@@ -20,3 +20,9 @@ output/
 test_output/
 uploads/
 backups/
+data/detection_stats.json
+data/images.json
+data/roles.json
+data/users.json
+data/watermark_stats.json
+trace-private-migration-backups/

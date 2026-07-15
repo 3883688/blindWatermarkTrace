@@ -53,9 +53,12 @@ def test_runtime_backup_preserves_environment_data_and_uploads() -> None:
     assert "tar -czf" in SCRIPT
 
 
-def test_existing_database_and_admin_defaults_are_retained() -> None:
-    assert 'DB_PASS="${DB_PASS:-REMOVED_PASSWORD}"' in SCRIPT
-    assert "ADMIN_PASS=REMOVED_PASSWORD" in ENV_EXAMPLE
+def test_database_and_admin_credentials_have_no_defaults() -> None:
+    assert 'DB_PASS=""' in SCRIPT
+    assert "${DB_PASS:-" not in SCRIPT
+    assert "ADMIN_USER=\n" in ENV_EXAMPLE
+    assert "ADMIN_PASS=\n" in ENV_EXAMPLE
+    assert "DB_URL=\n" in ENV_EXAMPLE
 
 
 def test_non_root_foreground_run_does_not_attempt_chown() -> None:
@@ -69,14 +72,20 @@ def test_deployment_requires_and_reuses_python_310_or_newer() -> None:
     assert '"${PYTHON_BIN}" -m venv' in SCRIPT
 
 
-def test_environment_example_selects_v4_and_keeps_existing_credentials() -> None:
+def test_environment_example_selects_v4_and_requires_private_credentials() -> None:
     assert ENV_EXAMPLE.count("ROBUST_WATERMARK_VERSION=4") == 1
     assert ENV_EXAMPLE.count("WATERMARK_AUTH_KEY=") == 1
     assert "WATERMARK_AUTH_KEY=\n" in ENV_EXAMPLE
     assert "ROBUST_WATERMARK_STRENGTH=0.74" in ENV_EXAMPLE
-    assert "ADMIN_USER=REMOVED_ADMIN_USER" in ENV_EXAMPLE
-    assert "ADMIN_PASS=REMOVED_PASSWORD" in ENV_EXAMPLE
-    assert "DB_URL=mysql+pymysql://REMOVED:REMOVED_PASSWORD@127.0.0.1:3306/trace" in ENV_EXAMPLE
+    assert "ADMIN_USER=\n" in ENV_EXAMPLE
+    assert "ADMIN_PASS=\n" in ENV_EXAMPLE
+    assert "DB_URL=\n" in ENV_EXAMPLE
+
+
+def test_deployment_exposes_explicit_json_migration_command() -> None:
+    assert "migrate-data" in SCRIPT
+    assert "migrate_json_to_mysql.py" in SCRIPT
+    assert "trace-private-migration-backups" in SCRIPT
 
 
 def test_readme_documents_preserving_v4_one_click_deployment() -> None:
