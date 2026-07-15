@@ -4,8 +4,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+from sqlalchemy import create_engine, select
 
 import main
+from database_store import DatabaseStore
 from tests.test_watermark_v4_features import _feature_image
 from watermark_v4 import V4Config
 from watermark_v4.features import load_feature_index
@@ -29,12 +31,14 @@ def isolated_v4_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(main, "ORIGINAL_DIR", upload_dir / "originals")
     monkeypatch.setattr(main, "WATERMARKED_DIR", upload_dir / "watermarked")
     monkeypatch.setattr(main, "THUMBNAIL_DIR", upload_dir / "thumbnails")
-    monkeypatch.setattr(main, "RECORD_FILE", data_dir / "images.json")
-    monkeypatch.setattr(main, "DETECTION_STATS_FILE", data_dir / "detection.json")
-    monkeypatch.setattr(main, "WATERMARK_STATS_FILE", data_dir / "watermark.json")
-    monkeypatch.setattr(main, "ROLE_FILE", data_dir / "roles.json")
-    monkeypatch.setattr(main, "USER_FILE", data_dir / "users.json")
     monkeypatch.setattr(main, "DEFAULT_WATERMARK_AUTH_KEY", AUTH_KEY)
+    store = DatabaseStore(
+        create_engine(f"sqlite+pysqlite:///{tmp_path / 'runtime.sqlite3'}")
+    )
+    store.create_schema()
+    store.replace_roles(main.DEFAULT_ROLES)
+    store.create_user("test-admin", "admin-password", "admin")
+    monkeypatch.setattr(main, "db_store", store, raising=False)
     main.app.state.generated_trace_ids = []
     main.ensure_dirs()
 
@@ -187,3 +191,39 @@ def test_v4_negative_never_falls_through_to_legacy_attribution(
     response = _extract_bytes(client, unrelated.getvalue(), "negative.png")
 
     assert response.status_code == 404
+
+
+def test_user_management_persists_hashed_users_in_database() -> None:
+    client = TestClient(main.app)
+
+    created = client.post(
+        "/api/users",
+        json={"username": "alice", "password": "user-secret", "role": "operator"},
+    )
+
+    assert created.status_code == 200, created.text
+    assert main.db_store.authenticate("alice", "user-secret") == "operator"
+    with main.db_store.engine.connect() as connection:
+        password_hash = connection.execute(
+            select(main.db_store.users.c.password_hash).where(
+                main.db_store.users.c.username == "alice"
+            )
+        ).scalar_one()
+    assert password_hash.startswith("scrypt$v1$")
+    assert "user-secret" not in password_hash
+    assert not (main.DATA_DIR / "users.json").exists()
+
+    login = client.post(
+        "/auth/login",
+        data={"username": "alice", "password": "user-secret"},
+    )
+    assert login.status_code == 200, login.text
+    assert login.json()["role"] == "operator"
+
+    updated = client.put("/api/users/alice", json={"role": "viewer"})
+    assert updated.status_code == 200, updated.text
+    assert main.db_store.list_users()["alice"]["role"] == "viewer"
+
+    deleted = client.delete("/api/users/alice")
+    assert deleted.status_code == 200, deleted.text
+    assert main.db_store.authenticate("alice", "user-secret") is None

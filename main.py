@@ -19,7 +19,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFont
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 import cv2
 import numpy as np
@@ -35,6 +35,7 @@ from candidate_feature_index import (
     load_feature_descriptors,
     save_feature_descriptors,
 )
+from database_store import DatabaseStore
 from watermark_v4 import (
     V4Config,
     authentication_tag as v4_authentication_tag,
@@ -54,12 +55,11 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
 DATA_DIR = Path(os.getenv("DATA_DIR", "./data"))
-DB_URL = os.getenv("DB_URL", "mysql+pymysql://REMOVED:REMOVED_PASSWORD@127.0.0.1:3306/mark")
+DB_URL = os.getenv("DB_URL", "").strip()
+ADMIN_USER = os.getenv("ADMIN_USER", "").strip()
+ADMIN_PASS = os.getenv("ADMIN_PASS", "")
 RUNNING_PYTEST = "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None
-DB_ENABLED = (
-    os.getenv("DB_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
-    and not RUNNING_PYTEST
-)
+DB_ENABLED = not RUNNING_PYTEST
 
 if not UPLOAD_DIR.is_absolute():
     UPLOAD_DIR = BASE_DIR / UPLOAD_DIR
@@ -69,11 +69,6 @@ if not DATA_DIR.is_absolute():
 ORIGINAL_DIR = UPLOAD_DIR / "originals"
 WATERMARKED_DIR = UPLOAD_DIR / "watermarked"
 THUMBNAIL_DIR = UPLOAD_DIR / "thumbnails"
-RECORD_FILE = DATA_DIR / "images.json"
-DETECTION_STATS_FILE = DATA_DIR / "detection_stats.json"
-WATERMARK_STATS_FILE = DATA_DIR / "watermark_stats.json"
-ROLE_FILE = DATA_DIR / "roles.json"
-USER_FILE = DATA_DIR / "users.json"
 MAGIC = b"MWM1"
 BLOCK_SIZE = 32
 BLOCK_STRIDE = 32
@@ -151,30 +146,11 @@ DEFAULT_ROLES = {
     },
 }
 
-DEFAULT_USERS = {
-    "REMOVED_ADMIN_USER": {
-        "password": "REMOVED_PASSWORD",
-        "role": "admin",
-    }
-}
-
 app = FastAPI(title=os.getenv("APP_NAME", "WatermarkSystem"))
 app.state.generated_trace_ids = []
-db_engine = create_engine(DB_URL, pool_pre_ping=True, pool_recycle=1800, future=True) if DB_ENABLED else None
-db_ready = False
+db_engine = None
+db_store: DatabaseStore | None = None
 db_error = ""
-db_checked = False
-
-
-def read_json_file(path: Path, default: Any) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, FileNotFoundError):
-        return default
-
-
-def write_json_file(path: Path, data: Any) -> None:
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def ensure_dirs() -> None:
@@ -182,167 +158,63 @@ def ensure_dirs() -> None:
     WATERMARKED_DIR.mkdir(parents=True, exist_ok=True)
     THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    if not RECORD_FILE.exists():
-        RECORD_FILE.write_text("[]", encoding="utf-8")
-    if not DETECTION_STATS_FILE.exists():
-        DETECTION_STATS_FILE.write_text('{"attempts":0,"successes":0}', encoding="utf-8")
-    if not WATERMARK_STATS_FILE.exists():
-        WATERMARK_STATS_FILE.write_text('{"daily":{}}', encoding="utf-8")
-    if not ROLE_FILE.exists():
-        ROLE_FILE.write_text(
-            json.dumps({"roles": DEFAULT_ROLES}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-    if not USER_FILE.exists():
-        USER_FILE.write_text(
-            json.dumps({"users": DEFAULT_USERS}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-    ensure_database()
 
 
-def ensure_database() -> bool:
-    global db_checked, db_error, db_ready
-    if not DB_ENABLED or db_engine is None:
-        db_checked = True
-        db_ready = False
-        db_error = "DB_ENABLED=false"
-        return False
-    if db_checked:
-        return db_ready
-    try:
-        with db_engine.begin() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS image_records (
-                    id VARCHAR(64) NOT NULL PRIMARY KEY,
-                    position_index INT NOT NULL,
-                    data LONGTEXT NOT NULL,
-                    created_at VARCHAR(32) NULL,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    INDEX idx_position_index (position_index)
-                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
-            """))
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS app_json_store (
-                    store_key VARCHAR(64) NOT NULL PRIMARY KEY,
-                    data LONGTEXT NOT NULL,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
-            """))
-        db_ready = True
-        db_error = ""
-        db_checked = True
-        migrate_json_to_database()
-    except SQLAlchemyError as exc:
-        db_ready = False
-        db_error = str(exc)
-        db_checked = True
-    finally:
-        pass
-    return db_ready
+def require_store() -> DatabaseStore:
+    if db_store is None:
+        raise HTTPException(status_code=503, detail="数据库不可用")
+    return db_store
 
 
 def database_ready() -> bool:
-    return ensure_database()
+    return db_store is not None
 
 
-def db_get_json(key: str, default: Any) -> Any:
-    if not database_ready() or db_engine is None:
-        return default
-    with db_engine.begin() as conn:
-        row = conn.execute(
-            text("SELECT data FROM app_json_store WHERE store_key=:store_key"),
-            {"store_key": key},
-        ).mappings().first()
-    if not row:
-        return default
-    try:
-        return json.loads(row["data"])
-    except json.JSONDecodeError:
-        return default
+def seed_database_defaults(store: DatabaseStore) -> None:
+    if not store.read_roles():
+        store.replace_roles(DEFAULT_ROLES)
+    if ADMIN_USER and ADMIN_PASS and ADMIN_USER not in store.list_users():
+        store.create_user(ADMIN_USER, ADMIN_PASS, "admin")
 
 
-def db_set_json(key: str, data: Any) -> None:
-    if not database_ready() or db_engine is None:
+def initialize_database() -> None:
+    global db_engine, db_error, db_store
+    if not DB_ENABLED:
         return
-    payload = json.dumps(data, ensure_ascii=False)
-    with db_engine.begin() as conn:
-        conn.execute(
-            text("""
-                INSERT INTO app_json_store (store_key, data)
-                VALUES (:store_key, :data)
-                ON DUPLICATE KEY UPDATE data=VALUES(data)
-            """),
-            {"store_key": key, "data": payload},
+    missing = [
+        name
+        for name, value in (
+            ("DB_URL", DB_URL),
+            ("ADMIN_USER", ADMIN_USER),
+            ("ADMIN_PASS", ADMIN_PASS),
         )
-
-
-def migrate_json_to_database() -> None:
-    if not db_ready or db_engine is None:
-        return
-    with db_engine.begin() as conn:
-        image_count = conn.execute(text("SELECT COUNT(*) FROM image_records")).scalar_one()
-        store_count = conn.execute(text("SELECT COUNT(*) FROM app_json_store")).scalar_one()
-    if image_count == 0:
-        records = read_json_file(RECORD_FILE, [])
-        if isinstance(records, list) and records:
-            db_write_records(records)
-    if store_count == 0:
-        db_set_json("detection_stats", read_json_file(DETECTION_STATS_FILE, {"attempts": 0, "successes": 0}))
-        db_set_json("watermark_stats", read_json_file(WATERMARK_STATS_FILE, {"daily": {}}))
-        db_set_json("roles", read_json_file(ROLE_FILE, {"roles": DEFAULT_ROLES}))
-        db_set_json("users", read_json_file(USER_FILE, {"users": DEFAULT_USERS}))
-
-
-def db_read_records() -> list[dict[str, Any]]:
-    if not database_ready() or db_engine is None:
-        return []
-    with db_engine.begin() as conn:
-        rows = conn.execute(
-            text("SELECT data FROM image_records ORDER BY position_index ASC")
-        ).mappings().all()
-    records = []
-    for row in rows:
-        try:
-            data = json.loads(row["data"])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(data, dict):
-            records.append(data)
-    return records
-
-
-def db_write_records(records: list[dict[str, Any]]) -> None:
-    if not database_ready() or db_engine is None:
-        return
-    with db_engine.begin() as conn:
-        conn.execute(text("DELETE FROM image_records"))
-        for index, record in enumerate(records):
-            record_id = str(record.get("id") or uuid.uuid4().hex)
-            record["id"] = record_id
-            conn.execute(
-                text("""
-                    INSERT INTO image_records (id, position_index, data, created_at)
-                    VALUES (:id, :position_index, :data, :created_at)
-                """),
-                {
-                    "id": record_id,
-                    "position_index": index,
-                    "data": json.dumps(record, ensure_ascii=False),
-                    "created_at": str(record.get("created_at") or ""),
-                },
-            )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(f"Missing required environment variable: {missing[0]}")
+    try:
+        db_engine = create_engine(
+            DB_URL,
+            pool_pre_ping=True,
+            pool_recycle=1800,
+            future=True,
+        )
+        db_store = DatabaseStore(db_engine)
+        db_store.create_schema()
+        seed_database_defaults(db_store)
+        db_error = ""
+    except SQLAlchemyError as exc:
+        db_error = type(exc).__name__
+        db_store = None
+        raise RuntimeError("Database initialization failed") from exc
 
 
 def db_clear_all() -> None:
-    if not database_ready() or db_engine is None:
-        return
-    with db_engine.begin() as conn:
-        conn.execute(text("DELETE FROM image_records"))
-        conn.execute(text("DELETE FROM app_json_store"))
+    require_store().clear_all()
 
 
 ensure_dirs()
+initialize_database()
 mimetypes.add_type("font/woff2", ".woff2")
 mimetypes.add_type("font/woff", ".woff")
 mimetypes.add_type("font/ttf", ".ttf")
@@ -359,18 +231,11 @@ def masked_db_url() -> str:
 
 
 def read_records() -> list[dict[str, Any]]:
-    ensure_dirs()
-    if database_ready():
-        return db_read_records()
-    return read_json_file(RECORD_FILE, [])
+    return require_store().read_records()
 
 
 def write_records(records: list[dict[str, Any]]) -> None:
-    ensure_dirs()
-    if database_ready():
-        db_write_records(records)
-        return
-    write_json_file(RECORD_FILE, records)
+    require_store().replace_records(records)
 
 
 def add_record(record: dict[str, Any]) -> None:
@@ -380,11 +245,7 @@ def add_record(record: dict[str, Any]) -> None:
 
 
 def read_detection_stats() -> dict[str, int]:
-    ensure_dirs()
-    if database_ready():
-        stats = db_get_json("detection_stats", {})
-    else:
-        stats = read_json_file(DETECTION_STATS_FILE, {})
+    stats = require_store().get_stats("detection_stats", {})
     return {
         "attempts": int(stats.get("attempts", 0) or 0),
         "successes": int(stats.get("successes", 0) or 0),
@@ -397,10 +258,7 @@ def write_detection_stats(stats: dict[str, int]) -> None:
         "attempts": int(stats.get("attempts", 0) or 0),
         "successes": int(stats.get("successes", 0) or 0),
     }
-    if database_ready():
-        db_set_json("detection_stats", normalized)
-        return
-    write_json_file(DETECTION_STATS_FILE, normalized)
+    require_store().set_stats("detection_stats", normalized)
 
 
 def record_detection_result(success: bool) -> None:
@@ -417,11 +275,7 @@ def is_today_record(record: dict[str, Any]) -> bool:
 
 
 def read_watermark_stats() -> dict[str, dict[str, int]]:
-    ensure_dirs()
-    if database_ready():
-        stats = db_get_json("watermark_stats", {})
-    else:
-        stats = read_json_file(WATERMARK_STATS_FILE, {})
+    stats = require_store().get_stats("watermark_stats", {})
     daily = stats.get("daily", {})
     if not isinstance(daily, dict):
         daily = {}
@@ -434,54 +288,15 @@ def write_watermark_stats(stats: dict[str, Any]) -> None:
     if not isinstance(daily, dict):
         daily = {}
     normalized = {"daily": {str(day): int(count or 0) for day, count in daily.items()}}
-    if database_ready():
-        db_set_json("watermark_stats", normalized)
-        return
-    write_json_file(WATERMARK_STATS_FILE, normalized)
+    require_store().set_stats("watermark_stats", normalized)
 
 
 def read_roles() -> dict[str, Any]:
-    ensure_dirs()
-    if database_ready():
-        data = db_get_json("roles", {"roles": DEFAULT_ROLES})
-    else:
-        data = read_json_file(ROLE_FILE, {"roles": DEFAULT_ROLES})
-    roles = data.get("roles") if isinstance(data, dict) else None
-    if not isinstance(roles, dict):
-        roles = DEFAULT_ROLES
-    return {"roles": roles}
-
-
-def write_roles(roles: dict[str, Any]) -> None:
-    ensure_dirs()
-    data = {"roles": roles}
-    if database_ready():
-        db_set_json("roles", data)
-        return
-    write_json_file(ROLE_FILE, data)
+    return {"roles": require_store().read_roles()}
 
 
 def read_users() -> dict[str, Any]:
-    ensure_dirs()
-    if database_ready():
-        data = db_get_json("users", {"users": DEFAULT_USERS})
-    else:
-        data = read_json_file(USER_FILE, {"users": DEFAULT_USERS})
-    users = data.get("users") if isinstance(data, dict) else None
-    if not isinstance(users, dict):
-        users = DEFAULT_USERS
-    if "REMOVED_ADMIN_USER" not in users:
-        users["REMOVED_ADMIN_USER"] = DEFAULT_USERS["REMOVED_ADMIN_USER"]
-    return {"users": users}
-
-
-def write_users(users: dict[str, Any]) -> None:
-    ensure_dirs()
-    data = {"users": users}
-    if database_ready():
-        db_set_json("users", data)
-        return
-    write_json_file(USER_FILE, data)
+    return {"users": require_store().list_users()}
 
 
 def public_users(users: dict[str, Any]) -> dict[str, dict[str, str]]:
@@ -498,8 +313,6 @@ def allowed_menu_keys(menus: Any) -> list[str]:
 
 
 def role_for_username(username: str) -> str:
-    if username == "REMOVED_ADMIN_USER":
-        return "admin"
     users = read_users()["users"]
     return str(users.get(username, {}).get("role") or "operator")
 
@@ -3687,17 +3500,10 @@ def favico() -> FileResponse:
 
 @app.post("/auth/login")
 def login(username: str = Form(...), password: str = Form(...)) -> dict[str, Any]:
-    admin_user = os.getenv("ADMIN_USER", "REMOVED_ADMIN_USER")
-    admin_pass = os.getenv("ADMIN_PASS", "REMOVED_PASSWORD")
-    users = read_users()["users"]
-    user = users.get(username)
-    builtin_admin_ok = username == "REMOVED_ADMIN_USER" and password == "REMOVED_PASSWORD"
-    env_admin_ok = username == admin_user and password == admin_pass
-    stored_user_ok = bool(user and str(user.get("password")) == password)
-    if not (builtin_admin_ok or env_admin_ok or stored_user_ok):
+    role = require_store().authenticate(username, password)
+    if role is None:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     roles = read_roles()["roles"]
-    role = role_for_username(username)
     menus = allowed_menu_keys(roles.get(role, {}).get("menus", []))
     return {"token": f"local-{uuid.uuid4().hex}", "username": username, "role": role, "menus": menus}
 
@@ -3712,9 +3518,10 @@ def update_role(role_key: str, payload: dict[str, Any]) -> dict[str, Any]:
     roles = read_roles()["roles"]
     if role_key not in roles:
         raise HTTPException(status_code=404, detail="角色不存在")
-    roles[role_key]["menus"] = allowed_menu_keys(payload.get("menus"))
-    write_roles(roles)
-    return {"menus": MENU_LABELS, "roles": roles}
+    require_store().update_role_menus(
+        role_key, allowed_menu_keys(payload.get("menus"))
+    )
+    return {"menus": MENU_LABELS, "roles": read_roles()["roles"]}
 
 
 @app.get("/api/users")
@@ -3734,26 +3541,33 @@ def create_user(payload: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="请输入密码")
     if role not in roles:
         raise HTTPException(status_code=400, detail="角色不存在")
-    users = read_users()["users"]
-    if username in users:
+    store = require_store()
+    if username in store.list_users():
         raise HTTPException(status_code=409, detail="用户已存在")
-    users[username] = {"password": password, "role": role}
-    write_users(users)
-    return {"users": public_users(users), "roles": roles}
+    store.create_user(username, password, role)
+    return {"users": store.list_users(), "roles": roles}
 
 
 @app.put("/api/users/{username}")
 def update_user(username: str, payload: dict[str, Any]) -> dict[str, Any]:
-    users = read_users()["users"]
+    store = require_store()
+    users = store.list_users()
     if username not in users:
         raise HTTPException(status_code=404, detail="用户不存在")
     role = str(payload.get("role") or "")
     roles = read_roles()["roles"]
     if role not in roles:
         raise HTTPException(status_code=400, detail="角色不存在")
-    users[username]["role"] = role
-    write_users(users)
-    return {"users": public_users(users), "roles": roles}
+    store.update_user_role(username, role)
+    return {"users": store.list_users(), "roles": roles}
+
+
+@app.delete("/api/users/{username}")
+def delete_user(username: str) -> dict[str, Any]:
+    store = require_store()
+    if not store.delete_user(username):
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return {"users": store.list_users(), "roles": read_roles()["roles"]}
 
 
 @app.post("/api/watermark/embed")
@@ -4125,6 +3939,7 @@ def reset_dev_data() -> dict[str, bool]:
         shutil.rmtree(UPLOAD_DIR)
     if database_ready():
         db_clear_all()
+        seed_database_defaults(require_store())
     if DATA_DIR.exists():
         shutil.rmtree(DATA_DIR)
     ensure_dirs()

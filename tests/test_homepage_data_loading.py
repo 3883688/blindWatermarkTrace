@@ -26,6 +26,7 @@ def test_dashboard_stats_excludes_image_records(monkeypatch):
         "read_detection_stats",
         lambda: {"attempts": 4, "successes": 3},
     )
+    monkeypatch.setattr(main, "read_watermark_stats", lambda: {"daily": {}})
 
     response = TestClient(main.app).get("/api/dashboard-stats")
 
