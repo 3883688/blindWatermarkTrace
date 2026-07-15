@@ -30,7 +30,7 @@ Continue using the existing `image_records` table. Each source record is stored 
 
 ### Users
 
-Add an `app_users` table with:
+Add a `users` table with:
 
 - `username` as the primary key
 - `password_hash` containing a versioned salted password hash
@@ -39,17 +39,26 @@ Add an `app_users` table with:
 
 Use the Python standard library's `hashlib.scrypt` with a cryptographically random per-user salt. Store the algorithm name, parameters, salt, and derived key in one versioned encoded value so the verifier can evolve without changing the schema. Existing plaintext passwords are hashed during migration; the passwords users enter do not change.
 
-All user-management operations and login verification use `app_users`. The application never returns password hashes through an API.
+All user-management operations and login verification use `users`. The application never returns password hashes through an API.
 
 ### Roles and statistics
 
-Continue using `app_json_store` for these low-contention documents:
+Add a `roles` table with:
 
-- `roles`
-- `detection_stats`
-- `watermark_stats`
+- `role_key` as the primary key
+- `label` containing the display name
+- `menus` containing the JSON-encoded list of allowed menu keys
+- `created_at` and `updated_at` timestamps
 
-The application must not store users in `app_json_store` after migration.
+The `users.role_key` column references `roles.role_key`. Role management reads and updates rows in `roles` while preserving the current API response shape.
+
+Add a `stats` table with:
+
+- `stat_key` as the primary key
+- `data` containing the JSON-encoded statistic document
+- `updated_at` timestamp
+
+The two rows are keyed as `detection_stats` and `watermark_stats`. The old `app_json_store` table is no longer used.
 
 ## Configuration and Startup
 
@@ -80,11 +89,11 @@ The repository version of the script contains migration logic only. It never emb
 ## Runtime Data Flow
 
 - Image APIs read and write `image_records`.
-- Dashboard counters read and write the corresponding `app_json_store` keys.
-- Role management reads and writes the `roles` store key.
-- User management reads and writes `app_users`.
+- Dashboard counters read and write the corresponding `stats` rows.
+- Role management reads and writes `roles` rows.
+- User management reads and writes `users` rows.
 - Login loads the user by username and verifies the submitted password against its scrypt hash.
-- The configured administrator account is seeded into `app_users` when absent, using `ADMIN_PASS` from `.env` and a generated salt.
+- The configured administrator account is seeded into `users` when absent, using `ADMIN_PASS` from `.env` and a generated salt.
 
 No runtime path reads or writes the five migrated JSON files.
 

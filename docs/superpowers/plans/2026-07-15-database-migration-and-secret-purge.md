@@ -142,9 +142,11 @@ def test_records_and_json_documents_round_trip() -> None:
     store = DatabaseStore(create_engine("sqlite+pysqlite:///:memory:"))
     store.create_schema()
     store.replace_records([{"id": "b"}, {"id": "a"}])
-    store.set_json("roles", {"roles": {"admin": {"menus": []}}})
+    store.replace_roles({"admin": {"label": "Administrator", "menus": []}})
+    store.set_stats("detection_stats", {"attempts": 2, "successes": 1})
     assert [item["id"] for item in store.read_records()] == ["b", "a"]
-    assert store.get_json("roles", {})["roles"]["admin"]["menus"] == []
+    assert store.read_roles()["admin"]["menus"] == []
+    assert store.get_stats("detection_stats", {})["successes"] == 1
 ```
 
 - [ ] **Step 2: Run the tests and verify RED**
@@ -155,7 +157,7 @@ Expected: FAIL because `database_store` does not exist.
 
 - [ ] **Step 3: Implement SQLAlchemy Core schema and store methods**
 
-Define `image_records`, `app_json_store`, and `app_users` with SQLAlchemy `MetaData`/`Table`. Implement `create_schema`, `replace_records`, `read_records`, `get_json`, `set_json`, `create_user`, `upsert_user_hash`, `list_users`, `update_user_role`, `delete_user`, `authenticate`, `clear_all`, and transaction-aware import helpers. `create_user` must call `hash_password`; `authenticate` must call `verify_password`; no method may return `password_hash`.
+Define `image_records`, `roles`, `users`, and `stats` with SQLAlchemy `MetaData`/`Table`. Implement `create_schema`, `replace_records`, `read_records`, `replace_roles`, `read_roles`, `set_stats`, `get_stats`, `create_user`, `upsert_user_hash`, `list_users`, `update_user_role`, `delete_user`, `authenticate`, `clear_all`, and transaction-aware import helpers. `users.role_key` references `roles.role_key`; `create_user` must call `hash_password`; `authenticate` must call `verify_password`; no method may return `password_hash`.
 
 Use portable SQLAlchemy `select`, `insert`, `update`, and `delete` statements so the same code runs on SQLite tests and MySQL production. Implement upserts as select-then-insert/update inside the caller's transaction instead of dialect-specific SQL.
 
@@ -248,7 +250,7 @@ def migrate(engine: Engine, source: SourceData, data_dir: Path, backup_dir: Path
 def main(argv: list[str] | None = None) -> int: ...
 ```
 
-Validate the five top-level shapes and unique image IDs. In one `engine.begin()` block, create schema, replace image rows, set the three JSON documents, and upsert users with freshly generated hashes. Verify all source counts and keys through the same connection before leaving the transaction. After commit, copy the five inputs into `backup_dir / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")`, verify copied bytes, and unlink only the original five files.
+Validate the five top-level shapes and unique image IDs. In one `engine.begin()` block, create schema, replace image rows, replace role rows, set the two statistics rows, and upsert users with freshly generated hashes. Verify all source counts and keys through the same connection before leaving the transaction. After commit, copy the five inputs into `backup_dir / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")`, verify copied bytes, and unlink only the original five files.
 
 CLI arguments: `--env-file`, `--data-dir`, and `--backup-dir`. Load `DB_URL` from the selected `.env` without printing it. Print only dataset counts, backup path, and success/failure status.
 
