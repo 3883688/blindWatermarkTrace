@@ -1,0 +1,707 @@
+{
+  "schema_version": 1,
+  "dataset_id": "commercial-negative-development",
+  "target_slots": 100,
+  "samples": [
+    {
+      "id": "negative-0001",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0001.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0002",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0002.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0003",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0003.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0004",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0004.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0005",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0005.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0006",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0006.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0007",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0007.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0008",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0008.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0009",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0009.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0010",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0010.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0011",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0011.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0012",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0012.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0013",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0013.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0014",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0014.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0015",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0015.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0016",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0016.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0017",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0017.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0018",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0018.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0019",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0019.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0020",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0020.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0021",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0021.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0022",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0022.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0023",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0023.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0024",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0024.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0025",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0025.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0026",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0026.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0027",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0027.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0028",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0028.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0029",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0029.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0030",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0030.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0031",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0031.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0032",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0032.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0033",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0033.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0034",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0034.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0035",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0035.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0036",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0036.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0037",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0037.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0038",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0038.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0039",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0039.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0040",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0040.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0041",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0041.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0042",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0042.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0043",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0043.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0044",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0044.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0045",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0045.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0046",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0046.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0047",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0047.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0048",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0048.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0049",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0049.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0050",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0050.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0051",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0051.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0052",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0052.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0053",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0053.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0054",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0054.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0055",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0055.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0056",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0056.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0057",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0057.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0058",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0058.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0059",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0059.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0060",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0060.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0061",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0061.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0062",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0062.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0063",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0063.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0064",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0064.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0065",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0065.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0066",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0066.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0067",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0067.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0068",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0068.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0069",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0069.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0070",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0070.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0071",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0071.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0072",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0072.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0073",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0073.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0074",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0074.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0075",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0075.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0076",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0076.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0077",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0077.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0078",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0078.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0079",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0079.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0080",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0080.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0081",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0081.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0082",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0082.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0083",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0083.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0084",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0084.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0085",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0085.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0086",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0086.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0087",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0087.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0088",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0088.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0089",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0089.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0090",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0090.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0091",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0091.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0092",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0092.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0093",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0093.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0094",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0094.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0095",
+      "category": "high_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0095.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0096",
+      "category": "similar_composition",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0096.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0097",
+      "category": "photo",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0097.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0098",
+      "category": "illustration",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0098.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0099",
+      "category": "ui",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0099.png",
+      "status": "pending_collection",
+      "sha256": null
+    },
+    {
+      "id": "negative-0100",
+      "category": "low_texture",
+      "relative_path": "tests/fixtures/commercial/samples/negative/negative-0100.png",
+      "status": "pending_collection",
+      "sha256": null
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pillow
+python-dotenv
+sqlalchemy
+pymysql
+pytest
+httpx
+opencv-python-headless
+PyWavelets
+reedsolo==1.7.0

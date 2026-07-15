@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "dataset_id": "commercial-real-platform-routes",
+  "routes": [
+    {
+      "source_id": "route-source-0001",
+      "route": "wechat",
+      "attempt": 1,
+      "sent_at": null,
+      "received_at": null,
+      "source_relative_path": "tests/fixtures/commercial/samples/real-platform/source/route-source-0001.png",
+      "output_relative_path": "tests/fixtures/commercial/samples/real-platform/received/route-source-0001--wechat--attempt-001.png",
+      "source_sha256": null,
+      "received_sha256": null,
+      "status": "pending_collection",
+      "operator": "",
+      "device": "",
+      "software": "",
+      "software_version": "",
+      "account_channel": "",
+      "notes": "",
+      "reviewer": "",
+      "rejection_reason": ""
+    },
+    {
+      "source_id": "route-source-0001",
+      "route": "browser",
+      "attempt": 1,
+      "sent_at": null,
+      "received_at": null,
+      "source_relative_path": "tests/fixtures/commercial/samples/real-platform/source/route-source-0001.png",
+      "output_relative_path": "tests/fixtures/commercial/samples/real-platform/received/route-source-0001--browser--attempt-001.png",
+      "source_sha256": null,
+      "received_sha256": null,
+      "status": "pending_collection",
+      "operator": "",
+      "device": "",
+      "software": "",
+      "software_version": "",
+      "account_channel": "",
+      "notes": "",
+      "reviewer": "",
+      "rejection_reason": ""
+    },
+    {
+      "source_id": "route-source-0001",
+      "route": "target_platform",
+      "attempt": 1,
+      "sent_at": null,
+      "received_at": null,
+      "source_relative_path": "tests/fixtures/commercial/samples/real-platform/source/route-source-0001.png",
+      "output_relative_path": "tests/fixtures/commercial/samples/real-platform/received/route-source-0001--target_platform--attempt-001.png",
+      "source_sha256": null,
+      "received_sha256": null,
+      "status": "pending_collection",
+      "operator": "",
+      "device": "",
+      "software": "",
+      "software_version": "",
+      "account_channel": "",
+      "notes": "",
+      "reviewer": "",
+      "rejection_reason": ""
+    }
+  ]
+}
+
