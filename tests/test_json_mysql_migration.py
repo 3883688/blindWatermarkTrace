@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, inspect, select, text
 
 from database_store import DatabaseStore
 from tools.migrate_json_to_mysql import load_source_data, migrate
@@ -108,6 +108,34 @@ def test_migration_is_idempotent_when_inputs_are_restored(tmp_path: Path) -> Non
     store = DatabaseStore(engine)
     assert len(store.read_records()) == 1
     assert set(store.list_users()) == {"admin-user", "reader"}
+
+
+def test_migration_removes_legacy_json_store_after_verification(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    _source_files(data_dir)
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'runtime.sqlite3'}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE app_json_store ("
+                "store_key VARCHAR(64) PRIMARY KEY, data TEXT NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO app_json_store (store_key, data) "
+                "VALUES ('users', '{\"users\":{}}')"
+            )
+        )
+
+    migrate(
+        engine,
+        load_source_data(data_dir),
+        data_dir,
+        tmp_path / "private-backups",
+    )
+
+    assert "app_json_store" not in inspect(engine).get_table_names()
 
 
 def test_migration_failure_rolls_back_and_preserves_inputs(

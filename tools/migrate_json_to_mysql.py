@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, create_engine, select, text
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -213,6 +213,9 @@ def migrate(
                 connection,
             )
         _verify_database(store, source, connection)
+
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE IF EXISTS app_json_store"))
 
     completed_backup = _backup_and_remove(source, data_dir, backup_dir)
     return MigrationResult(
