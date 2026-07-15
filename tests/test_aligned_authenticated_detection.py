@@ -562,6 +562,7 @@ def test_legacy_robust_candidates_exclude_v2_records(monkeypatch):
 
 def test_extract_pipeline_uses_aligned_authenticated_detector(monkeypatch):
     expected = {"trace_id": "TR-PIPELINE-ALIGNED", "mode": "aligned_robust_code"}
+    monkeypatch.setattr(main, "v4_candidate_records", lambda: [])
     monkeypatch.setattr(main, "extract_full_lsb", lambda image: None)
     monkeypatch.setattr(main, "is_registered_original_image", lambda image: False)
     monkeypatch.setattr(main, "should_run_frequency_fallbacks", lambda image: True)
@@ -654,6 +655,7 @@ def test_fingerprint_check_uses_stored_hash_without_file_io(monkeypatch):
 
 
 def test_extract_pipeline_skips_dense_fallbacks_when_disabled(monkeypatch):
+    monkeypatch.setattr(main, "v4_candidate_records", lambda: [])
     monkeypatch.setattr(main, "extract_full_lsb", lambda image: None)
     monkeypatch.setattr(main, "extract_block_lsb", lambda image: None)
     monkeypatch.setattr(main, "is_registered_original_image", lambda image: False)

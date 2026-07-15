@@ -44,8 +44,9 @@ def test_pinned_tabler_distribution_files_match_expected_hashes() -> None:
         path = ASSET_ROOT / relative
         assert path.is_file(), relative
         payload = path.read_bytes()
-        assert len(payload) == expected_size, relative
-        assert hashlib.sha256(payload).hexdigest() == expected_hash, relative
+        canonical_payload = payload.replace(b"\r\n", b"\n") if path.suffix == ".css" else payload
+        assert len(canonical_payload) == expected_size, relative
+        assert hashlib.sha256(canonical_payload).hexdigest() == expected_hash, relative
 
     css = (ASSET_ROOT / "tabler-icons.min.css").read_text(encoding="utf-8")
     assert './fonts/tabler-icons.woff2?v3.44.0' in css

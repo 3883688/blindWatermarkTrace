@@ -15,12 +15,14 @@ if str(ROOT) not in sys.path:
 from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
+from sqlalchemy import create_engine
 
 import main
+from database_store import DatabaseStore
 
 
 @pytest.fixture(autouse=True)
-def isolate_runtime_paths(monkeypatch):
+def isolate_runtime_paths(monkeypatch, tmp_path):
     runtime_root = ROOT / "test_output" / "pytest_false_positive_gate"
     upload_dir = runtime_root / "uploads"
     data_dir = runtime_root / "data"
@@ -29,11 +31,12 @@ def isolate_runtime_paths(monkeypatch):
     monkeypatch.setattr(main, "ORIGINAL_DIR", upload_dir / "originals")
     monkeypatch.setattr(main, "WATERMARKED_DIR", upload_dir / "watermarked")
     monkeypatch.setattr(main, "THUMBNAIL_DIR", upload_dir / "thumbnails")
-    monkeypatch.setattr(main, "RECORD_FILE", data_dir / "images.json")
-    monkeypatch.setattr(main, "DETECTION_STATS_FILE", data_dir / "detection_stats.json")
-    monkeypatch.setattr(main, "WATERMARK_STATS_FILE", data_dir / "watermark_stats.json")
-    monkeypatch.setattr(main, "ROLE_FILE", data_dir / "roles.json")
-    monkeypatch.setattr(main, "USER_FILE", data_dir / "users.json")
+    store = DatabaseStore(
+        create_engine(f"sqlite+pysqlite:///{tmp_path / 'runtime.sqlite3'}")
+    )
+    store.create_schema()
+    store.replace_roles(main.DEFAULT_ROLES)
+    monkeypatch.setattr(main, "db_store", store)
 
 
 def png_bytes(image: Image.Image) -> bytes:
@@ -76,6 +79,9 @@ def reset_test_state() -> None:
     root = ROOT / "test_output" / "pytest_false_positive_gate"
     if root.exists():
         shutil.rmtree(root)
+    if main.database_ready():
+        main.db_clear_all()
+        main.require_store().replace_roles(main.DEFAULT_ROLES)
     main.app.state.generated_trace_ids = []
     main.ensure_dirs()
 
