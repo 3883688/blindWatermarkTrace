@@ -43,15 +43,22 @@ def verify_password(password: str, encoded: str) -> bool:
         )
         if (algorithm, version) != ("scrypt", "v1"):
             return False
+        n_value = int(n_text)
+        r_value = int(r_text)
+        p_value = int(p_text)
+        if (n_value, r_value, p_value) != (SCRYPT_N, SCRYPT_R, SCRYPT_P):
+            return False
         salt = base64.b64decode(salt_text, validate=True)
         expected = base64.b64decode(digest_text, validate=True)
+        if len(salt) != 16 or len(expected) != SCRYPT_DKLEN:
+            return False
         actual = hashlib.scrypt(
             password.encode("utf-8"),
             salt=salt,
-            n=int(n_text),
-            r=int(r_text),
-            p=int(p_text),
-            dklen=len(expected),
+            n=n_value,
+            r=r_value,
+            p=p_value,
+            dklen=SCRYPT_DKLEN,
         )
     except (AttributeError, binascii.Error, TypeError, ValueError):
         return False

@@ -1,3 +1,7 @@
+import base64
+
+import pytest
+
 from password_security import hash_password, verify_password
 
 
@@ -25,3 +29,27 @@ def test_hash_rejects_empty_password() -> None:
         assert str(exc) == "password must not be empty"
     else:
         raise AssertionError("empty password must be rejected")
+
+
+def test_verify_rejects_untrusted_scrypt_parameters_before_hashing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    encoded = "$".join(
+        (
+            "scrypt",
+            "v1",
+            str(2**20),
+            "8",
+            "1",
+            base64.b64encode(b"s" * 16).decode("ascii"),
+            base64.b64encode(b"d" * 32).decode("ascii"),
+        )
+    )
+    monkeypatch.setattr(
+        "password_security.hashlib.scrypt",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("untrusted parameters reached scrypt")
+        ),
+    )
+
+    assert verify_password("password", encoded) is False
