@@ -13,6 +13,7 @@
 ## 解压与一键部署
 
 发布 ZIP 不包含 `.env`、`data/`、`uploads/`、数据库文件或历史备份。覆盖解压代码不会覆盖这些业务文件。
+应用入口仍为 `main:app`；`main.py` 仅保留兼容导入，完整应用实现位于 `trace_app/` 模块树中，发布包会递归包含该模块树。
 
 ```bash
 mkdir -p /opt/trace

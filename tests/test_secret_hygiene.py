@@ -25,6 +25,11 @@ SENSITIVE_FINGERPRINTS = {
 }
 
 
+def _normalized_archive_name(name: str) -> str:
+    normalized = name.replace("\\", "/")
+    return normalized[2:] if normalized.startswith("./") else normalized
+
+
 def _tracked_paths() -> list[Path]:
     completed = subprocess.run(
         ["git", "ls-files", "-z"],
@@ -99,17 +104,70 @@ def test_runtime_json_paths_are_ignored_and_untracked() -> None:
 
 def test_release_source_matches_sanitized_root() -> None:
     release = ROOT / "release" / "trace-v4-centos-20260715"
-    for relative in (
+    root_sources = (
         ".env.example",
         "README_DEPLOY.md",
+        "candidate_feature_index.py",
         "database_store.py",
         "deploy.sh",
+        "favico.ico",
+        "favicon.ico",
         "index.html",
+        "logo.png",
         "main.py",
         "password_security.py",
+        "requirements.txt",
+        "site-logo.png",
         "tools/migrate_json_to_mysql.py",
-    ):
+        "tools/prepare_deployment_env.py",
+        "watermark_auth.py",
+        "watermark_ecc.py",
+    )
+    package_sources = sorted(
+        path.relative_to(ROOT).as_posix()
+        for package in ("assets", "trace_app", "watermark_v4")
+        for path in (ROOT / package).rglob("*.py")
+    )
+    asset_sources = sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "assets").rglob("*")
+        if path.is_file()
+    )
+    for relative in (*root_sources, *package_sources, *asset_sources):
         assert (release / relative).read_bytes() == (ROOT / relative).read_bytes()
+
+
+def test_release_archive_matches_directory_and_checksum() -> None:
+    release = ROOT / "release" / "trace-v4-centos-20260715"
+    archive = ROOT / "release" / "trace-v4-centos-20260715.zip"
+    checksum = archive.with_suffix(archive.suffix + ".sha256")
+    release_files = {
+        path.relative_to(release).as_posix(): path.read_bytes()
+        for path in release.rglob("*")
+        if path.is_file()
+    }
+
+    with zipfile.ZipFile(archive) as package:
+        archive_files = {
+            _normalized_archive_name(entry.filename): package.read(entry)
+            for entry in package.infolist()
+            if not entry.is_dir()
+        }
+
+    assert archive_files == release_files
+    expected_digest, expected_name = checksum.read_text(encoding="ascii").split()
+    assert expected_name == archive.name
+    assert hashlib.sha256(archive.read_bytes()).hexdigest() == expected_digest
+
+
+def test_release_contains_no_private_or_development_files() -> None:
+    release = ROOT / "release" / "trace-v4-centos-20260715"
+    names = {path.relative_to(release).as_posix() for path in release.rglob("*")}
+
+    assert ".env" not in names
+    assert not any("__pycache__" in Path(name).parts for name in names)
+    assert not any("tests" in Path(name).parts for name in names)
+    assert not any(Path(name).suffix == ".pyc" for name in names)
 
 
 def test_release_archive_excludes_private_runtime_files_when_present() -> None:
@@ -118,7 +176,7 @@ def test_release_archive_excludes_private_runtime_files_when_present() -> None:
         return
     leaked_entries = []
     with zipfile.ZipFile(archive) as package:
-        names = {name.replace("\\", "/").lstrip("./") for name in package.namelist()}
+        names = {_normalized_archive_name(name) for name in package.namelist()}
         for entry in package.infolist():
             suffix = Path(entry.filename).suffix.lower()
             if entry.is_dir() or suffix not in TEXT_SUFFIXES:
