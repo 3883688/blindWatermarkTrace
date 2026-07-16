@@ -15,6 +15,7 @@ from trace_app.database.repositories import Repository
 from trace_app.imaging.fingerprints import file_sha256
 from trace_app.imaging.io import load_image_from_bytes
 from trace_app.runtime import Runtime
+from trace_app.watermark import small_crop as small_crop_module
 from trace_app.watermark.lsb import bits_from_bytes, bytes_from_bits
 from trace_app.watermark.small_crop import small_trace_short_code
 
@@ -50,6 +51,41 @@ def test_lsb_byte_bits_round_trip() -> None:
 
 def test_small_trace_short_code_is_deterministic() -> None:
     assert small_trace_short_code("TRACE-20260716") == 14136
+
+
+def test_robust_code_to_trace_uses_current_records_without_cache(
+    monkeypatch,
+) -> None:
+    trace_id = "TRACE-DYNAMIC-RECORDS"
+    code = main.robust_code_from_trace(trace_id)
+    monkeypatch.setattr(main, "read_records", lambda: [{"trace_id": trace_id}])
+
+    assert not hasattr(main.robust_code_to_trace, "cache_info")
+    assert main.robust_code_to_trace(code) == trace_id
+
+    monkeypatch.setattr(main, "read_records", lambda: [])
+
+    assert main.robust_code_to_trace(code) is None
+
+
+def test_small_crop_pattern_helpers_cache_by_arguments() -> None:
+    calls = [
+        (small_crop_module.small_trace_marker_pattern, (16,)),
+        (small_crop_module.small_trace_pattern, ("TRACE-CACHE", 16)),
+        (small_crop_module.small_trace_code_carriers, (16,)),
+        (small_crop_module.small_trace_short_carriers, (16,)),
+        (small_crop_module.code_cell_carriers, (0, 16)),
+        (small_crop_module.code_tile_carriers, (16,)),
+        (small_crop_module.code_trace_pattern, ("TRACE-CACHE", 16)),
+        (small_crop_module.code_marker_pattern, (16,)),
+    ]
+
+    for helper, args in calls:
+        helper.cache_clear()
+        first = helper(*args)
+        second = helper(*args)
+        assert second is first
+        assert helper.cache_info().hits == 1
 
 
 def test_imaging_io_loads_image_from_bytes() -> None:

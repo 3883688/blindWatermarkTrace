@@ -8,7 +8,6 @@ import sys
 import time
 import uuid
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -471,16 +470,6 @@ def normalize_robust_watermark_version(value: str | int | None) -> int:
 
 
 
-@lru_cache(maxsize=None)
-
-
-@lru_cache(maxsize=None)
-
-
-@lru_cache(maxsize=None)
-
-
-@lru_cache(maxsize=None)
 
 
 
@@ -489,16 +478,18 @@ def normalize_robust_watermark_version(value: str | int | None) -> int:
 
 
 
-@lru_cache(maxsize=None)
 
 
-@lru_cache(maxsize=None)
 
 
-@lru_cache(maxsize=None)
 
 
-@lru_cache(maxsize=None)
+
+
+
+
+
+
 
 
 

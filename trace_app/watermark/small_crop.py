@@ -148,6 +148,7 @@ def iter_aligned_small_trace_tiles(
                 }
 
 
+@lru_cache(maxsize=None)
 def small_trace_marker_pattern(size: int) -> np.ndarray:
     rng = np.random.default_rng(ROBUST_MAGIC * 2039 + SMALL_TRACE_VERSION)
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
@@ -166,6 +167,7 @@ def small_trace_marker_pattern(size: int) -> np.ndarray:
     return normalize_carrier(pattern * window).astype(np.float32)
 
 
+@lru_cache(maxsize=None)
 def small_trace_pattern(trace_id: str, size: int) -> np.ndarray:
     seed = layer_seed(trace_id, f"small-crop-trace-v{SMALL_TRACE_VERSION}")
     rng = np.random.default_rng(seed)
@@ -190,6 +192,7 @@ def small_trace_pattern(trace_id: str, size: int) -> np.ndarray:
     return normalize_carrier(pattern * window).astype(np.float32)
 
 
+@lru_cache(maxsize=None)
 def small_trace_code_carriers(size: int) -> np.ndarray:
     carriers = []
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
@@ -216,6 +219,7 @@ def small_trace_code_carriers(size: int) -> np.ndarray:
     return np.stack(carriers, axis=0).astype(np.float32)
 
 
+@lru_cache(maxsize=None)
 def small_trace_short_carriers(size: int) -> np.ndarray:
     carriers = []
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
@@ -321,6 +325,7 @@ def normalize_carrier(carrier: np.ndarray) -> np.ndarray:
     return carrier / rms
 
 
+@lru_cache(maxsize=None)
 def code_cell_carriers(bit_index: int, size: int) -> dict[str, np.ndarray]:
     rng = np.random.default_rng(ROBUST_MAGIC * 31 + bit_index * 104729)
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
@@ -349,6 +354,7 @@ def code_cell_carriers(bit_index: int, size: int) -> dict[str, np.ndarray]:
     return carriers
 
 
+@lru_cache(maxsize=None)
 def code_tile_carriers(size: int) -> np.ndarray:
     carriers = []
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
@@ -376,6 +382,7 @@ def code_tile_carriers(size: int) -> np.ndarray:
     return np.stack(carriers, axis=0).astype(np.float32)
 
 
+@lru_cache(maxsize=None)
 def code_trace_pattern(trace_id: str, size: int) -> np.ndarray:
     seed = layer_seed(trace_id, "trace-code-v4")
     rng = np.random.default_rng(seed)
@@ -405,6 +412,7 @@ def code_trace_pattern(trace_id: str, size: int) -> np.ndarray:
     return normalize_carrier(pattern * window).astype(np.float32)
 
 
+@lru_cache(maxsize=None)
 def code_marker_pattern(size: int) -> np.ndarray:
     rng = np.random.default_rng(ROBUST_MAGIC * 1009 + CODE_WATERMARK_VERSION)
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)

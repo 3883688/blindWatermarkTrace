@@ -14,6 +14,7 @@ from PIL import Image
 import numpy as np
 
 import main
+from trace_app.watermark import small_crop as small_crop_module
 from tests.commercial_negative_benchmark import synthetic_family, synthetic_image
 
 
@@ -96,7 +97,7 @@ def test_small_crop_detector_rejects_without_scanning_when_visual_candidates_fai
     monkeypatch.setattr(main, "read_records", lambda: [record])
     monkeypatch.setattr(main, "record_visual_consistency", lambda image, candidate: (False, 0, 0.0, 0.0))
     monkeypatch.setattr(
-        main,
+        small_crop_module,
         "iter_small_trace_windows",
         lambda width, height: (_ for _ in ()).throw(AssertionError("window scan must not run")),
     )
@@ -113,7 +114,7 @@ def test_multiscale_code_detector_rejects_without_scanning_when_visual_candidate
     monkeypatch.setattr(main, "read_records", lambda: [record])
     monkeypatch.setattr(main, "record_visual_consistency", lambda image, candidate: (False, 0, 0.0, 0.0))
     monkeypatch.setattr(
-        main,
+        small_crop_module,
         "code_scan_signal_grid",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("code scan must not run")),
     )
