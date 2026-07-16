@@ -783,7 +783,6 @@ def detect_aligned_authenticated_watermark(
         candidate_limit,
         budget_seconds,
         records=current_records,
-        generated_trace_ids=list(getattr(app.state, "generated_trace_ids", [])),
         rank_candidates=rank_aligned_candidates,
         align_query=align_query_to_record,
         decode_v1=decode_aligned_robust_trace,

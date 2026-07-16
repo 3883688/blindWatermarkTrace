@@ -684,7 +684,6 @@ def detect_aligned_authenticated_watermark(
     budget_seconds: float = 5.0,
     *,
     records: RecordsSource,
-    generated_trace_ids: Iterable[str] | None = None,
     rank_candidates: Callable[[Image.Image, list[Record]], list[Record]],
     align_query: Callable[[Image.Image, Record], Record | None],
     decode_v1: Callable[[Record, Record], Record | None],

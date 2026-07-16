@@ -80,12 +80,6 @@ def detect_v4_watermark(
     available = candidate_records() if candidates is None else candidates
     if not available:
         return None
-    current_records = records() if callable(records) else records
-    record_by_id = {
-        str(record.get("id")): record
-        for record in current_records
-        if record.get("robust_watermark_version") == version_v4
-    }
     recent_record_ids = tuple(
         candidate.record_id
         for trace_id in generated_trace_ids
@@ -100,6 +94,12 @@ def detect_v4_watermark(
     )
     if result is None:
         return None
+    current_records = records() if callable(records) else records
+    record_by_id = {
+        str(record.get("id")): record
+        for record in current_records
+        if record.get("robust_watermark_version") == version_v4
+    }
     record = record_by_id.get(result.record_id)
     if record is None:
         return None

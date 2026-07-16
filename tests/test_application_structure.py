@@ -3,6 +3,7 @@ import importlib
 import os
 import subprocess
 import sys
+from types import SimpleNamespace
 from collections import Counter
 from pathlib import Path
 
@@ -161,6 +162,74 @@ def test_legacy_robust_candidates_accept_records_loader() -> None:
         normalize_version=lambda value: 1,
         version_v1=1,
     ) == []
+
+
+def test_v4_miss_does_not_load_records() -> None:
+    detection = importlib.import_module("trace_app.watermark.detection")
+    candidate = SimpleNamespace(record_id="record-1", trace_id="TRACE-V4")
+
+    result = detection.detect_v4_watermark(
+        Image.new("RGB", (1, 1)),
+        (candidate,),
+        records=lambda: (_ for _ in ()).throw(AssertionError("records loaded")),
+        generated_trace_ids=[],
+        version_v4=4,
+        config_factory=lambda: SimpleNamespace(),
+        candidate_records=lambda: (),
+        detect=lambda *args, **kwargs: None,
+        with_evidence_fields=lambda value, record: value,
+        now_text=lambda: "now",
+    )
+
+    assert result is None
+
+
+def test_v4_hit_loads_records_after_detection() -> None:
+    detection = importlib.import_module("trace_app.watermark.detection")
+    events: list[str] = []
+    candidate = SimpleNamespace(record_id="record-1", trace_id="TRACE-V4")
+    detected = SimpleNamespace(
+        record_id="record-1",
+        trace_id="TRACE-V4",
+        bit_errors=0,
+        geometry_method="identity",
+        codec="codec-v4",
+        candidate_count=1,
+        tile_count=2,
+        phase_count=1,
+        corrected_symbols=0,
+        erasure_count=0,
+        mean_abs_score=1.0,
+        orb_inliers=0,
+        orb_ratio=0.0,
+        sync_confidence=1.0,
+        elapsed_seconds=0.001,
+    )
+
+    def detect(*args, **kwargs):
+        events.append("detect")
+        return detected
+
+    def load_records():
+        events.append("records")
+        return [{"id": "record-1", "trace_id": "TRACE-V4", "robust_watermark_version": 4}]
+
+    result = detection.detect_v4_watermark(
+        Image.new("RGB", (1, 1)),
+        (candidate,),
+        records=load_records,
+        generated_trace_ids=[],
+        version_v4=4,
+        config_factory=lambda: SimpleNamespace(),
+        candidate_records=lambda: (),
+        detect=detect,
+        with_evidence_fields=lambda value, record: value,
+        now_text=lambda: "now",
+    )
+
+    assert result is not None
+    assert result["trace_id"] == "TRACE-V4"
+    assert events == ["detect", "records"]
 
 
 def test_main_extract_robust_code_uses_patchable_grid_decoder(monkeypatch) -> None:
