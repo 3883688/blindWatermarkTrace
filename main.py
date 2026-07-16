@@ -44,6 +44,7 @@ from watermark_v4.features import (
 )
 from watermark_v4.detector import V4Candidate, detect_v4
 
+from trace_app.auth.service import AuthService
 from trace_app.config import (
     ADMIN_PASS,
     ADMIN_USER,
@@ -298,22 +299,20 @@ def read_users() -> dict[str, Any]:
     return repository.read_users()
 
 
+def get_auth_service() -> AuthService:
+    return AuthService(repository)
+
+
 def public_users(users: dict[str, Any]) -> dict[str, dict[str, str]]:
-    return {
-        username: {"role": str(info.get("role") or "operator")}
-        for username, info in users.items()
-    }
+    return get_auth_service().public_users(users)
 
 
 def allowed_menu_keys(menus: Any) -> list[str]:
-    if not isinstance(menus, list):
-        return []
-    return [key for key in menus if key in MENU_LABELS]
+    return get_auth_service().allowed_menu_keys(menus)
 
 
 def role_for_username(username: str) -> str:
-    users = read_users()["users"]
-    return str(users.get(username, {}).get("role") or "operator")
+    return get_auth_service().role_for_username(username)
 
 
 def record_watermark_generation() -> None:
@@ -1290,74 +1289,37 @@ def favico() -> FileResponse:
 
 @app.post("/auth/login")
 def login(username: str = Form(...), password: str = Form(...)) -> dict[str, Any]:
-    role = require_store().authenticate(username, password)
-    if role is None:
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
-    roles = read_roles()["roles"]
-    menus = allowed_menu_keys(roles.get(role, {}).get("menus", []))
-    return {"token": f"local-{uuid.uuid4().hex}", "username": username, "role": role, "menus": menus}
+    return get_auth_service().login(username, password)
 
 
 @app.get("/api/roles")
 def get_roles() -> dict[str, Any]:
-    return {"menus": MENU_LABELS, "roles": read_roles()["roles"]}
+    return get_auth_service().list_roles()
 
 
 @app.put("/api/roles/{role_key}")
 def update_role(role_key: str, payload: dict[str, Any]) -> dict[str, Any]:
-    roles = read_roles()["roles"]
-    if role_key not in roles:
-        raise HTTPException(status_code=404, detail="角色不存在")
-    require_store().update_role_menus(
-        role_key, allowed_menu_keys(payload.get("menus"))
-    )
-    return {"menus": MENU_LABELS, "roles": read_roles()["roles"]}
+    return get_auth_service().update_role(role_key, payload)
 
 
 @app.get("/api/users")
 def get_users() -> dict[str, Any]:
-    return {"users": public_users(read_users()["users"]), "roles": read_roles()["roles"]}
+    return get_auth_service().list_users()
 
 
 @app.post("/api/users")
 def create_user(payload: dict[str, Any]) -> dict[str, Any]:
-    username = str(payload.get("username") or "").strip()
-    password = str(payload.get("password") or "")
-    role = str(payload.get("role") or "operator")
-    roles = read_roles()["roles"]
-    if not username:
-        raise HTTPException(status_code=400, detail="请输入用户名")
-    if not password:
-        raise HTTPException(status_code=400, detail="请输入密码")
-    if role not in roles:
-        raise HTTPException(status_code=400, detail="角色不存在")
-    store = require_store()
-    if username in store.list_users():
-        raise HTTPException(status_code=409, detail="用户已存在")
-    store.create_user(username, password, role)
-    return {"users": store.list_users(), "roles": roles}
+    return get_auth_service().create_user(payload)
 
 
 @app.put("/api/users/{username}")
 def update_user(username: str, payload: dict[str, Any]) -> dict[str, Any]:
-    store = require_store()
-    users = store.list_users()
-    if username not in users:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    role = str(payload.get("role") or "")
-    roles = read_roles()["roles"]
-    if role not in roles:
-        raise HTTPException(status_code=400, detail="角色不存在")
-    store.update_user_role(username, role)
-    return {"users": store.list_users(), "roles": roles}
+    return get_auth_service().update_user(username, payload)
 
 
 @app.delete("/api/users/{username}")
 def delete_user(username: str) -> dict[str, Any]:
-    store = require_store()
-    if not store.delete_user(username):
-        raise HTTPException(status_code=404, detail="用户不存在")
-    return {"users": store.list_users(), "roles": read_roles()["roles"]}
+    return get_auth_service().delete_user(username)
 
 
 @app.post("/api/watermark/embed")

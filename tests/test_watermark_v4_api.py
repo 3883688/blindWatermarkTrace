@@ -232,3 +232,37 @@ def test_user_management_persists_hashed_users_in_database() -> None:
     deleted = client.delete("/api/users/alice")
     assert deleted.status_code == 200, deleted.text
     assert main.db_store.authenticate("alice", "user-secret") is None
+
+
+def test_auth_api_preserves_invalid_login_and_user_crud_errors() -> None:
+    client = TestClient(main.app)
+
+    invalid_login = client.post(
+        "/auth/login",
+        data={"username": "test-admin", "password": "wrong-password"},
+    )
+    assert invalid_login.status_code == 401
+    assert invalid_login.json() == {"detail": "用户名或密码错误"}
+
+    missing_username = client.post("/api/users", json={"password": "secret"})
+    assert missing_username.status_code == 400
+    assert missing_username.json() == {"detail": "请输入用户名"}
+
+    payload = {"username": "alice", "password": "secret", "role": "operator"}
+    assert client.post("/api/users", json=payload).status_code == 200
+    duplicate = client.post("/api/users", json=payload)
+    assert duplicate.status_code == 409
+    assert duplicate.json() == {"detail": "用户已存在"}
+
+    invalid_role = client.put("/api/users/alice", json={"role": "missing"})
+    assert invalid_role.status_code == 400
+    assert invalid_role.json() == {"detail": "角色不存在"}
+
+    missing_user = client.put("/api/users/missing", json={"role": "viewer"})
+    assert missing_user.status_code == 404
+    assert missing_user.json() == {"detail": "用户不存在"}
+
+    assert client.delete("/api/users/alice").status_code == 200
+    missing_delete = client.delete("/api/users/alice")
+    assert missing_delete.status_code == 404
+    assert missing_delete.json() == {"detail": "用户不存在"}

@@ -12,6 +12,7 @@ from database_store import DatabaseStore
 from fastapi import HTTPException
 import pytest
 from sqlalchemy import create_engine
+from trace_app.auth.service import AuthService
 from trace_app.config import Settings
 from trace_app.database.repositories import Repository
 from trace_app.imaging.fingerprints import file_sha256
@@ -46,6 +47,148 @@ EXPECTED_ROUTES = {
     ("DELETE", "/api/images/{image_id}"),
     ("POST", "/api/dev/reset"),
 }
+
+
+def test_auth_service_filters_unknown_menu_keys() -> None:
+    assert AuthService(repository=None).allowed_menu_keys(
+        ["watermark", "unknown", "trace"]
+    ) == ["watermark", "trace"]
+
+
+def _auth_service() -> AuthService:
+    store = DatabaseStore(create_engine("sqlite+pysqlite:///:memory:"))
+    store.create_schema()
+    store.replace_roles(main.DEFAULT_ROLES)
+    store.create_user("admin", "admin-password", "admin")
+    return AuthService(Repository(store))
+
+
+def test_auth_service_preserves_login_contract() -> None:
+    service = _auth_service()
+
+    result = service.login("admin", "admin-password")
+
+    assert result["token"].startswith("local-")
+    assert result["username"] == "admin"
+    assert result["role"] == "admin"
+    assert result["menus"] == ["watermark", "trace", "manage", "role"]
+    with pytest.raises(HTTPException) as exc_info:
+        service.login("admin", "wrong-password")
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "用户名或密码错误"
+
+
+def test_auth_service_preserves_user_projection_and_default_role() -> None:
+    service = _auth_service()
+
+    assert service.public_users({"alice": {}}) == {
+        "alice": {"role": "operator"}
+    }
+    assert service.role_for_username("missing") == "operator"
+
+
+def test_auth_service_preserves_role_update_rules() -> None:
+    service = _auth_service()
+
+    result = service.update_role("viewer", {"menus": ["trace", "unknown"]})
+
+    assert result["roles"]["viewer"]["menus"] == ["trace"]
+    with pytest.raises(HTTPException) as exc_info:
+        service.update_role("missing", {"menus": []})
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "角色不存在"
+
+
+@pytest.mark.parametrize(
+    ("payload", "detail"),
+    [
+        ({"password": "secret"}, "请输入用户名"),
+        ({"username": "alice"}, "请输入密码"),
+        (
+            {"username": "alice", "password": "secret", "role": "missing"},
+            "角色不存在",
+        ),
+    ],
+)
+def test_auth_service_preserves_create_user_validation(
+    payload: dict[str, str], detail: str
+) -> None:
+    with pytest.raises(HTTPException) as exc_info:
+        _auth_service().create_user(payload)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == detail
+
+
+def test_auth_service_preserves_user_crud_rules() -> None:
+    service = _auth_service()
+
+    created = service.create_user(
+        {"username": " alice ", "password": "secret", "role": "operator"}
+    )
+    assert created["users"]["alice"] == {"role": "operator"}
+
+    with pytest.raises(HTTPException) as duplicate:
+        service.create_user(
+            {"username": "alice", "password": "secret", "role": "operator"}
+        )
+    assert (duplicate.value.status_code, duplicate.value.detail) == (
+        409,
+        "用户已存在",
+    )
+
+    updated = service.update_user("alice", {"role": "viewer"})
+    assert updated["users"]["alice"] == {"role": "viewer"}
+    assert "alice" not in service.delete_user("alice")["users"]
+
+    for operation in (
+        lambda: service.update_user("missing", {"role": "viewer"}),
+        lambda: service.delete_user("missing"),
+    ):
+        with pytest.raises(HTTPException) as missing:
+            operation()
+        assert (missing.value.status_code, missing.value.detail) == (
+            404,
+            "用户不存在",
+        )
+
+
+def test_auth_service_factory_uses_current_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current_repository = Repository(None)
+    monkeypatch.setattr(main, "repository", current_repository)
+
+    assert main.get_auth_service().repository is current_repository
+
+
+def test_auth_routes_are_thin_service_delegators() -> None:
+    module = ast.parse(Path(main.__file__).read_text(encoding="utf-8"))
+    route_names = {
+        "login",
+        "get_roles",
+        "update_role",
+        "get_users",
+        "create_user",
+        "update_user",
+        "delete_user",
+    }
+    routes = {
+        node.name: node
+        for node in module.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in route_names
+    }
+
+    assert set(routes) == route_names
+    for route in routes.values():
+        assert not any(isinstance(node, ast.If) for node in ast.walk(route))
+        assert any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "get_auth_service"
+            for node in ast.walk(route)
+        )
 
 
 def test_lsb_byte_bits_round_trip() -> None:

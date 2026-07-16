@@ -86,8 +86,29 @@ class Repository:
     def read_roles(self) -> dict[str, Any]:
         return {"roles": self.store.read_roles()}
 
+    def replace_roles(self, roles: dict[str, dict[str, Any]]) -> None:
+        self.store.replace_roles(roles)
+
+    def update_role_menus(self, role_key: str, menus: list[str]) -> bool:
+        return self.store.update_role_menus(role_key, menus)
+
     def read_users(self) -> dict[str, Any]:
         return {"users": self.store.list_users()}
+
+    def list_users(self) -> dict[str, dict[str, str]]:
+        return self.store.list_users()
+
+    def create_user(self, username: str, password: str, role_key: str) -> None:
+        self.store.create_user(username, password, role_key)
+
+    def update_user_role(self, username: str, role_key: str) -> bool:
+        return self.store.update_user_role(username, role_key)
+
+    def delete_user(self, username: str) -> bool:
+        return self.store.delete_user(username)
+
+    def authenticate(self, username: str, password: str) -> str | None:
+        return self.store.authenticate(username, password)
 
     def today_watermark_count(
         self,
