@@ -61,17 +61,35 @@ class WatermarkOperations:
     ]
     extract_full_lsb: Callable[[Image.Image], dict[str, Any] | None]
     extract_block_lsb: Callable[[Image.Image], dict[str, Any] | None]
-    is_registered_original_image: Callable[[Image.Image], bool]
+    is_registered_original_image: Callable[
+        [Image.Image, list[dict[str, Any]]], bool
+    ]
     should_run_frequency_fallbacks: Callable[[Image.Image], bool]
-    should_run_visual_match_fallback: Callable[[Image.Image], bool]
-    detect_dot_matrix_trace: Callable[[Image.Image], dict[str, Any] | None]
+    should_run_visual_match_fallback: Callable[
+        [Image.Image, list[dict[str, Any]]], bool
+    ]
+    detect_dot_matrix_trace: Callable[
+        [Image.Image, list[dict[str, Any]]], dict[str, Any] | None
+    ]
     detect_aligned_authenticated_watermark: Callable[..., dict[str, Any] | None]
-    detect_by_visual_match: Callable[[Image.Image], dict[str, Any] | None]
-    detect_small_crop_trace: Callable[[Image.Image], dict[str, Any] | None]
-    detect_watermark_code: Callable[[Image.Image], dict[str, Any] | None]
-    detect_robust_watermark: Callable[[Image.Image], dict[str, Any] | None]
-    detect_by_residual_match: Callable[[Image.Image], dict[str, Any] | None]
-    detect_visible_copyright: Callable[[Image.Image], dict[str, Any] | None]
+    detect_by_visual_match: Callable[
+        [Image.Image, list[dict[str, Any]]], dict[str, Any] | None
+    ]
+    detect_small_crop_trace: Callable[
+        [Image.Image, list[dict[str, Any]]], dict[str, Any] | None
+    ]
+    detect_watermark_code: Callable[
+        [Image.Image, list[dict[str, Any]]], dict[str, Any] | None
+    ]
+    detect_robust_watermark: Callable[
+        [Image.Image, list[dict[str, Any]]], dict[str, Any] | None
+    ]
+    detect_by_residual_match: Callable[
+        [Image.Image, list[dict[str, Any]]], dict[str, Any] | None
+    ]
+    detect_visible_copyright: Callable[
+        [Image.Image, list[dict[str, Any]]], dict[str, Any] | None
+    ]
     with_evidence_fields: Callable[..., dict[str, Any]]
     watermark_detection_pipeline: Callable[..., dict[str, Any]]
     default_watermark_auth_key: str
@@ -346,19 +364,39 @@ class WatermarkService:
             ),
             extract_full_lsb=op.extract_full_lsb,
             extract_block_lsb=op.extract_block_lsb,
-            is_registered_original_image=op.is_registered_original_image,
-            should_run_frequency_fallbacks=op.should_run_frequency_fallbacks,
-            should_run_visual_match_fallback=op.should_run_visual_match_fallback,
-            detect_dot_matrix_trace=op.detect_dot_matrix_trace,
-            detect_aligned_authenticated_watermark=(
-                op.detect_aligned_authenticated_watermark
+            is_registered_original_image=lambda current_image: (
+                op.is_registered_original_image(current_image, records)
             ),
-            detect_by_visual_match=op.detect_by_visual_match,
-            detect_small_crop_trace=op.detect_small_crop_trace,
-            detect_watermark_code=op.detect_watermark_code,
-            detect_robust_watermark=op.detect_robust_watermark,
-            detect_by_residual_match=op.detect_by_residual_match,
-            detect_visible_copyright=op.detect_visible_copyright,
+            should_run_frequency_fallbacks=op.should_run_frequency_fallbacks,
+            should_run_visual_match_fallback=lambda current_image: (
+                op.should_run_visual_match_fallback(current_image, records)
+            ),
+            detect_dot_matrix_trace=lambda current_image: (
+                op.detect_dot_matrix_trace(current_image, records)
+            ),
+            detect_aligned_authenticated_watermark=lambda current_image, **kwargs: (
+                op.detect_aligned_authenticated_watermark(
+                    current_image, records, **kwargs
+                )
+            ),
+            detect_by_visual_match=lambda current_image: (
+                op.detect_by_visual_match(current_image, records)
+            ),
+            detect_small_crop_trace=lambda current_image: (
+                op.detect_small_crop_trace(current_image, records)
+            ),
+            detect_watermark_code=lambda current_image: (
+                op.detect_watermark_code(current_image, records)
+            ),
+            detect_robust_watermark=lambda current_image: (
+                op.detect_robust_watermark(current_image, records)
+            ),
+            detect_by_residual_match=lambda current_image: (
+                op.detect_by_residual_match(current_image, records)
+            ),
+            detect_visible_copyright=lambda current_image: (
+                op.detect_visible_copyright(current_image, records)
+            ),
             record_detection_result=self.repository.record_detection_result,
             with_evidence_fields=op.with_evidence_fields,
             now_text=op.now_text,

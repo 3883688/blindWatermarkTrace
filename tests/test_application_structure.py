@@ -107,7 +107,7 @@ def test_watermark_service_v4_extract_uses_one_repository_records_snapshot(
         main.get_watermark_service().operations,
         v4_candidate_records=candidate_records,
         detect_v4_watermark=detect_v4,
-        is_registered_original_image=lambda image: False,
+        is_registered_original_image=lambda image, records: False,
         watermark_detection_pipeline=pipeline,
     )
     assert not hasattr(operations, "read_records")
@@ -155,6 +155,110 @@ def test_watermark_service_v4_extract_uses_one_repository_records_snapshot(
         ("pipeline", repository.records),
         ("detect", repository.records),
     ]
+
+
+def test_watermark_service_non_v4_fallbacks_use_repository_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = _WatermarkRepositorySpy()
+    repository.records = []
+    seen: list[tuple[str, object]] = []
+
+    def record_aware(name, result):
+        def callback(image, records, **kwargs):
+            seen.append((name, records))
+            return result
+
+        return callback
+
+    operations = replace(
+        main.get_watermark_service().operations,
+        v4_candidate_records=lambda records: (),
+        extract_full_lsb=lambda image: None,
+        is_registered_original_image=record_aware("original", False),
+        should_run_frequency_fallbacks=lambda image: False,
+        detect_by_residual_match=record_aware("residual", None),
+        extract_block_lsb=lambda image: None,
+        state_value=lambda name: False,
+    )
+    monkeypatch.setattr(
+        main,
+        "repository",
+        SimpleNamespace(
+            read_records=lambda: (_ for _ in ()).throw(
+                AssertionError("global repository read")
+            )
+        ),
+    )
+    service = WatermarkService(
+        settings=Settings.from_values(
+            base_dir=tmp_path,
+            upload_dir="uploads",
+            data_dir="data",
+            db_url="",
+            admin_user="",
+            admin_pass="",
+        ),
+        repository=repository,
+        runtime=Runtime(),
+        operations=operations,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        service.extract_image(Image.new("RGB", (1, 1)))
+
+    assert exc_info.value.status_code == 404
+    assert seen == [
+        ("original", repository.records),
+        ("residual", repository.records),
+    ]
+
+
+def test_watermark_service_fingerprint_miss_uses_repository_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = _WatermarkRepositorySpy()
+    seen: list[object] = []
+    operations = replace(
+        main.get_watermark_service().operations,
+        matched_file_fingerprint=lambda content, records: seen.append(records),
+        load_image_from_bytes=lambda content: Image.new("RGB", (1, 1)),
+        v4_candidate_records=lambda records: (),
+        watermark_detection_pipeline=lambda image, **kwargs: {"mode": "miss"},
+    )
+    monkeypatch.setattr(
+        main,
+        "repository",
+        SimpleNamespace(
+            read_records=lambda: (_ for _ in ()).throw(
+                AssertionError("global repository read")
+            )
+        ),
+    )
+    service = WatermarkService(
+        settings=Settings.from_values(
+            base_dir=tmp_path,
+            upload_dir="uploads",
+            data_dir="data",
+            db_url="",
+            admin_user="",
+            admin_pass="",
+        ),
+        repository=repository,
+        runtime=Runtime(),
+        operations=operations,
+    )
+
+    result = asyncio.run(
+        service.extract_upload(
+            UploadFile(filename="miss.png", file=BytesIO(b"miss"))
+        )
+    )
+
+    assert result == {"mode": "miss"}
+    assert seen == [repository.records]
 
 
 def test_watermark_service_extract_upload_fingerprint_uses_repository_stats(

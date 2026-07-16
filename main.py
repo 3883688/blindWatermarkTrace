@@ -1,5 +1,6 @@
 import hashlib
 import json
+import inspect
 import mimetypes
 import os
 import re
@@ -304,6 +305,49 @@ def get_auth_service() -> AuthService:
     return AuthService(repository)
 
 
+def _record_aware_callback(callback):
+    parameters = inspect.signature(callback).parameters.values()
+    accepts_records = any(
+        parameter.name == "records"
+        or parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
+
+    if accepts_records:
+        return lambda subject, records, **kwargs: callback(
+            subject, records=records, **kwargs
+        )
+    return lambda subject, records, **kwargs: callback(subject, **kwargs)
+
+
+def _record_candidate_callback(callback):
+    parameters = inspect.signature(callback).parameters.values()
+    accepts_records = any(
+        parameter.name == "records"
+        or parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
+
+    if accepts_records:
+        return lambda records: callback(records=records)
+    return lambda records: callback()
+
+
+def _v4_record_aware_callback(callback):
+    parameters = inspect.signature(callback).parameters.values()
+    accepts_records = any(
+        parameter.name == "records"
+        or parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
+
+    if accepts_records:
+        return lambda image, candidates, records: callback(
+            image, candidates, records=records
+        )
+    return lambda image, candidates, records: callback(image, candidates)
+
+
 def get_watermark_service() -> WatermarkService:
     generated_trace_ids = getattr(app.state, "generated_trace_ids", [])
     runtime.generated_trace_ids = generated_trace_ids
@@ -354,28 +398,38 @@ def get_watermark_service() -> WatermarkService:
             path_sha256=path_sha256,
             image_content_sha256=image_content_sha256,
             layer_scores_for_image=layer_scores_for_image,
-            matched_file_fingerprint=lambda content, records: matched_file_fingerprint(
-                content, records=records
+            matched_file_fingerprint=_record_aware_callback(
+                matched_file_fingerprint
             ),
             load_image_from_bytes=load_image_from_bytes,
             load_image_from_url=load_image_from_url,
-            v4_candidate_records=lambda records: v4_candidate_records(records),
-            detect_v4_watermark=lambda image, candidates, records: detect_v4_watermark(
-                image, candidates, records=records
-            ),
+            v4_candidate_records=_record_candidate_callback(v4_candidate_records),
+            detect_v4_watermark=_v4_record_aware_callback(detect_v4_watermark),
             extract_full_lsb=extract_full_lsb,
             extract_block_lsb=extract_block_lsb,
-            is_registered_original_image=is_registered_original_image,
+            is_registered_original_image=_record_aware_callback(
+                is_registered_original_image
+            ),
             should_run_frequency_fallbacks=should_run_frequency_fallbacks,
-            should_run_visual_match_fallback=should_run_visual_match_fallback,
-            detect_dot_matrix_trace=detect_dot_matrix_trace,
-            detect_aligned_authenticated_watermark=detect_aligned_authenticated_watermark,
-            detect_by_visual_match=detect_by_visual_match,
-            detect_small_crop_trace=detect_small_crop_trace,
-            detect_watermark_code=detect_watermark_code,
-            detect_robust_watermark=detect_robust_watermark,
-            detect_by_residual_match=detect_by_residual_match,
-            detect_visible_copyright=detect_visible_copyright,
+            should_run_visual_match_fallback=_record_aware_callback(
+                should_run_visual_match_fallback
+            ),
+            detect_dot_matrix_trace=_record_aware_callback(detect_dot_matrix_trace),
+            detect_aligned_authenticated_watermark=_record_aware_callback(
+                detect_aligned_authenticated_watermark
+            ),
+            detect_by_visual_match=_record_aware_callback(detect_by_visual_match),
+            detect_small_crop_trace=_record_aware_callback(detect_small_crop_trace),
+            detect_watermark_code=_record_aware_callback(detect_watermark_code),
+            detect_robust_watermark=_record_aware_callback(
+                detect_robust_watermark
+            ),
+            detect_by_residual_match=_record_aware_callback(
+                detect_by_residual_match
+            ),
+            detect_visible_copyright=_record_aware_callback(
+                detect_visible_copyright
+            ),
             with_evidence_fields=with_evidence_fields,
             watermark_detection_pipeline=watermark_detection.extract_watermark_from_image,
             default_watermark_auth_key=DEFAULT_WATERMARK_AUTH_KEY,
@@ -652,13 +706,19 @@ def robust_code_to_trace_fuzzy(code: int, max_errors: int = 18) -> tuple[str | N
     )
 
 
-def robust_candidate_records() -> list[dict[str, Any]]:
-    return watermark_robust.robust_candidate_records(read_records())
+def robust_candidate_records(
+    records: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    return watermark_robust.robust_candidate_records(
+        read_records() if records is None else records
+    )
 
 
-def legacy_robust_candidate_records() -> list[dict[str, Any]]:
+def legacy_robust_candidate_records(
+    records: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     return watermark_robust.legacy_robust_candidate_records(
-        read_records(),
+        read_records() if records is None else records,
         normalize_version=normalize_robust_watermark_version,
         version_v1=ROBUST_WATERMARK_VERSION_V1,
     )
@@ -901,11 +961,15 @@ def extract_robust_code(image: Image.Image, records: list[dict[str, Any]] | None
     )
 
 
-def detect_robust_watermark(image: Image.Image) -> dict[str, Any] | None:
-    records = legacy_robust_candidate_records()
+def detect_robust_watermark(
+    image: Image.Image,
+    *,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    current_records = legacy_robust_candidate_records(records)
     return watermark_robust.detect_robust_watermark(
         image,
-        records=records,
+        records=current_records,
         extract_code=lambda current_image, current_records: extract_robust_code(
             current_image, current_records
         ),
@@ -1020,16 +1084,24 @@ def should_run_frequency_fallbacks(image: Image.Image) -> bool:
     return watermark_detection.should_run_frequency_fallbacks(image)
 
 
-def should_run_visual_match_fallback(image: Image.Image) -> bool:
+def should_run_visual_match_fallback(
+    image: Image.Image,
+    *,
+    records: list[dict[str, Any]] | None = None,
+) -> bool:
     return watermark_detection.should_run_visual_match_fallback(
-        image, records=read_records()
+        image, records=read_records() if records is None else records
     )
 
 
-def detect_visible_copyright(image: Image.Image) -> dict[str, Any] | None:
+def detect_visible_copyright(
+    image: Image.Image,
+    *,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     return imaging_visible_mark.detect_visible_copyright(
         image,
-        records=read_records(),
+        records=read_records() if records is None else records,
         with_evidence_fields=with_evidence_fields,
         now_text=now_text,
     )
@@ -1061,9 +1133,11 @@ def dot_matrix_bits_from_trace(trace_id: str) -> list[int]:
     )
 
 
-def dot_matrix_candidate_records() -> list[tuple[str, int, dict[str, Any]]]:
+def dot_matrix_candidate_records(
+    records: list[dict[str, Any]] | None = None,
+) -> list[tuple[str, int, dict[str, Any]]]:
     return watermark_dot_matrix.dot_matrix_candidate_records(
-        read_records(),
+        read_records() if records is None else records,
         watermark_payload_from_trace_fn=watermark_payload_from_trace,
     )
 
@@ -1082,10 +1156,14 @@ def apply_dot_matrix_trace_layer(
     )
 
 
-def detect_dot_matrix_trace(image: Image.Image) -> dict[str, Any] | None:
+def detect_dot_matrix_trace(
+    image: Image.Image,
+    *,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     return watermark_dot_matrix.detect_dot_matrix_trace(
         image,
-        dot_matrix_candidate_records(),
+        dot_matrix_candidate_records(records),
         hamming_distance_fn=hamming_distance,
         code_crc16_fn=code_crc16,
         now_text_fn=now_text,
@@ -1119,10 +1197,14 @@ def apply_code_layer_shifted(image: Image.Image, trace_id: str) -> Image.Image:
     )
 
 
-def detect_small_crop_trace(image: Image.Image) -> dict[str, Any] | None:
+def detect_small_crop_trace(
+    image: Image.Image,
+    *,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     return watermark_small_crop.detect_small_crop_trace(
         image,
-        read_records(),
+        read_records() if records is None else records,
         list(getattr(app.state, "generated_trace_ids", [])),
         watermark_payload_from_trace=watermark_payload_from_trace,
         record_visual_consistency=record_visual_consistency,
@@ -1134,10 +1216,14 @@ def detect_small_crop_trace(image: Image.Image) -> dict[str, Any] | None:
     )
 
 
-def detect_watermark_code(image: Image.Image) -> dict[str, Any] | None:
+def detect_watermark_code(
+    image: Image.Image,
+    *,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     return watermark_small_crop.detect_watermark_code(
         image,
-        read_records(),
+        read_records() if records is None else records,
         list(getattr(app.state, "generated_trace_ids", [])),
         watermark_payload_from_trace=watermark_payload_from_trace,
         record_visual_consistency=record_visual_consistency,
@@ -1199,15 +1285,23 @@ def extract_lsb(image: Image.Image) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-def residual_candidate_evidence(image: Image.Image) -> dict[str, Any] | None:
+def residual_candidate_evidence(
+    image: Image.Image,
+    *,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     return imaging_feature_matching.residual_candidate_evidence(
         image,
-        records=read_records(),
+        records=read_records() if records is None else records,
         record_visual_consistency_fn=record_visual_consistency,
     )
 
 
-def detect_by_residual_match(image: Image.Image) -> dict[str, Any] | None:
+def detect_by_residual_match(
+    image: Image.Image,
+    *,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     return imaging_feature_matching.detect_by_residual_match(image)
 
 
@@ -1248,10 +1342,14 @@ def robust_residual_score(
     )
 
 
-def detect_by_visual_match(image: Image.Image) -> dict[str, Any] | None:
+def detect_by_visual_match(
+    image: Image.Image,
+    *,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     return imaging_feature_matching.detect_by_visual_match(
         image,
-        records=read_records(),
+        records=read_records() if records is None else records,
         upload_dir=UPLOAD_DIR,
         with_evidence_fields=with_evidence_fields,
         now_text=now_text,
@@ -1262,9 +1360,15 @@ def detect_by_visual_match(image: Image.Image) -> dict[str, Any] | None:
     )
 
 
-def is_registered_original_image(image: Image.Image) -> bool:
+def is_registered_original_image(
+    image: Image.Image,
+    *,
+    records: list[dict[str, Any]] | None = None,
+) -> bool:
     return imaging_feature_matching.is_registered_original_image(
-        image, records=read_records(), upload_dir=UPLOAD_DIR,
+        image,
+        records=read_records() if records is None else records,
+        upload_dir=UPLOAD_DIR,
     )
 
 
