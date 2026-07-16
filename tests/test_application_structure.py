@@ -83,6 +83,36 @@ def test_settings_resolves_relative_directories_from_base_dir(tmp_path: Path) ->
     assert settings.original_dir == tmp_path / "uploads" / "originals"
 
 
+def test_settings_direct_construction_uses_default_app_name(tmp_path: Path) -> None:
+    settings = Settings(
+        base_dir=tmp_path,
+        upload_dir=tmp_path / "uploads",
+        data_dir=tmp_path / "data",
+        db_url="",
+        admin_user="",
+        admin_pass="",
+    )
+
+    assert settings.app_name == "WatermarkSystem"
+
+
+def test_settings_from_values_reads_app_name_from_environment(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("APP_NAME", "EnvironmentApp")
+
+    settings = Settings.from_values(
+        base_dir=tmp_path,
+        upload_dir="uploads",
+        data_dir="data",
+        db_url="",
+        admin_user="",
+        admin_pass="",
+    )
+
+    assert settings.app_name == "EnvironmentApp"
+
+
 def test_runtime_starts_without_database_state() -> None:
     runtime = Runtime()
 

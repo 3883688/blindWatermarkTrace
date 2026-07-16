@@ -14,7 +14,7 @@ class Settings:
     db_url: str
     admin_user: str
     admin_pass: str
-    app_name: str
+    app_name: str = "WatermarkSystem"
 
     @property
     def original_dir(self) -> Path:
@@ -38,7 +38,7 @@ class Settings:
         db_url: str,
         admin_user: str,
         admin_pass: str,
-        app_name: str = "WatermarkSystem",
+        app_name: str | None = None,
     ) -> "Settings":
         base_path = Path(base_dir)
         upload_path = Path(upload_dir)
@@ -54,7 +54,11 @@ class Settings:
             db_url=db_url.strip(),
             admin_user=admin_user.strip(),
             admin_pass=admin_pass,
-            app_name=app_name,
+            app_name=(
+                os.getenv("APP_NAME", "WatermarkSystem")
+                if app_name is None
+                else app_name
+            ),
         )
 
 
