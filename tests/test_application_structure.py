@@ -1078,6 +1078,17 @@ def test_main_exposes_required_python_api() -> None:
         "extract_watermark_from_image",
         "align_query_to_record",
         "file_sha256",
+        "Image",
+        "cv2",
+        "np",
+        "runtime",
+        "repository",
+        "db_store",
+        "ROBUST_MAGIC",
+        "ROBUST_TILE",
+        "SMALL_TRACE_TILE",
+        "normalize_robust_watermark_version",
+        "record_detection_result",
     }
 
     assert required <= set(dir(main))
@@ -1111,12 +1122,56 @@ def test_watermark_routes_are_thin_service_delegators() -> None:
         )
 
 
-def test_main_defines_no_fastapi_routes() -> None:
+def test_main_is_thin_fastapi_entry_point() -> None:
     source = Path(main.__file__).read_text(encoding="utf-8")
+    module = ast.parse(source)
 
+    assert len(source.splitlines()) <= 10
+    assert not any(
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        for node in ast.walk(module)
+    )
     assert "@app." not in source
     assert "FastAPI(" not in source
     assert ".mount(" not in source
+
+
+def test_main_repository_assignment_is_used_by_compatibility_wrappers(
+    monkeypatch,
+) -> None:
+    class ReplacementRepository:
+        def read_records(self):
+            return [{"id": "replacement"}]
+
+    monkeypatch.setattr(main, "repository", ReplacementRepository())
+
+    assert main.read_records() == [{"id": "replacement"}]
+    assert main.get_watermark_service().repository is main.repository
+
+
+def test_main_proxy_uses_normal_missing_attribute_semantics() -> None:
+    assert not hasattr(main, "__compatibility_name_that_does_not_exist__")
+
+
+def test_focused_compatibility_owners_preserve_legacy_helpers() -> None:
+    from trace_app import evidence, utilities
+    from trace_app.watermark import modes
+
+    assert evidence.evidence_uuid_fields("ab-cd") == {
+        "evidence_uuid": "ABCD",
+        "evidence_uuid_head": "ABCD",
+        "evidence_uuid_tail": "ABCD",
+    }
+    assert evidence.with_evidence_fields({}, {"evidence_uuid": "ABCD"}) == {
+        "evidence_uuid": "ABCD"
+    }
+    assert modes.normalize_mode("全部算法") == "hybrid"
+    assert modes.mode_label("fft") == "FFT + 空间域"
+    assert utilities.parse_bool("yes") is True
+    assert utilities.clamp_float("9", 1.0, 0.0, 2.0) == 2.0
+    assert utilities.masked_url("mysql://user:secret@db/app") == (
+        "mysql://user:****@db/app"
+    )
 
 
 def test_settings_resolves_relative_directories_from_base_dir(tmp_path: Path) -> None:
