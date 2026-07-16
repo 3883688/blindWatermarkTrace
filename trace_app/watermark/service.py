@@ -430,11 +430,6 @@ class WatermarkService:
         records = self.repository.read_records()
         fingerprint_match = op.matched_file_fingerprint(content, records)
         if fingerprint_match:
-            if fingerprint_match.get("matched_file_type") == "original":
-                self.repository.record_detection_result(False)
-                raise HTTPException(
-                    status_code=404, detail="未检测到可识别的隐式水印"
-                )
             self.repository.record_detection_result(True)
             return fingerprint_match
         image = op.load_image_from_bytes(content)

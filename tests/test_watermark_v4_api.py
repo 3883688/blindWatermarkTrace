@@ -156,23 +156,39 @@ def _extract_bytes(client: TestClient, content: bytes, name: str = "query.png"):
     )
 
 
-def test_v4_exact_watermarked_fingerprint_succeeds_and_original_rejects() -> None:
+def test_v4_exact_file_fingerprints_succeed_without_image_decode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     client = TestClient(main.app)
     record = _embed_v4(client).json()
+    original_path = main.UPLOAD_DIR / record["original_url"].replace(
+        "/uploads/", ""
+    )
     watermarked_path = main.UPLOAD_DIR / record["download_url"].replace(
         "/uploads/", ""
     )
+    monkeypatch.setattr(
+        main,
+        "load_image_from_bytes",
+        lambda content: (_ for _ in ()).throw(AssertionError("unexpected decode")),
+    )
 
+    original_response = _extract_bytes(
+        client, original_path.read_bytes(), "original.png"
+    )
     watermarked_response = _extract_bytes(client, watermarked_path.read_bytes())
-    original_response = _extract_bytes(client, _png_bytes(), "original.png")
 
-    assert watermarked_response.status_code == 200
+    assert original_response.status_code == 200, original_response.text
+    assert watermarked_response.status_code == 200, watermarked_response.text
+    assert original_response.json()["trace_id"] == record["trace_id"]
     assert watermarked_response.json()["trace_id"] == record["trace_id"]
+    assert original_response.json()["matched_file_type"] == "original"
     assert watermarked_response.json()["matched_file_type"] == "watermarked"
-    assert original_response.status_code == 404
+    assert original_response.json()["matched_hash_type"] == "file_md5_sha256"
+    assert watermarked_response.json()["matched_hash_type"] == "file_md5_sha256"
     assert main.repository.read_detection_stats() == {
         "attempts": 2,
-        "successes": 1,
+        "successes": 2,
     }
 
 

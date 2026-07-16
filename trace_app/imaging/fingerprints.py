@@ -50,8 +50,40 @@ def matched_file_fingerprint(
     load_image = load_image_from_bytes_fn or load_image_from_bytes
     md5_digest = hash_md5(content)
     sha256_digest = hash_file(content)
-    query_image_digest = None
-    for record in read_records():
+    records = read_records()
+
+    def match_result(
+        record: dict[str, Any],
+        file_type: str,
+        matched_hash_type: str,
+        matched_hash: str,
+        image_hash: str | None,
+    ) -> dict[str, Any]:
+        return with_evidence_fields({
+            "id": record.get("id"),
+            "trace_id": record.get("trace_id"),
+            "user_id": record.get("user_id"),
+            "mode": "file_fingerprint",
+            "mode_label": "文件指纹一样",
+            "created_at": record.get("created_at"),
+            "confidence": 100,
+            "phash_match": False,
+            "status": "文件指纹一样",
+            "extracted_at": now_text(),
+            "file_md5": md5_digest,
+            "file_hash": sha256_digest,
+            "image_hash": image_hash,
+            "matched_hash": matched_hash,
+            "matched_hash_type": matched_hash_type,
+            "matched_file_type": file_type,
+            "matched_file_url": record.get(
+                "original_url" if file_type == "original" else "download_url"
+            ),
+            "watermark_layers": record.get("watermark_layers", watermark_layers),
+            "layer_scores": {},
+        }, record)
+
+    for record in records:
         for file_type in ("original", "watermarked"):
             stored_md5 = str(
                 record.get(f"{file_type}_file_md5") or ""
@@ -59,58 +91,50 @@ def matched_file_fingerprint(
             stored_sha256 = str(
                 record.get(f"{file_type}_file_sha256") or ""
             ).upper()
-            stored_image_digest = str(
-                record.get(f"{file_type}_image_sha256") or ""
-            ).upper()
-            matched_hash_type = None
-            matched_hash = None
             if (
                 stored_md5 == md5_digest
                 and stored_sha256
                 and stored_sha256 == sha256_digest
             ):
-                matched_hash_type = "file_md5_sha256"
-                matched_hash = sha256_digest
-            elif (
+                return match_result(
+                    record,
+                    file_type,
+                    "file_md5_sha256",
+                    sha256_digest,
+                    None,
+                )
+            if (
                 not stored_md5
                 and stored_sha256
                 and stored_sha256 == sha256_digest
             ):
-                matched_hash_type = "file_sha256"
-                matched_hash = sha256_digest
-            elif stored_image_digest:
-                try:
-                    if query_image_digest is None:
-                        query_image_digest = hash_image(load_image(content))
-                except Exception:
-                    return None
-                if stored_image_digest != query_image_digest:
-                    continue
-                matched_hash_type = "image_pixels"
-                matched_hash = query_image_digest
-            else:
+                return match_result(
+                    record,
+                    file_type,
+                    "file_sha256",
+                    sha256_digest,
+                    None,
+                )
+
+    query_image_digest = None
+    for record in records:
+        for file_type in ("original", "watermarked"):
+            stored_image_digest = str(
+                record.get(f"{file_type}_image_sha256") or ""
+            ).upper()
+            if not stored_image_digest:
                 continue
-            return with_evidence_fields({
-                "id": record.get("id"),
-                "trace_id": record.get("trace_id"),
-                "user_id": record.get("user_id"),
-                "mode": "file_fingerprint",
-                "mode_label": "文件指纹一样",
-                "created_at": record.get("created_at"),
-                "confidence": 100,
-                "phash_match": False,
-                "status": "文件指纹一样",
-                "extracted_at": now_text(),
-                "file_md5": md5_digest,
-                "file_hash": sha256_digest,
-                "image_hash": query_image_digest,
-                "matched_hash": matched_hash,
-                "matched_hash_type": matched_hash_type,
-                "matched_file_type": file_type,
-                "matched_file_url": record.get(
-                    "original_url" if file_type == "original" else "download_url"
-                ),
-                "watermark_layers": record.get("watermark_layers", watermark_layers),
-                "layer_scores": {},
-            }, record)
+            try:
+                if query_image_digest is None:
+                    query_image_digest = hash_image(load_image(content))
+            except Exception:
+                return None
+            if stored_image_digest == query_image_digest:
+                return match_result(
+                    record,
+                    file_type,
+                    "image_pixels",
+                    query_image_digest,
+                    query_image_digest,
+                )
     return None

@@ -317,15 +317,17 @@ def test_record_adapters_fall_back_when_signature_is_unavailable() -> None:
     ) == ("image", "candidates")
 
 
+@pytest.mark.parametrize("matched_file_type", ("original", "watermarked"))
 def test_watermark_service_extract_upload_fingerprint_uses_repository_stats(
     tmp_path: Path,
+    matched_file_type: str,
 ) -> None:
     repository = _WatermarkRepositorySpy()
     operations = replace(
         main.get_watermark_service().operations,
         matched_file_fingerprint=lambda content, records: {
             "trace_id": "TR-HIT",
-            "matched_file_type": "watermarked",
+            "matched_file_type": matched_file_type,
         },
     )
     service = WatermarkService(
