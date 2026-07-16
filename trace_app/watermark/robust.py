@@ -26,6 +26,11 @@ from trace_app.watermark.frequency import robust_pattern
 
 
 Record = dict[str, Any]
+RecordsSource = Iterable[Record] | Callable[[], Iterable[Record]]
+
+
+def _resolve_records(records: RecordsSource) -> Iterable[Record]:
+    return records() if callable(records) else records
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,13 +177,13 @@ def normalize_robust_watermark_version(
 def robust_code_to_trace(
     code: int,
     *,
-    records: Iterable[Record] | Callable[[], Iterable[Record]],
+    records: RecordsSource,
     config: RobustConfig = DEFAULT_CONFIG,
     dependencies: RobustDependencies = DEFAULT_DEPENDENCIES,
 ) -> str | None:
     if (code >> 48) != config.robust_magic:
         return None
-    current_records = records() if callable(records) else records
+    current_records = _resolve_records(records)
     code_from_trace = dependencies.robust_code_from_trace
     for record in current_records:
         trace_id = record.get("trace_id")
@@ -200,7 +205,7 @@ def robust_code_to_trace_fuzzy(
     code: int,
     max_errors: int = 18,
     *,
-    records: Iterable[Record] | Callable[[], Iterable[Record]],
+    records: RecordsSource,
     config: RobustConfig = DEFAULT_CONFIG,
     dependencies: RobustDependencies = DEFAULT_DEPENDENCIES,
 ) -> tuple[str | None, int]:
@@ -208,7 +213,7 @@ def robust_code_to_trace_fuzzy(
     magic_distance = distance_fn(code >> 48, config.robust_magic)
     if magic_distance > 6:
         return None, config.robust_bits + 1
-    current_records = records() if callable(records) else records
+    current_records = _resolve_records(records)
     best_trace = None
     best_distance = config.robust_bits + 1
     for record in current_records:
@@ -234,14 +239,15 @@ def robust_candidate_records(records: Iterable[Record]) -> list[Record]:
 
 
 def legacy_robust_candidate_records(
-    records: Iterable[Record] | Callable[[], Iterable[Record]],
+    records: RecordsSource,
     *,
     normalize_version: Callable[[str | int | None], int],
     version_v1: int,
 ) -> list[Record]:
+    current_records = _resolve_records(records)
     return [
         record
-        for record in robust_candidate_records(records)
+        for record in robust_candidate_records(current_records)
         if normalize_version(record.get("robust_watermark_version", version_v1)) == version_v1
     ]
 
@@ -677,7 +683,7 @@ def detect_aligned_authenticated_watermark(
     candidate_limit: int = 8,
     budget_seconds: float = 5.0,
     *,
-    records: Iterable[Record],
+    records: RecordsSource,
     generated_trace_ids: Iterable[str] | None = None,
     rank_candidates: Callable[[Image.Image, list[Record]], list[Record]],
     align_query: Callable[[Image.Image, Record], Record | None],
@@ -696,7 +702,7 @@ def detect_aligned_authenticated_watermark(
     perf_counter: Callable[[], float] = time.perf_counter,
 ) -> Record | None:
     started = perf_counter()
-    current_records = records() if callable(records) else records
+    current_records = _resolve_records(records)
     candidates = [record for record in current_records if record.get("trace_id") and record.get("robust_watermark")]
     candidates = rank_candidates(image, candidates)[: max(1, candidate_limit)]
     authenticated = []

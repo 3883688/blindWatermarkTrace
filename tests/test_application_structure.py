@@ -155,6 +155,14 @@ def test_aligned_owner_starts_budget_before_loading_candidates() -> None:
     assert events == ["clock", "records", "rank", "clock"]
 
 
+def test_legacy_robust_candidates_accept_records_loader() -> None:
+    assert robust_module.legacy_robust_candidate_records(
+        lambda: [],
+        normalize_version=lambda value: 1,
+        version_v1=1,
+    ) == []
+
+
 def test_main_extract_robust_code_uses_patchable_grid_decoder(monkeypatch) -> None:
     trace_id = "TRACE-DYNAMIC-GRID"
     expected_code = main.robust_code_from_trace(trace_id)
