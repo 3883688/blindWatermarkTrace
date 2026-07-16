@@ -15,6 +15,8 @@ from trace_app.database.repositories import Repository
 from trace_app.imaging.fingerprints import file_sha256
 from trace_app.imaging.io import load_image_from_bytes
 from trace_app.runtime import Runtime
+from trace_app.watermark.lsb import bits_from_bytes, bytes_from_bits
+from trace_app.watermark.small_crop import small_trace_short_code
 
 from io import BytesIO
 from PIL import Image
@@ -40,6 +42,14 @@ EXPECTED_ROUTES = {
     ("DELETE", "/api/images/{image_id}"),
     ("POST", "/api/dev/reset"),
 }
+
+
+def test_lsb_byte_bits_round_trip() -> None:
+    assert bytes_from_bits(bits_from_bytes(b"trace")) == b"trace"
+
+
+def test_small_trace_short_code_is_deterministic() -> None:
+    assert small_trace_short_code("TRACE-20260716") == 14136
 
 
 def test_imaging_io_loads_image_from_bytes() -> None:
