@@ -31,11 +31,14 @@ def matched_file_fingerprint(
     with_evidence_fields: Callable[[dict[str, Any], dict[str, Any] | None], dict[str, Any]],
     now_text: Callable[[], str],
     watermark_layers: list[str],
-    file_sha256_fn: Callable[[bytes], str] = file_sha256,
-    image_content_sha256_fn: Callable[[Image.Image], str] = image_content_sha256,
-    load_image_from_bytes_fn: Callable[[bytes], Image.Image] = load_image_from_bytes,
+    file_sha256_fn: Callable[[bytes], str] | None = None,
+    image_content_sha256_fn: Callable[[Image.Image], str] | None = None,
+    load_image_from_bytes_fn: Callable[[bytes], Image.Image] | None = None,
 ) -> dict[str, Any] | None:
-    digest = file_sha256_fn(content)
+    hash_file = file_sha256_fn or file_sha256
+    hash_image = image_content_sha256_fn or image_content_sha256
+    load_image = load_image_from_bytes_fn or load_image_from_bytes
+    digest = hash_file(content)
     query_image_digest = None
     for record in read_records():
         for file_type in ("original", "watermarked"):
@@ -51,9 +54,7 @@ def matched_file_fingerprint(
             elif stored_image_digest:
                 try:
                     if query_image_digest is None:
-                        query_image_digest = image_content_sha256_fn(
-                            load_image_from_bytes_fn(content)
-                        )
+                        query_image_digest = hash_image(load_image(content))
                 except Exception:
                     return None
                 if stored_image_digest != query_image_digest:

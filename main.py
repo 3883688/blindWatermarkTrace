@@ -24,6 +24,12 @@ cv2.setNumThreads(1)
 
 from watermark_ecc import codeword_phase, decode_expected_codeword, encode_codeword, tile_phase
 from watermark_auth import auth_code_from_trace, inverse_permutation, permuted_code_bits, phase_permutation
+from candidate_feature_index import (
+    descriptor_match_score,
+    extract_feature_descriptors,
+    load_feature_descriptors,
+    save_feature_descriptors,
+)
 from database_store import DatabaseStore
 from watermark_v4 import (
     V4Config,
@@ -33,7 +39,9 @@ from watermark_v4 import (
     encode_codeword as encode_v4_codeword,
 )
 from watermark_v4.features import (
+    extract_feature_index as extract_v4_feature_index,
     load_feature_index as load_v4_feature_index,
+    save_feature_index as save_v4_feature_index,
 )
 from watermark_v4.detector import V4Candidate, detect_v4
 
@@ -67,6 +75,9 @@ from trace_app.config import (
     DOT_MATRIX_VERSION,
     DWT_DELTA,
     FFT_DELTA,
+    FEATURE_MATCH_MIN_GOOD,
+    FEATURE_RECENT_BACKFILL,
+    FEATURE_RECENT_RESERVE,
     MAGIC,
     MENU_LABELS,
     ORIGINAL_DIR,
@@ -2052,11 +2063,23 @@ def decode_aligned_robust_trace_v3(
 
 
 def save_record_feature_index(image: Image.Image, record_id: str) -> str:
-    return imaging_feature_matching.save_record_feature_index(image, record_id, DATA_DIR)
+    return imaging_feature_matching.save_record_feature_index(
+        image,
+        record_id,
+        DATA_DIR,
+        extract_feature_descriptors_fn=extract_feature_descriptors,
+        save_feature_descriptors_fn=save_feature_descriptors,
+    )
 
 
 def save_record_feature_index_v4(image: Image.Image, record_id: str) -> str:
-    return imaging_feature_matching.save_record_feature_index_v4(image, record_id, DATA_DIR)
+    return imaging_feature_matching.save_record_feature_index_v4(
+        image,
+        record_id,
+        DATA_DIR,
+        extract_v4_feature_index_fn=extract_v4_feature_index,
+        save_v4_feature_index_fn=save_v4_feature_index,
+    )
 
 
 def record_feature_index_path(record: dict[str, Any]) -> Path | None:
@@ -2169,6 +2192,14 @@ def rank_aligned_candidates(
         upload_dir=UPLOAD_DIR,
         data_dir=DATA_DIR,
         generated_trace_ids=list(getattr(app.state, "generated_trace_ids", [])),
+        feature_match_min_good=FEATURE_MATCH_MIN_GOOD,
+        feature_recent_backfill=FEATURE_RECENT_BACKFILL,
+        feature_recent_reserve=FEATURE_RECENT_RESERVE,
+        record_feature_index_path_fn=record_feature_index_path,
+        save_record_feature_index_fn=save_record_feature_index,
+        extract_feature_descriptors_fn=extract_feature_descriptors,
+        load_feature_descriptors_fn=load_feature_descriptors,
+        descriptor_match_score_fn=descriptor_match_score,
     )
 
 
@@ -2621,7 +2652,14 @@ def image_to_cv_gray(image: Image.Image, max_side: int = 1200):
 
 
 def record_visual_consistency(image: Image.Image, record: dict[str, Any]) -> tuple[bool, int, float, float]:
-    return imaging_feature_matching.record_visual_consistency(image, record, UPLOAD_DIR)
+    return imaging_feature_matching.record_visual_consistency(
+        image,
+        record,
+        UPLOAD_DIR,
+        image_to_cv_gray_fn=image_to_cv_gray,
+        feature_match_score_fn=feature_match_score,
+        robust_residual_score_fn=robust_residual_score,
+    )
 
 
 def residual_candidate_evidence(image: Image.Image) -> dict[str, Any] | None:
@@ -2645,7 +2683,13 @@ def feature_match_homography(query_gray, target_gray):
 
 
 def align_query_to_record(image: Image.Image, record: dict[str, Any]) -> dict[str, Any] | None:
-    return imaging_feature_matching.align_query_to_record(image, record, UPLOAD_DIR)
+    return imaging_feature_matching.align_query_to_record(
+        image,
+        record,
+        UPLOAD_DIR,
+        resize_for_residual_fn=resize_for_residual,
+        feature_match_homography_fn=feature_match_homography,
+    )
 
 
 def resize_for_residual(image: Image.Image, max_side: int = 1200) -> Image.Image:
@@ -2661,6 +2705,9 @@ def robust_residual_score(
 ) -> float:
     return imaging_feature_matching.robust_residual_score(
         query_image, original_path, watermarked_path, min_inliers, min_ratio,
+        robust_channel=ROBUST_CHANNEL,
+        resize_for_residual_fn=resize_for_residual,
+        feature_match_homography_fn=feature_match_homography,
     )
 
 
@@ -2671,6 +2718,10 @@ def detect_by_visual_match(image: Image.Image) -> dict[str, Any] | None:
         upload_dir=UPLOAD_DIR,
         with_evidence_fields=with_evidence_fields,
         now_text=now_text,
+        watermark_layers=WATERMARK_LAYERS,
+        image_to_cv_gray_fn=image_to_cv_gray,
+        feature_match_score_fn=feature_match_score,
+        robust_residual_score_fn=robust_residual_score,
     )
 
 
@@ -2685,19 +2736,29 @@ def load_font(size: int) -> ImageFont.ImageFont:
 
 
 def load_random_font(size: int, rng: np.random.Generator) -> ImageFont.ImageFont:
-    return imaging_visible_mark.load_random_font(size, rng)
+    return imaging_visible_mark.load_random_font(size, rng, load_font_fn=load_font)
 
 
 def draw_text_pattern(layer: Image.Image, text: str, angle: int, gap: int, opacity: int) -> None:
-    return imaging_visible_mark.draw_text_pattern(layer, text, angle, gap, opacity)
+    return imaging_visible_mark.draw_text_pattern(
+        layer, text, angle, gap, opacity, load_font_fn=load_font,
+    )
 
 
 def draw_irregular_text_pattern(layer: Image.Image, text: str, opacity: int, complexity: str) -> None:
-    return imaging_visible_mark.draw_irregular_text_pattern(layer, text, opacity, complexity)
+    return imaging_visible_mark.draw_irregular_text_pattern(
+        layer,
+        text,
+        opacity,
+        complexity,
+        load_random_font_fn=load_random_font,
+    )
 
 
 def draw_prominent_corner_label(image: Image.Image, text: str) -> Image.Image:
-    return imaging_visible_mark.draw_prominent_corner_label(image, text)
+    return imaging_visible_mark.draw_prominent_corner_label(
+        image, text, load_font_fn=load_font,
+    )
 
 
 def apply_visible_copyright(
@@ -2711,11 +2772,16 @@ def apply_visible_copyright(
 ) -> Image.Image:
     return imaging_visible_mark.apply_visible_copyright(
         image, enabled, text, opacity, complexity, irregular, prominent_corner,
+        draw_irregular_text_pattern_fn=draw_irregular_text_pattern,
+        draw_text_pattern_fn=draw_text_pattern,
+        draw_prominent_corner_label_fn=draw_prominent_corner_label,
     )
 
 
 async def load_upload_image(file: UploadFile) -> Image.Image:
-    return await imaging_io.load_upload_image(file)
+    return await imaging_io.load_upload_image(
+        file, load_image_from_bytes_fn=load_image_from_bytes,
+    )
 
 
 def load_image_from_bytes(content: bytes) -> Image.Image:

@@ -56,6 +56,51 @@ def test_imaging_fingerprints_hashes_file_bytes() -> None:
     )
 
 
+def test_main_alignment_wrapper_uses_patchable_resize_helper(
+    tmp_path: Path, monkeypatch
+) -> None:
+    upload_dir = tmp_path / "uploads"
+    target_path = upload_dir / "watermarked" / "target.png"
+    target_path.parent.mkdir(parents=True)
+    Image.new("RGB", (16, 16), "white").save(target_path)
+
+    resize_calls: list[tuple[int, int]] = []
+    monkeypatch.setattr(main, "UPLOAD_DIR", upload_dir)
+    monkeypatch.setattr(
+        main,
+        "resize_for_residual",
+        lambda image, max_side=1200: resize_calls.append(image.size) or image,
+    )
+
+    main.align_query_to_record(
+        Image.new("RGB", (16, 16), "white"),
+        {"download_url": "/uploads/watermarked/target.png"},
+    )
+
+    assert resize_calls == [(16, 16), (16, 16)]
+
+
+def test_main_candidate_ranking_wrapper_passes_current_feature_constants(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def capture(*args, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(main.imaging_feature_matching, "rank_aligned_candidates", capture)
+    monkeypatch.setattr(main, "FEATURE_MATCH_MIN_GOOD", 101)
+    monkeypatch.setattr(main, "FEATURE_RECENT_BACKFILL", 102)
+    monkeypatch.setattr(main, "FEATURE_RECENT_RESERVE", 103)
+
+    main.rank_aligned_candidates(Image.new("RGB", (1, 1)), [])
+
+    assert captured["feature_match_min_good"] == 101
+    assert captured["feature_recent_backfill"] == 102
+    assert captured["feature_recent_reserve"] == 103
+
+
 def test_main_exposes_expected_routes() -> None:
     actual_routes = Counter(
         (method, route.path)

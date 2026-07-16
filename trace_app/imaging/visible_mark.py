@@ -55,7 +55,12 @@ def load_font(size: int) -> ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-def load_random_font(size: int, rng: np.random.Generator) -> ImageFont.ImageFont:
+def load_random_font(
+    size: int,
+    rng: np.random.Generator,
+    *,
+    load_font_fn: Callable[[int], ImageFont.ImageFont] | None = None,
+) -> ImageFont.ImageFont:
     font_names = [
         "arial.ttf",
         "arialbd.ttf",
@@ -80,14 +85,24 @@ def load_random_font(size: int, rng: np.random.Generator) -> ImageFont.ImageFont
             return ImageFont.truetype(str(path), size)
         except OSError:
             continue
-    return load_font(size)
+    fallback = load_font_fn or load_font
+    return fallback(size)
 
 
-def draw_text_pattern(layer: Image.Image, text: str, angle: int, gap: int, opacity: int) -> None:
+def draw_text_pattern(
+    layer: Image.Image,
+    text: str,
+    angle: int,
+    gap: int,
+    opacity: int,
+    *,
+    load_font_fn: Callable[[int], ImageFont.ImageFont] | None = None,
+) -> None:
     width, height = layer.size
     tile = Image.new("RGBA", (width * 2, height * 2), (0, 0, 0, 0))
     draw = ImageDraw.Draw(tile)
-    font = load_font(max(18, min(width, height) // 18))
+    font_loader = load_font_fn or load_font
+    font = font_loader(max(18, min(width, height) // 18))
     try:
         bbox = draw.textbbox((0, 0), text, font=font)
     except UnicodeEncodeError:
@@ -104,7 +119,15 @@ def draw_text_pattern(layer: Image.Image, text: str, angle: int, gap: int, opaci
     layer.alpha_composite(rotated.crop((width // 2, height // 2, width // 2 + width, height // 2 + height)))
 
 
-def draw_irregular_text_pattern(layer: Image.Image, text: str, opacity: int, complexity: str) -> None:
+def draw_irregular_text_pattern(
+    layer: Image.Image,
+    text: str,
+    opacity: int,
+    complexity: str,
+    *,
+    load_random_font_fn: Callable | None = None,
+) -> None:
+    random_font = load_random_font_fn or load_random_font
     width, height = layer.size
     rng = np.random.default_rng(int.from_bytes(os.urandom(8), "big"))
     base_size = max(16, min(width, height) // 20)
@@ -128,11 +151,11 @@ def draw_irregular_text_pattern(layer: Image.Image, text: str, opacity: int, com
     safe_text = text
     for index in range(count):
         size = int(base_size * float(rng.uniform(0.70, 1.35)))
-        font = load_random_font(size, rng)
+        font = random_font(size, rng)
         if rng.random() < 0.18:
             draw_text = safe_text.replace(" ", "")
             size = max(10, int(size * float(rng.uniform(0.45, 0.65))))
-            font = load_random_font(size, rng)
+            font = random_font(size, rng)
         else:
             draw_text = safe_text
         try:
@@ -157,7 +180,7 @@ def draw_irregular_text_pattern(layer: Image.Image, text: str, opacity: int, com
         layer.alpha_composite(rotated, (x, y))
 
     micro_count = max(18, int(count * 1.8))
-    micro_font = load_random_font(max(9, base_size // 2), rng)
+    micro_font = random_font(max(9, base_size // 2), rng)
     micro_text = text.replace(" ", "")
     for _ in range(micro_count):
         x = int(rng.integers(0, max(1, width - 24)))
@@ -166,12 +189,18 @@ def draw_irregular_text_pattern(layer: Image.Image, text: str, opacity: int, com
         ImageDraw.Draw(layer).text((x, y), micro_text, fill=(255, 255, 255, alpha), font=micro_font)
 
 
-def draw_prominent_corner_label(image: Image.Image, text: str) -> Image.Image:
+def draw_prominent_corner_label(
+    image: Image.Image,
+    text: str,
+    *,
+    load_font_fn: Callable[[int], ImageFont.ImageFont] | None = None,
+) -> Image.Image:
+    font_loader = load_font_fn or load_font
     base = image.convert("RGBA")
     draw = ImageDraw.Draw(base)
     safe_text = text.strip() or "© QQ:757675150"
     font_size = max(22, min(base.size) // 14)
-    font = load_font(font_size)
+    font = font_loader(font_size)
     try:
         bbox = draw.textbbox((0, 0), safe_text, font=font, stroke_width=max(2, font_size // 18))
     except UnicodeEncodeError:
@@ -180,7 +209,7 @@ def draw_prominent_corner_label(image: Image.Image, text: str) -> Image.Image:
     max_text_width = max(120, int(base.width * 0.72))
     while bbox[2] - bbox[0] > max_text_width and font_size > 16:
         font_size -= 2
-        font = load_font(font_size)
+        font = font_loader(font_size)
         bbox = draw.textbbox((0, 0), safe_text, font=font, stroke_width=max(2, font_size // 18))
 
     stroke_width = max(2, font_size // 18)
@@ -214,7 +243,14 @@ def apply_visible_copyright(
     complexity: str,
     irregular: bool = True,
     prominent_corner: bool = False,
+    *,
+    draw_irregular_text_pattern_fn: Callable | None = None,
+    draw_text_pattern_fn: Callable | None = None,
+    draw_prominent_corner_label_fn: Callable | None = None,
 ) -> Image.Image:
+    draw_irregular = draw_irregular_text_pattern_fn or draw_irregular_text_pattern
+    draw_pattern = draw_text_pattern_fn or draw_text_pattern
+    draw_corner = draw_prominent_corner_label_fn or draw_prominent_corner_label
     if not enabled:
         return image.convert("RGB")
 
@@ -233,11 +269,11 @@ def apply_visible_copyright(
         "极": [(-32, 75), (0, 75), (32, 75)],
     }.get(complexity, [(-24, 110)])
     if irregular:
-        draw_irregular_text_pattern(layer, text, alpha, complexity)
+        draw_irregular(layer, text, alpha, complexity)
     else:
         for angle, gap in settings:
-            draw_text_pattern(layer, text, angle, gap, alpha)
+            draw_pattern(layer, text, angle, gap, alpha)
     result = Image.alpha_composite(base, layer).convert("RGB")
     if prominent_corner:
-        result = draw_prominent_corner_label(result, text)
+        result = draw_corner(result, text)
     return result

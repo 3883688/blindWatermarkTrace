@@ -1,14 +1,20 @@
 from io import BytesIO
 from pathlib import Path
+from typing import Callable
 from urllib import request as urllib_request
 
 from fastapi import HTTPException, UploadFile
 from PIL import Image
 
 
-async def load_upload_image(file: UploadFile) -> Image.Image:
+async def load_upload_image(
+    file: UploadFile,
+    *,
+    load_image_from_bytes_fn: Callable[[bytes], Image.Image] | None = None,
+) -> Image.Image:
     content = await file.read()
-    return load_image_from_bytes(content)
+    loader = load_image_from_bytes_fn or load_image_from_bytes
+    return loader(content)
 
 
 def load_image_from_bytes(content: bytes) -> Image.Image:

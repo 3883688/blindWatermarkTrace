@@ -27,23 +27,41 @@ from watermark_v4.features import (
 cv2.setNumThreads(1)
 
 
-def save_record_feature_index(image: Image.Image, record_id: str, data_dir: Path) -> str:
+def save_record_feature_index(
+    image: Image.Image,
+    record_id: str,
+    data_dir: Path,
+    *,
+    extract_feature_descriptors_fn: Callable | None = None,
+    save_feature_descriptors_fn: Callable | None = None,
+) -> str:
     safe_id = re.sub(r"[^A-Za-z0-9_-]", "", str(record_id))
     if not safe_id:
         raise ValueError("feature index record id is invalid")
     relative = Path("feature_index") / f"{safe_id}.npz"
-    descriptors = extract_feature_descriptors(image)
-    save_feature_descriptors(data_dir / relative, descriptors)
+    extractor = extract_feature_descriptors_fn or extract_feature_descriptors
+    saver = save_feature_descriptors_fn or save_feature_descriptors
+    descriptors = extractor(image)
+    saver(data_dir / relative, descriptors)
     return relative.as_posix()
 
 
-def save_record_feature_index_v4(image: Image.Image, record_id: str, data_dir: Path) -> str:
+def save_record_feature_index_v4(
+    image: Image.Image,
+    record_id: str,
+    data_dir: Path,
+    *,
+    extract_v4_feature_index_fn: Callable | None = None,
+    save_v4_feature_index_fn: Callable | None = None,
+) -> str:
     safe_id = re.sub(r"[^A-Za-z0-9_-]", "", str(record_id))
     if not safe_id:
         raise ValueError("feature index record id is invalid")
     relative = Path("feature_index_v4") / f"{safe_id}.npz"
-    index = extract_v4_feature_index(image)
-    save_v4_feature_index(data_dir / relative, index)
+    extractor = extract_v4_feature_index_fn or extract_v4_feature_index
+    saver = save_v4_feature_index_fn or save_v4_feature_index
+    index = extractor(image)
+    saver(data_dir / relative, index)
     return relative.as_posix()
 
 
@@ -67,25 +85,49 @@ def rank_aligned_candidates(
     upload_dir: Path,
     data_dir: Path,
     generated_trace_ids: list[str],
+    feature_match_min_good: int | None = None,
+    feature_recent_backfill: int | None = None,
+    feature_recent_reserve: int | None = None,
+    record_feature_index_path_fn: Callable[[dict[str, Any]], Path | None] | None = None,
+    save_record_feature_index_fn: Callable[[Image.Image, str], str] | None = None,
+    extract_feature_descriptors_fn: Callable | None = None,
+    load_feature_descriptors_fn: Callable | None = None,
+    descriptor_match_score_fn: Callable | None = None,
 ) -> list[dict[str, Any]]:
+    min_good = FEATURE_MATCH_MIN_GOOD if feature_match_min_good is None else feature_match_min_good
+    recent_backfill = (
+        FEATURE_RECENT_BACKFILL if feature_recent_backfill is None else feature_recent_backfill
+    )
+    recent_reserve = (
+        FEATURE_RECENT_RESERVE if feature_recent_reserve is None else feature_recent_reserve
+    )
+    index_path_for = record_feature_index_path_fn or (
+        lambda record: record_feature_index_path(record, data_dir)
+    )
+    save_index = save_record_feature_index_fn or (
+        lambda target, record_id: save_record_feature_index(target, record_id, data_dir)
+    )
+    extract_descriptors = extract_feature_descriptors_fn or extract_feature_descriptors
+    load_descriptors = load_feature_descriptors_fn or load_feature_descriptors
+    score_descriptors = descriptor_match_score_fn or descriptor_match_score
     query_ratio = image.width / max(1, image.height)
-    recent_trace_ids = list(generated_trace_ids[:FEATURE_RECENT_BACKFILL])
+    recent_trace_ids = list(generated_trace_ids[:recent_backfill])
     for record in records:
         trace_id = record.get("trace_id")
-        if len(recent_trace_ids) >= FEATURE_RECENT_BACKFILL:
+        if len(recent_trace_ids) >= recent_backfill:
             break
         if trace_id and record.get("created_at") and trace_id not in recent_trace_ids:
             recent_trace_ids.append(trace_id)
     recent_order = {
         trace_id: index
-        for index, trace_id in enumerate(recent_trace_ids[:FEATURE_RECENT_RESERVE])
+        for index, trace_id in enumerate(recent_trace_ids[:recent_reserve])
     }
     backfill_trace_ids = set(recent_trace_ids)
 
     for record in records:
         if record.get("trace_id") not in backfill_trace_ids:
             continue
-        path = record_feature_index_path(record, data_dir)
+        path = index_path_for(record)
         if path and path.exists():
             continue
         url = record.get("download_url")
@@ -95,22 +137,22 @@ def rank_aligned_candidates(
         image_path = upload_dir / url.replace("/uploads/", "")
         try:
             with Image.open(image_path) as target:
-                save_record_feature_index(target.convert("RGB"), str(record_id), data_dir)
+                save_index(target.convert("RGB"), str(record_id))
         except (OSError, ValueError):
             continue
 
-    query_descriptors = extract_feature_descriptors(image)
+    query_descriptors = extract_descriptors(image)
     feature_ranked = []
     remaining = []
     for record in records:
-        path = record_feature_index_path(record, data_dir)
+        path = index_path_for(record)
         descriptors = (
-            load_feature_descriptors(path)
+            load_descriptors(path)
             if path is not None and path.exists()
             else np.empty((0, 32), dtype=np.uint8)
         )
-        match_count, match_quality = descriptor_match_score(query_descriptors, descriptors)
-        if match_count >= FEATURE_MATCH_MIN_GOOD:
+        match_count, match_quality = score_descriptors(query_descriptors, descriptors)
+        if match_count >= min_good:
             feature_ranked.append({
                 **record,
                 "_feature_match_count": match_count,
@@ -155,7 +197,7 @@ def rank_aligned_candidates(
             and record.get("trace_id") not in feature_trace_ids
         ],
         key=lambda record: recent_order[record.get("trace_id")],
-    )[:FEATURE_RECENT_RESERVE]
+    )[:recent_reserve]
     reserved_ids = {id(record) for record in recent_ranked}
     aspect_ranked = sorted(
         [record for record in remaining if id(record) not in reserved_ids],
@@ -178,7 +220,14 @@ def record_visual_consistency(
     image: Image.Image,
     record: dict[str, Any],
     upload_dir: Path,
+    *,
+    image_to_cv_gray_fn: Callable | None = None,
+    feature_match_score_fn: Callable | None = None,
+    robust_residual_score_fn: Callable | None = None,
 ) -> tuple[bool, int, float, float]:
+    to_gray = image_to_cv_gray_fn or image_to_cv_gray
+    match_score = feature_match_score_fn or feature_match_score
+    residual_score_for = robust_residual_score_fn or robust_residual_score
     url = record.get("download_url")
     original_url = record.get("original_url")
     if not url or not original_url or not url.startswith("/uploads/") or not original_url.startswith("/uploads/"):
@@ -188,12 +237,12 @@ def record_visual_consistency(
     if not path.exists() or not original_path.exists():
         return False, 0, 0.0, 0.0
     try:
-        query = image_to_cv_gray(image)
-        target = image_to_cv_gray(Image.open(path))
+        query = to_gray(image)
+        target = to_gray(Image.open(path))
     except Exception:
         return False, 0, 0.0, 0.0
-    inliers, ratio = feature_match_score(query, target)
-    residual_score = robust_residual_score(image, original_path, path, min_inliers=18, min_ratio=0.32)
+    inliers, ratio = match_score(query, target)
+    residual_score = residual_score_for(image, original_path, path, min_inliers=18, min_ratio=0.32)
     standard_match = inliers >= 18 and ratio >= 0.32 and residual_score >= 0.08
     strong_visual_small_crop_match = inliers >= 30 and ratio >= 0.65 and residual_score >= 0.06
     return (standard_match or strong_visual_small_crop_match), inliers, ratio, residual_score
@@ -313,7 +362,12 @@ def align_query_to_record(
     image: Image.Image,
     record: dict[str, Any],
     upload_dir: Path,
+    *,
+    resize_for_residual_fn: Callable | None = None,
+    feature_match_homography_fn: Callable | None = None,
 ) -> dict[str, Any] | None:
+    resize_image = resize_for_residual_fn or resize_for_residual
+    match_homography = feature_match_homography_fn or feature_match_homography
     url = record.get("download_url")
     if not url or not url.startswith("/uploads/"):
         return None
@@ -321,9 +375,9 @@ def align_query_to_record(
     if not target_path.exists():
         return None
     try:
-        query_image = resize_for_residual(image)
+        query_image = resize_image(image)
         original_target = Image.open(target_path).convert("RGB")
-        target_image = resize_for_residual(original_target)
+        target_image = resize_image(original_target)
     except Exception:
         return None
 
@@ -331,7 +385,7 @@ def align_query_to_record(
     target = np.asarray(target_image, dtype=np.uint8)
     query_gray = cv2.cvtColor(query, cv2.COLOR_RGB2GRAY)
     target_gray = cv2.cvtColor(target, cv2.COLOR_RGB2GRAY)
-    target_to_query, inliers, ratio = feature_match_homography(query_gray, target_gray)
+    target_to_query, inliers, ratio = match_homography(query_gray, target_gray)
     if target_to_query is None or inliers < 18 or ratio < 0.32:
         return None
     try:
@@ -389,13 +443,20 @@ def robust_residual_score(
     watermarked_path: Path,
     min_inliers: int = 80,
     min_ratio: float = 0.80,
+    *,
+    robust_channel: int | None = None,
+    resize_for_residual_fn: Callable | None = None,
+    feature_match_homography_fn: Callable | None = None,
 ) -> float:
-    query = np.array(resize_for_residual(query_image), dtype=np.float32)
-    watermarked = np.array(resize_for_residual(Image.open(watermarked_path)), dtype=np.float32)
-    original = np.array(resize_for_residual(Image.open(original_path)), dtype=np.float32)
+    channel = ROBUST_CHANNEL if robust_channel is None else robust_channel
+    resize_image = resize_for_residual_fn or resize_for_residual
+    match_homography = feature_match_homography_fn or feature_match_homography
+    query = np.array(resize_image(query_image), dtype=np.float32)
+    watermarked = np.array(resize_image(Image.open(watermarked_path)), dtype=np.float32)
+    original = np.array(resize_image(Image.open(original_path)), dtype=np.float32)
     query_gray = cv2.cvtColor(query.astype(np.uint8), cv2.COLOR_RGB2GRAY)
     target_gray = cv2.cvtColor(watermarked.astype(np.uint8), cv2.COLOR_RGB2GRAY)
-    homography, inliers, ratio = feature_match_homography(query_gray, target_gray)
+    homography, inliers, ratio = match_homography(query_gray, target_gray)
     if homography is None or inliers < min_inliers or ratio < min_ratio:
         return 0.0
 
@@ -410,8 +471,8 @@ def robust_residual_score(
     if int(valid.sum()) < query_width * query_height * 0.30:
         return 0.0
 
-    expected = (warped_watermarked[:, :, ROBUST_CHANNEL] - warped_original[:, :, ROBUST_CHANNEL])[valid]
-    observed = (query[:, :, ROBUST_CHANNEL] - warped_original[:, :, ROBUST_CHANNEL])[valid]
+    expected = (warped_watermarked[:, :, channel] - warped_original[:, :, channel])[valid]
+    observed = (query[:, :, channel] - warped_original[:, :, channel])[valid]
     expected = expected - expected.mean()
     observed = observed - observed.mean()
     expected_norm = float(np.linalg.norm(expected))
@@ -428,11 +489,19 @@ def detect_by_visual_match(
     upload_dir: Path,
     with_evidence_fields: Callable[[dict[str, Any], dict[str, Any] | None], dict[str, Any]],
     now_text: Callable[[], str],
+    watermark_layers: list[str] | None = None,
+    image_to_cv_gray_fn: Callable | None = None,
+    feature_match_score_fn: Callable | None = None,
+    robust_residual_score_fn: Callable | None = None,
 ) -> dict[str, Any] | None:
+    to_gray = image_to_cv_gray_fn or image_to_cv_gray
+    match_score = feature_match_score_fn or feature_match_score
+    residual_score_for = robust_residual_score_fn or robust_residual_score
+    active_watermark_layers = WATERMARK_LAYERS if watermark_layers is None else watermark_layers
     if not records:
         return None
 
-    query = image_to_cv_gray(image)
+    query = to_gray(image)
     best_record = None
     best_inliers = 0
     best_ratio = 0.0
@@ -448,12 +517,12 @@ def detect_by_visual_match(
         if not path.exists() or not original_path.exists():
             continue
         try:
-            target = image_to_cv_gray(Image.open(path))
+            target = to_gray(Image.open(path))
         except Exception:
             continue
-        inliers, ratio = feature_match_score(query, target)
+        inliers, ratio = match_score(query, target)
         if inliers >= 80 and ratio >= 0.80:
-            residual_score = robust_residual_score(image, original_path, path)
+            residual_score = residual_score_for(image, original_path, path)
             if residual_score < 0.18:
                 continue
         else:
@@ -480,7 +549,7 @@ def detect_by_visual_match(
         "extracted_at": now_text(),
         "match_inliers": best_inliers,
         "match_ratio": round(best_ratio, 3),
-        "watermark_layers": best_record.get("watermark_layers", WATERMARK_LAYERS),
+        "watermark_layers": best_record.get("watermark_layers", active_watermark_layers),
         "layer_scores": {
             "dct": round(float(best_record.get("_residual_score", 0.0)), 4),
             "dwt": round(float(best_record.get("_residual_score", 0.0)), 4),
