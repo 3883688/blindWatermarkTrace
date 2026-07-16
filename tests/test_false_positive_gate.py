@@ -19,6 +19,7 @@ from sqlalchemy import create_engine
 
 import main
 from database_store import DatabaseStore
+from trace_app.database.repositories import Repository
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +37,8 @@ def isolate_runtime_paths(monkeypatch, tmp_path):
     )
     store.create_schema()
     store.replace_roles(main.DEFAULT_ROLES)
+    monkeypatch.setattr(main.runtime, "store", store)
+    monkeypatch.setattr(main, "repository", Repository(store))
     monkeypatch.setattr(main, "db_store", store)
 
 

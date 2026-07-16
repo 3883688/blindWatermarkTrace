@@ -18,8 +18,6 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFont
-from sqlalchemy import create_engine
-from sqlalchemy.exc import SQLAlchemyError
 import cv2
 import numpy as np
 import pywt
@@ -50,8 +48,6 @@ from watermark_v4.features import (
 from watermark_v4.detector import V4Candidate, detect_v4
 
 from trace_app.config import (
-    ADMIN_PASS,
-    ADMIN_USER,
     BASE_DIR,
     BLOCK_SIZE,
     BLOCK_STRIDE,
@@ -109,15 +105,22 @@ from trace_app.config import (
     WATERMARKED_DIR,
     settings,
 )
+from trace_app.database.connection import (
+    create_runtime,
+    seed_database_defaults as seed_runtime_defaults,
+)
+from trace_app.database.repositories import Repository
 
 RUNNING_PYTEST = "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None
 DB_ENABLED = not RUNNING_PYTEST
 
 app = FastAPI(title=settings.app_name)
 app.state.generated_trace_ids = []
-db_engine = None
-db_store: DatabaseStore | None = None
-db_error = ""
+runtime = create_runtime(settings, enabled=False)
+repository = Repository(runtime.store)
+db_engine = runtime.engine
+db_store = runtime.store
+db_error = runtime.db_error
 
 
 def ensure_dirs() -> None:
@@ -128,56 +131,40 @@ def ensure_dirs() -> None:
 
 
 def require_store() -> DatabaseStore:
-    if db_store is None:
-        raise HTTPException(status_code=503, detail="数据库不可用")
-    return db_store
+    return repository.store
 
 
 def database_ready() -> bool:
-    return db_store is not None
+    return runtime.store is not None
 
 
 def seed_database_defaults(store: DatabaseStore) -> None:
-    if not store.read_roles():
-        store.replace_roles(DEFAULT_ROLES)
-    if ADMIN_USER and ADMIN_PASS and ADMIN_USER not in store.list_users():
-        store.create_user(ADMIN_USER, ADMIN_PASS, "admin")
+    seed_runtime_defaults(store, settings)
 
 
 def initialize_database() -> None:
-    global db_engine, db_error, db_store
+    global db_engine, db_error, db_store, repository, runtime
     if not DB_ENABLED:
         return
-    missing = [
-        name
-        for name, value in (
-            ("DB_URL", DB_URL),
-            ("ADMIN_USER", ADMIN_USER),
-            ("ADMIN_PASS", ADMIN_PASS),
-        )
-        if not value
-    ]
-    if missing:
-        raise RuntimeError(f"Missing required environment variable: {missing[0]}")
     try:
-        db_engine = create_engine(
-            DB_URL,
-            pool_pre_ping=True,
-            pool_recycle=1800,
-            future=True,
-        )
-        db_store = DatabaseStore(db_engine)
-        db_store.create_schema()
-        seed_database_defaults(db_store)
-        db_error = ""
-    except SQLAlchemyError as exc:
-        db_error = type(exc).__name__
-        db_store = None
-        raise RuntimeError("Database initialization failed") from exc
+        runtime = create_runtime(settings)
+    except RuntimeError as exc:
+        failed_runtime = getattr(exc, "runtime", None)
+        if failed_runtime is not None:
+            runtime = failed_runtime
+            repository = Repository(runtime.store)
+            db_engine = runtime.engine
+            db_store = runtime.store
+            db_error = runtime.db_error
+        raise
+    repository = Repository(runtime.store)
+    db_engine = runtime.engine
+    db_store = runtime.store
+    db_error = runtime.db_error
 
 
 def db_clear_all() -> None:
-    require_store().clear_all()
+    repository.db_clear_all()
 
 
 ensure_dirs()
@@ -198,42 +185,27 @@ def masked_db_url() -> str:
 
 
 def read_records() -> list[dict[str, Any]]:
-    return require_store().read_records()
+    return repository.read_records()
 
 
 def write_records(records: list[dict[str, Any]]) -> None:
-    require_store().replace_records(records)
+    repository.write_records(records)
 
 
 def add_record(record: dict[str, Any]) -> None:
-    records = read_records()
-    records.insert(0, record)
-    write_records(records)
+    repository.add_record(record)
 
 
 def read_detection_stats() -> dict[str, int]:
-    stats = require_store().get_stats("detection_stats", {})
-    return {
-        "attempts": int(stats.get("attempts", 0) or 0),
-        "successes": int(stats.get("successes", 0) or 0),
-    }
+    return repository.read_detection_stats()
 
 
 def write_detection_stats(stats: dict[str, int]) -> None:
-    ensure_dirs()
-    normalized = {
-        "attempts": int(stats.get("attempts", 0) or 0),
-        "successes": int(stats.get("successes", 0) or 0),
-    }
-    require_store().set_stats("detection_stats", normalized)
+    repository.write_detection_stats(stats)
 
 
 def record_detection_result(success: bool) -> None:
-    stats = read_detection_stats()
-    stats["attempts"] += 1
-    if success:
-        stats["successes"] += 1
-    write_detection_stats(stats)
+    repository.record_detection_result(success)
 
 
 def is_today_record(record: dict[str, Any]) -> bool:
@@ -242,28 +214,19 @@ def is_today_record(record: dict[str, Any]) -> bool:
 
 
 def read_watermark_stats() -> dict[str, dict[str, int]]:
-    stats = require_store().get_stats("watermark_stats", {})
-    daily = stats.get("daily", {})
-    if not isinstance(daily, dict):
-        daily = {}
-    return {"daily": {str(day): int(count or 0) for day, count in daily.items()}}
+    return repository.read_watermark_stats()
 
 
 def write_watermark_stats(stats: dict[str, Any]) -> None:
-    ensure_dirs()
-    daily = stats.get("daily", {})
-    if not isinstance(daily, dict):
-        daily = {}
-    normalized = {"daily": {str(day): int(count or 0) for day, count in daily.items()}}
-    require_store().set_stats("watermark_stats", normalized)
+    repository.write_watermark_stats(stats)
 
 
 def read_roles() -> dict[str, Any]:
-    return {"roles": require_store().read_roles()}
+    return repository.read_roles()
 
 
 def read_users() -> dict[str, Any]:
-    return {"users": require_store().list_users()}
+    return repository.read_users()
 
 
 def public_users(users: dict[str, Any]) -> dict[str, dict[str, str]]:
@@ -285,18 +248,11 @@ def role_for_username(username: str) -> str:
 
 
 def record_watermark_generation() -> None:
-    stats = read_watermark_stats()
-    today = datetime.now().strftime("%Y-%m-%d")
-    stats["daily"][today] = int(stats["daily"].get(today, 0)) + 1
-    write_watermark_stats(stats)
+    repository.record_watermark_generation()
 
 
 def today_watermark_count(records: list[dict[str, Any]]) -> int:
-    stats = read_watermark_stats()
-    today = datetime.now().strftime("%Y-%m-%d")
-    if today in stats["daily"]:
-        return int(stats["daily"][today])
-    return sum(1 for item in records if is_today_record(item))
+    return repository.today_watermark_count(records, read_watermark_stats())
 
 
 def remember_generated_trace(trace_id: str) -> None:

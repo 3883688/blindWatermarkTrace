@@ -9,6 +9,7 @@ from sqlalchemy import create_engine, select
 import main
 from database_store import DatabaseStore
 from tests.test_watermark_v4_features import _feature_image
+from trace_app.database.repositories import Repository
 from watermark_v4 import V4Config
 from watermark_v4.features import load_feature_index
 
@@ -38,6 +39,8 @@ def isolated_v4_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     store.create_schema()
     store.replace_roles(main.DEFAULT_ROLES)
     store.create_user("test-admin", "admin-password", "admin")
+    monkeypatch.setattr(main.runtime, "store", store)
+    monkeypatch.setattr(main, "repository", Repository(store))
     monkeypatch.setattr(main, "db_store", store, raising=False)
     main.app.state.generated_trace_ids = []
     main.ensure_dirs()

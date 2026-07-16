@@ -6,7 +6,12 @@ from collections import Counter
 from pathlib import Path
 
 import main
+from database_store import DatabaseStore
+from fastapi import HTTPException
+import pytest
+from sqlalchemy import create_engine
 from trace_app.config import Settings
+from trace_app.database.repositories import Repository
 from trace_app.runtime import Runtime
 
 
@@ -155,3 +160,65 @@ def test_runtime_starts_without_database_state() -> None:
     assert runtime.engine is None
     assert runtime.store is None
     assert runtime.generated_trace_ids == []
+
+
+def test_repository_without_store_reports_database_unavailable() -> None:
+    repository = Repository(None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        repository.read_records()
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "数据库不可用"
+
+
+def test_repository_replaces_and_reads_records() -> None:
+    store = DatabaseStore(create_engine("sqlite+pysqlite:///:memory:"))
+    store.create_schema()
+    repository = Repository(store)
+
+    repository.replace_records([{"id": "one"}])
+
+    assert repository.read_records() == [{"id": "one"}]
+
+
+def test_disabled_database_initialization_preserves_existing_state(
+    monkeypatch,
+) -> None:
+    store = DatabaseStore(create_engine("sqlite+pysqlite:///:memory:"))
+    existing_runtime = Runtime(store=store)
+    existing_repository = Repository(store)
+    monkeypatch.setattr(main, "DB_ENABLED", False)
+    monkeypatch.setattr(main, "runtime", existing_runtime)
+    monkeypatch.setattr(main, "repository", existing_repository)
+    monkeypatch.setattr(main, "db_store", store)
+
+    main.initialize_database()
+
+    assert main.runtime is existing_runtime
+    assert main.repository is existing_repository
+    assert main.db_store is store
+
+
+def test_failed_database_initialization_synchronizes_compatibility_state(
+    tmp_path: Path, monkeypatch
+) -> None:
+    unavailable_path = tmp_path / "missing" / "runtime.sqlite3"
+    failing_settings = Settings.from_values(
+        base_dir=tmp_path,
+        upload_dir="uploads",
+        data_dir="data",
+        db_url=f"sqlite+pysqlite:///{unavailable_path}",
+        admin_user="admin",
+        admin_pass="secret",
+    )
+    monkeypatch.setattr(main, "DB_ENABLED", True)
+    monkeypatch.setattr(main, "settings", failing_settings)
+
+    with pytest.raises(RuntimeError, match="Database initialization failed"):
+        main.initialize_database()
+
+    assert main.runtime.db_error == "OperationalError"
+    assert main.runtime.store is None
+    assert main.db_store is None
+    assert main.db_error == "OperationalError"
