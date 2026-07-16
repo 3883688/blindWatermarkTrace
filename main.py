@@ -52,101 +52,71 @@ from watermark_v4.detector import V4Candidate, detect_v4
 
 load_dotenv()
 
-BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "./uploads"))
-DATA_DIR = Path(os.getenv("DATA_DIR", "./data"))
-DB_URL = os.getenv("DB_URL", "").strip()
-ADMIN_USER = os.getenv("ADMIN_USER", "").strip()
-ADMIN_PASS = os.getenv("ADMIN_PASS", "")
+from trace_app.config import (
+    ADMIN_PASS,
+    ADMIN_USER,
+    BASE_DIR,
+    BLOCK_SIZE,
+    BLOCK_STRIDE,
+    CODE_CELL,
+    CODE_CHANNEL_WEIGHTS,
+    CODE_DELTA,
+    CODE_GRID,
+    CODE_PAYLOAD_BITS,
+    CODE_PHYSICAL_BITS,
+    CODE_TILE,
+    CODE_WATERMARK_VERSION,
+    DATA_DIR,
+    DB_URL,
+    DCT_BLOCK,
+    DCT_DELTA,
+    DEFAULT_ROBUST_WATERMARK_STRENGTH,
+    DEFAULT_ROBUST_WATERMARK_VERSION,
+    DEFAULT_ROLES,
+    DEFAULT_WATERMARK_AUTH_KEY,
+    DOT_MATRIX_CELL,
+    DOT_MATRIX_CHANNEL_WEIGHTS,
+    DOT_MATRIX_DELTA,
+    DOT_MATRIX_GRID,
+    DOT_MATRIX_TILE,
+    DOT_MATRIX_VERSION,
+    DWT_DELTA,
+    FEATURE_MATCH_MIN_GOOD,
+    FEATURE_RECENT_BACKFILL,
+    FEATURE_RECENT_RESERVE,
+    FFT_DELTA,
+    MAGIC,
+    MENU_LABELS,
+    ORIGINAL_DIR,
+    ROBUST_BITS,
+    ROBUST_CELL,
+    ROBUST_CHANNEL,
+    ROBUST_DELTA,
+    ROBUST_GRID,
+    ROBUST_MAGIC,
+    ROBUST_TILE,
+    ROBUST_WATERMARK_CODEC_V2,
+    ROBUST_WATERMARK_CODEC_V3,
+    ROBUST_WATERMARK_VERSION_V1,
+    ROBUST_WATERMARK_VERSION_V2,
+    ROBUST_WATERMARK_VERSION_V3,
+    ROBUST_WATERMARK_VERSION_V4,
+    SMALL_TRACE_CHANNEL_WEIGHTS,
+    SMALL_TRACE_DELTA,
+    SMALL_TRACE_SHORT_BITS,
+    SMALL_TRACE_TILE,
+    SMALL_TRACE_VERSION,
+    THUMBNAIL_DIR,
+    UPLOAD_DIR,
+    WATERMARK_LAYERS,
+    WATERMARKED_DIR,
+    settings,
+)
+
 RUNNING_PYTEST = "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None
 DB_ENABLED = not RUNNING_PYTEST
 
-if not UPLOAD_DIR.is_absolute():
-    UPLOAD_DIR = BASE_DIR / UPLOAD_DIR
-if not DATA_DIR.is_absolute():
-    DATA_DIR = BASE_DIR / DATA_DIR
-
-ORIGINAL_DIR = UPLOAD_DIR / "originals"
-WATERMARKED_DIR = UPLOAD_DIR / "watermarked"
-THUMBNAIL_DIR = UPLOAD_DIR / "thumbnails"
-MAGIC = b"MWM1"
-BLOCK_SIZE = 32
-BLOCK_STRIDE = 32
-ROBUST_MAGIC = 0b1010110011010011
-ROBUST_BITS = 64
-ROBUST_CELL = 16
-ROBUST_GRID = 8
-ROBUST_TILE = ROBUST_CELL * ROBUST_GRID
-ROBUST_CHANNEL = 2
-ROBUST_DELTA = 2
-DEFAULT_ROBUST_WATERMARK_STRENGTH = os.getenv("ROBUST_WATERMARK_STRENGTH", "1.0")
-DEFAULT_ROBUST_WATERMARK_VERSION = os.getenv("ROBUST_WATERMARK_VERSION", "1")
-DEFAULT_WATERMARK_AUTH_KEY = os.getenv("WATERMARK_AUTH_KEY", "")
-ROBUST_WATERMARK_VERSION_V1 = 1
-ROBUST_WATERMARK_VERSION_V2 = 2
-ROBUST_WATERMARK_VERSION_V3 = 3
-ROBUST_WATERMARK_VERSION_V4 = 4
-ROBUST_WATERMARK_CODEC_V2 = "rs_24_8_three_phase"
-ROBUST_WATERMARK_CODEC_V3 = "hmac64_full_repeat_phase_permutation_v3"
-FEATURE_MATCH_MIN_GOOD = 12
-FEATURE_RECENT_RESERVE = 2
-FEATURE_RECENT_BACKFILL = 4
-DCT_BLOCK = 8
-DCT_DELTA = 5.0
-DWT_DELTA = 3.0
-FFT_DELTA = 0.45
-CODE_TILE = 160
-CODE_CELL = 20
-CODE_GRID = 8
-CODE_DELTA = 9.0
-CODE_WATERMARK_VERSION = 4
-CODE_PHYSICAL_BITS = 64
-CODE_PAYLOAD_BITS = 48
-CODE_CHANNEL_WEIGHTS = (0.45, 0.75, 0.75)
-SMALL_TRACE_TILE = 96
-SMALL_TRACE_DELTA = 8.0
-SMALL_TRACE_VERSION = 1
-SMALL_TRACE_CHANNEL_WEIGHTS = (0.25, 0.85, 0.85)
-SMALL_TRACE_SHORT_BITS = 16
-DOT_MATRIX_VERSION = 1
-DOT_MATRIX_TILE = 96
-DOT_MATRIX_GRID = 8
-DOT_MATRIX_CELL = DOT_MATRIX_TILE // DOT_MATRIX_GRID
-DOT_MATRIX_DELTA = 7.5
-DOT_MATRIX_CHANNEL_WEIGHTS = (0.80, 0.80, -0.28)
-
-
-WATERMARK_LAYERS = {
-    "lsb": True,
-    "block": True,
-    "dct": True,
-    "dwt": True,
-    "fft": True,
-}
-
-MENU_LABELS = {
-    "watermark": "生成水印",
-    "trace": "图片溯源",
-    "manage": "图片管理",
-    "role": "角色管理",
-}
-
-DEFAULT_ROLES = {
-    "admin": {
-        "label": "管理员",
-        "menus": ["watermark", "trace", "manage", "role"],
-    },
-    "operator": {
-        "label": "操作员",
-        "menus": ["watermark", "trace", "manage"],
-    },
-    "viewer": {
-        "label": "查看员",
-        "menus": ["trace", "manage"],
-    },
-}
-
-app = FastAPI(title=os.getenv("APP_NAME", "WatermarkSystem"))
+app = FastAPI(title=settings.app_name)
 app.state.generated_trace_ids = []
 db_engine = None
 db_store: DatabaseStore | None = None

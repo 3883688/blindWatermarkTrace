@@ -3,6 +3,8 @@ from collections import Counter
 from pathlib import Path
 
 import main
+from trace_app.config import Settings
+from trace_app.runtime import Runtime
 
 
 EXPECTED_ROUTES = {
@@ -64,3 +66,26 @@ def test_main_still_contains_watermark_endpoint_implementation() -> None:
     }
 
     assert "embed_watermark" in top_level_functions
+
+
+def test_settings_resolves_relative_directories_from_base_dir(tmp_path: Path) -> None:
+    settings = Settings.from_values(
+        base_dir=tmp_path,
+        upload_dir="uploads",
+        data_dir="data",
+        db_url="",
+        admin_user="",
+        admin_pass="",
+    )
+
+    assert settings.upload_dir == tmp_path / "uploads"
+    assert settings.data_dir == tmp_path / "data"
+    assert settings.original_dir == tmp_path / "uploads" / "originals"
+
+
+def test_runtime_starts_without_database_state() -> None:
+    runtime = Runtime()
+
+    assert runtime.engine is None
+    assert runtime.store is None
+    assert runtime.generated_trace_ids == []
