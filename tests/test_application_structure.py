@@ -1152,6 +1152,83 @@ def test_main_repository_assignment_is_used_by_compatibility_wrappers(
 def test_main_proxy_uses_normal_missing_attribute_semantics() -> None:
     assert not hasattr(main, "__compatibility_name_that_does_not_exist__")
 
+    with pytest.raises(AttributeError):
+        delattr(main, "compatibility_name_that_does_not_exist")
+
+
+def test_compat_all_covers_public_ast_bindings_and_legacy_import_star() -> None:
+    from trace_app import compat
+
+    tree = ast.parse(Path(compat.__file__).read_text(encoding="utf-8"))
+    public_bindings: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            public_bindings.add(node.name)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            public_bindings.update(
+                alias.asname or alias.name.split(".")[0] for alias in node.names
+            )
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            public_bindings.update(
+                target.id for target in targets if isinstance(target, ast.Name)
+            )
+    public_bindings = {name for name in public_bindings if not name.startswith("_")}
+    public_bindings.discard("install_main_module")
+
+    assert len(compat.__all__) >= 290
+    assert public_bindings <= set(compat.__all__)
+    assert {"datetime", "re", "app", "robust_code_from_trace"} <= set(
+        compat.__all__
+    )
+
+    namespace: dict[str, object] = {}
+    exec("from main import *", namespace)
+    assert set(compat.__all__) <= set(namespace)
+    assert namespace["app"] is main.app
+    assert namespace["robust_code_from_trace"] is main.robust_code_from_trace
+
+
+def test_main_proxy_syncs_public_dict_and_prefers_live_compat_values(
+    monkeypatch,
+) -> None:
+    from trace_app import compat
+
+    assert main.__dict__["app"] is main.app
+    assert main.__dict__["__all__"] == compat.__all__
+
+    original_sys = main.sys
+    replacement = object()
+    monkeypatch.setattr(main, "sys", replacement)
+    assert main.sys is replacement
+    assert main.__dict__["sys"] is replacement
+    assert compat.sys is replacement
+    monkeypatch.undo()
+    assert main.sys is original_sys
+    assert compat.sys is original_sys
+
+    local_app = main.__dict__["app"]
+    monkeypatch.setattr(compat, "app", object())
+    assert main.__dict__["app"] is local_app
+    assert main.app is compat.app
+
+
+def test_main_proxy_public_delete_restore_and_reload(monkeypatch) -> None:
+    original_magic = main.ROBUST_MAGIC
+    monkeypatch.setattr(main, "ROBUST_MAGIC", 0xBEEF)
+    delattr(main, "ROBUST_MAGIC")
+    assert "ROBUST_MAGIC" not in main.__dict__
+    assert not hasattr(main, "ROBUST_MAGIC")
+    monkeypatch.setattr(main, "ROBUST_MAGIC", original_magic, raising=False)
+
+    reloaded = importlib.reload(main)
+
+    assert reloaded is main
+    assert main.__file__.endswith("main.py")
+    assert main.__dict__["app"] is main.app
+    assert "_sys" not in main.__dict__
+    assert "_install" not in main.__dict__
+
 
 def test_focused_compatibility_owners_preserve_legacy_helpers() -> None:
     from trace_app import evidence, utilities

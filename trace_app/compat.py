@@ -2,11 +2,15 @@ import hashlib
 import json
 import inspect
 import os
+import re
 import sys
 import time
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+_MODULE_TYPE = type(sys)
 
 from fastapi import HTTPException, UploadFile
 from PIL import Image, ImageFont
@@ -1444,9 +1448,11 @@ db_engine = runtime.engine
 db_store = runtime.store
 db_error = runtime.db_error
 
+_COMPAT_NAMES = frozenset(globals())
 
-class _MainModuleProxy(type(sys)):
-    _LOCAL_NAMES = {
+
+class _MainModuleProxy(_MODULE_TYPE):
+    _METADATA_NAMES = {
         "__class__",
         "__dict__",
         "__doc__",
@@ -1457,29 +1463,55 @@ class _MainModuleProxy(type(sys)):
         "__spec__",
         "__cached__",
         "__builtins__",
+        "__all__",
     }
 
-    def __getattr__(self, name: str):
-        try:
-            return globals()[name]
-        except KeyError:
-            raise AttributeError(name) from None
+    def __getattribute__(self, name: str):
+        if name in _MainModuleProxy._METADATA_NAMES or (
+            name.startswith("__") and name.endswith("__")
+        ):
+            return super().__getattribute__(name)
+        namespace = globals()
+        if name in namespace:
+            return namespace[name]
+        return super().__getattribute__(name)
 
     def __setattr__(self, name: str, value) -> None:
-        if name in self._LOCAL_NAMES or (name.startswith("__") and name.endswith("__")):
+        namespace = globals()
+        is_local_private = name.startswith("_") and name not in _COMPAT_NAMES
+        if name in self._METADATA_NAMES or is_local_private:
             super().__setattr__(name, value)
             return
-        globals()[name] = value
+        namespace[name] = value
+        super().__setattr__(name, value)
 
     def __delattr__(self, name: str) -> None:
-        if name in self._LOCAL_NAMES or (name.startswith("__") and name.endswith("__")):
+        namespace = globals()
+        is_local_private = name.startswith("_") and name not in _COMPAT_NAMES
+        if name in self._METADATA_NAMES or is_local_private:
             super().__delattr__(name)
             return
-        del globals()[name]
+        missing = object()
+        removed = namespace.pop(name, missing) is not missing
+        if name in self.__dict__:
+            super().__delattr__(name)
+            removed = True
+        if not removed:
+            raise AttributeError(name)
 
     def __dir__(self) -> list[str]:
         return sorted(set(super().__dir__()) | set(globals()))
 
 
 def install_main_module(module) -> None:
-    module.__class__ = _MainModuleProxy
+    _MODULE_TYPE.__setattr__(module, "__class__", _MainModuleProxy)
+    for name in __all__:
+        _MODULE_TYPE.__setattr__(module, name, globals()[name])
+    _MODULE_TYPE.__setattr__(module, "__all__", __all__)
+
+
+__all__ = sorted(
+    name
+    for name in globals()
+    if not name.startswith("_") and name != "install_main_module"
+)

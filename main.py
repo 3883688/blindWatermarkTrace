@@ -1,5 +1,7 @@
-import sys
+import sys as _sys
 
-from trace_app.compat import install_main_module
+from trace_app.compat import install_main_module as _install
 
-install_main_module(sys.modules[__name__])
+_install(_sys.modules[__name__])
+del _install
+del _sys
