@@ -1,3 +1,5 @@
+import ast
+from collections import Counter
 from pathlib import Path
 
 import main
@@ -26,13 +28,14 @@ EXPECTED_ROUTES = {
 
 
 def test_main_exposes_expected_routes() -> None:
-    actual_routes = {
+    actual_routes = Counter(
         (method, route.path)
         for route in main.app.routes
         for method in getattr(route, "methods", set())
-    }
+    )
 
-    assert EXPECTED_ROUTES <= actual_routes
+    for expected_route in EXPECTED_ROUTES:
+        assert actual_routes[expected_route] == 1
 
 
 def test_main_exposes_required_python_api() -> None:
@@ -52,6 +55,12 @@ def test_main_exposes_required_python_api() -> None:
 
 
 def test_main_still_contains_watermark_endpoint_implementation() -> None:
-    source = Path("main.py").read_text(encoding="utf-8")
+    source = Path(main.__file__).read_text(encoding="utf-8")
+    module = ast.parse(source)
+    top_level_functions = {
+        node.name
+        for node in module.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
 
-    assert "def embed_watermark(" in source
+    assert "embed_watermark" in top_level_functions
