@@ -9,6 +9,7 @@ from io import BytesIO
 from types import SimpleNamespace
 from collections import Counter
 from pathlib import Path
+from unittest.mock import patch
 
 import main
 from database_store import DatabaseStore
@@ -1123,7 +1124,9 @@ def test_watermark_routes_are_thin_service_delegators() -> None:
 
 
 def test_main_is_thin_fastapi_entry_point() -> None:
-    source = Path(main.__file__).read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[1] / "main.py").read_text(
+        encoding="utf-8"
+    )
     module = ast.parse(source)
 
     assert len(source.splitlines()) <= 10
@@ -1149,85 +1152,83 @@ def test_main_repository_assignment_is_used_by_compatibility_wrappers(
     assert main.get_watermark_service().repository is main.repository
 
 
-def test_main_proxy_uses_normal_missing_attribute_semantics() -> None:
+def test_main_alias_uses_normal_missing_attribute_semantics() -> None:
     assert not hasattr(main, "__compatibility_name_that_does_not_exist__")
 
     with pytest.raises(AttributeError):
         delattr(main, "compatibility_name_that_does_not_exist")
 
 
-def test_compat_all_covers_public_ast_bindings_and_legacy_import_star() -> None:
+def test_compat_all_matches_legacy_public_api_and_import_star() -> None:
     from trace_app import compat
 
-    tree = ast.parse(Path(compat.__file__).read_text(encoding="utf-8"))
-    public_bindings: set[str] = set()
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            public_bindings.add(node.name)
-        elif isinstance(node, (ast.Import, ast.ImportFrom)):
-            public_bindings.update(
-                alias.asname or alias.name.split(".")[0] for alias in node.names
-            )
-        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            public_bindings.update(
-                target.id for target in targets if isinstance(target, ast.Name)
-            )
-    public_bindings = {name for name in public_bindings if not name.startswith("_")}
-    public_bindings.discard("install_main_module")
-
-    assert len(compat.__all__) >= 290
-    assert public_bindings <= set(compat.__all__)
-    assert {"datetime", "re", "app", "robust_code_from_trace"} <= set(
-        compat.__all__
+    legacy_public_names = frozenset(
+        Path(__file__)
+        .with_name("legacy_main_public_api.txt")
+        .read_text(encoding="utf-8")
+        .splitlines()
     )
+    assert len(legacy_public_names) == 290
+    assert set(compat.__all__) == legacy_public_names
 
     namespace: dict[str, object] = {}
     exec("from main import *", namespace)
-    assert set(compat.__all__) <= set(namespace)
+    assert set(namespace) - {"__builtins__"} == legacy_public_names
     assert namespace["app"] is main.app
     assert namespace["robust_code_from_trace"] is main.robust_code_from_trace
 
 
-def test_main_proxy_syncs_public_dict_and_prefers_live_compat_values(
-    monkeypatch,
-) -> None:
+def test_main_is_standard_alias_with_one_live_dictionary() -> None:
     from trace_app import compat
 
+    assert main is compat
+    assert main.__dict__ is compat.__dict__
     assert main.__dict__["app"] is main.app
-    assert main.__dict__["__all__"] == compat.__all__
 
-    original_sys = main.sys
-    replacement = object()
-    monkeypatch.setattr(main, "sys", replacement)
-    assert main.sys is replacement
-    assert main.__dict__["sys"] is replacement
-    assert compat.sys is replacement
-    monkeypatch.undo()
-    assert main.sys is original_sys
-    assert compat.sys is original_sys
-
-    local_app = main.__dict__["app"]
-    monkeypatch.setattr(compat, "app", object())
-    assert main.__dict__["app"] is local_app
-    assert main.app is compat.app
+    with patch.dict(main.__dict__, {"ROBUST_MAGIC": 0xBEEF}):
+        assert compat.ROBUST_MAGIC == 0xBEEF
+        assert main.robust_code_from_trace("TRACE-ALIAS") >> 48 == 0xBEEF
 
 
-def test_main_proxy_public_delete_restore_and_reload(monkeypatch) -> None:
+def test_main_alias_delete_and_reload_restores_module_state() -> None:
     original_magic = main.ROBUST_MAGIC
-    monkeypatch.setattr(main, "ROBUST_MAGIC", 0xBEEF)
+    dispose_calls: list[str] = []
+    main.runtime.engine = SimpleNamespace(
+        dispose=lambda: dispose_calls.append("disposed")
+    )
     delattr(main, "ROBUST_MAGIC")
-    assert "ROBUST_MAGIC" not in main.__dict__
     assert not hasattr(main, "ROBUST_MAGIC")
-    monkeypatch.setattr(main, "ROBUST_MAGIC", original_magic, raising=False)
 
     reloaded = importlib.reload(main)
 
     assert reloaded is main
-    assert main.__file__.endswith("main.py")
+    assert main.ROBUST_MAGIC == original_magic
     assert main.__dict__["app"] is main.app
-    assert "_sys" not in main.__dict__
-    assert "_install" not in main.__dict__
+    assert dispose_calls == ["disposed"]
+
+
+def test_compat_long_functions_are_delegators_or_approved_composition() -> None:
+    from trace_app import compat
+
+    tree = ast.parse(Path(compat.__file__).read_text(encoding="utf-8"))
+    approved_composition = {
+        "initialize_database",
+        "_records_call_mode",
+        "get_watermark_service",
+        "detect_aligned_authenticated_watermark",
+        "detect_robust_watermark",
+        "get_management_service",
+    }
+    non_delegators: set[str] = set()
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.end_lineno - node.lineno + 1 <= 15:
+            continue
+        if len(node.body) != 1 or not isinstance(node.body[0], ast.Return):
+            non_delegators.add(node.name)
+
+    assert non_delegators == approved_composition
 
 
 def test_focused_compatibility_owners_preserve_legacy_helpers() -> None:
