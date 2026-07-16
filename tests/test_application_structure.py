@@ -80,6 +80,54 @@ def test_detection_pipeline_stops_after_first_match() -> None:
     assert calls == ["first"]
 
 
+def test_detection_pipeline_exposes_detect_method() -> None:
+    detection = importlib.import_module("trace_app.watermark.detection")
+    expected = {"trace_id": "matched"}
+
+    pipeline = detection.DetectionPipeline((lambda image: expected,))
+
+    assert pipeline.detect(Image.new("RGB", (1, 1))) == expected
+
+
+def test_main_robust_code_uses_current_magic(monkeypatch) -> None:
+    monkeypatch.setattr(main, "ROBUST_MAGIC", 0xBEEF)
+
+    assert main.robust_code_from_trace("TRACE-DYNAMIC-MAGIC") >> 48 == 0xBEEF
+
+
+def test_main_extract_robust_code_uses_patchable_grid_decoder(monkeypatch) -> None:
+    trace_id = "TRACE-DYNAMIC-GRID"
+    expected_code = main.robust_code_from_trace(trace_id)
+    calls: list[tuple[int, int, int]] = []
+
+    def decode_grid(array, cell, offset_x, offset_y):
+        calls.append((cell, offset_x, offset_y))
+        return expected_code, 1.0, main.ROBUST_BITS
+
+    monkeypatch.setattr(main, "extract_robust_from_grid", decode_grid)
+
+    result = main.extract_robust_code(
+        Image.new("RGB", (main.ROBUST_TILE * 2, main.ROBUST_TILE * 2)),
+        records=[{"trace_id": trace_id}],
+    )
+
+    assert result == (trace_id, 1.0, main.ROBUST_BITS)
+    assert calls
+
+
+def test_full_lsb_match_does_not_read_aligned_state(monkeypatch) -> None:
+    payload = {"trace_id": "TRACE-LSB", "mode": "lsb"}
+    monkeypatch.setattr(main, "v4_candidate_records", lambda: ())
+    monkeypatch.setattr(main, "extract_full_lsb", lambda image: payload)
+    monkeypatch.setattr(main, "read_records", lambda: [])
+    monkeypatch.setattr(main, "record_detection_result", lambda success: None)
+    monkeypatch.delattr(main.app.state, "aligned_candidate_limit", raising=False)
+
+    result = main.extract_watermark_from_image(Image.new("RGB", (1, 1)))
+
+    assert result["trace_id"] == "TRACE-LSB"
+
+
 def test_small_trace_short_code_is_deterministic() -> None:
     assert small_trace_short_code("TRACE-20260716") == 14136
 

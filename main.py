@@ -350,16 +350,55 @@ def with_evidence_fields(result: dict[str, Any], record: dict[str, Any] | None) 
     return result
 
 
+def _robust_config() -> watermark_robust.RobustConfig:
+    return watermark_robust.RobustConfig(
+        robust_bits=ROBUST_BITS,
+        robust_cell=ROBUST_CELL,
+        robust_channel=ROBUST_CHANNEL,
+        robust_delta=ROBUST_DELTA,
+        robust_grid=ROBUST_GRID,
+        robust_magic=ROBUST_MAGIC,
+        robust_tile=ROBUST_TILE,
+        code_payload_bits=CODE_PAYLOAD_BITS,
+        code_physical_bits=CODE_PHYSICAL_BITS,
+    )
+
+
+def _robust_dependencies() -> watermark_robust.RobustDependencies:
+    return watermark_robust.RobustDependencies(
+        robust_code_from_trace=robust_code_from_trace,
+        robust_bits_from_code=robust_bits_from_code,
+        robust_payload_bytes=robust_payload_bytes,
+        code_crc16=code_crc16,
+        watermark_payload_from_trace=watermark_payload_from_trace,
+        hamming_distance=hamming_distance,
+        iter_robust_tiles=iter_robust_tiles,
+        robust_pattern=robust_pattern,
+        encode_codeword=encode_codeword,
+        codeword_phase=codeword_phase,
+        tile_phase=tile_phase,
+        permuted_code_bits=permuted_code_bits,
+        phase_permutation=phase_permutation,
+        extract_robust_from_grid=extract_robust_from_grid,
+        scores_to_byte=_scores_to_byte,
+        phase_scores_to_codeword=_phase_scores_to_codeword,
+        decode_expected_codeword=decode_expected_codeword,
+        record_v3_auth_code=_record_v3_auth_code,
+    )
+
+
 def robust_code_from_trace(trace_id: str) -> int:
-    return watermark_robust.robust_code_from_trace(trace_id)
+    return watermark_robust.robust_code_from_trace(trace_id, config=_robust_config())
 
 
 def robust_bits_from_code(code: int) -> list[int]:
-    return watermark_robust.robust_bits_from_code(code)
+    return watermark_robust.robust_bits_from_code(code, config=_robust_config())
 
 
 def robust_payload_bytes(trace_id: str) -> bytes:
-    return watermark_robust.robust_payload_bytes(trace_id)
+    return watermark_robust.robust_payload_bytes(
+        trace_id, config=_robust_config(), dependencies=_robust_dependencies()
+    )
 
 
 def code_crc16(value: int) -> int:
@@ -367,11 +406,15 @@ def code_crc16(value: int) -> int:
 
 
 def watermark_payload_from_trace(trace_id: str) -> int:
-    return watermark_robust.watermark_payload_from_trace(trace_id)
+    return watermark_robust.watermark_payload_from_trace(
+        trace_id, config=_robust_config(), dependencies=_robust_dependencies()
+    )
 
 
 def watermark_bits_from_trace(trace_id: str) -> list[int]:
-    return watermark_robust.watermark_bits_from_trace(trace_id)
+    return watermark_robust.watermark_bits_from_trace(
+        trace_id, config=_robust_config(), dependencies=_robust_dependencies()
+    )
 
 
 
@@ -379,7 +422,7 @@ def watermark_bits_from_trace(trace_id: str) -> list[int]:
 
 
 def recover_payload_from_code(code: int) -> tuple[int, int]:
-    return watermark_robust.recover_payload_from_code(code)
+    return watermark_robust.recover_payload_from_code(code, config=_robust_config())
 
 
 
@@ -505,7 +548,12 @@ def normalize_robust_watermark_version(value: str | int | None) -> int:
 
 
 def robust_code_to_trace(code: int) -> str | None:
-    return watermark_robust.robust_code_to_trace(code, records=read_records())
+    return watermark_robust.robust_code_to_trace(
+        code,
+        records=read_records(),
+        config=_robust_config(),
+        dependencies=_robust_dependencies(),
+    )
 
 
 def hamming_distance(left: int, right: int) -> int:
@@ -514,7 +562,11 @@ def hamming_distance(left: int, right: int) -> int:
 
 def robust_code_to_trace_fuzzy(code: int, max_errors: int = 18) -> tuple[str | None, int]:
     return watermark_robust.robust_code_to_trace_fuzzy(
-        code, max_errors, records=read_records()
+        code,
+        max_errors,
+        records=read_records(),
+        config=_robust_config(),
+        dependencies=_robust_dependencies(),
     )
 
 
@@ -531,11 +583,19 @@ def legacy_robust_candidate_records() -> list[dict[str, Any]]:
 
 
 def iter_robust_tiles(width: int, height: int):
-    yield from watermark_robust.iter_robust_tiles(width, height)
+    yield from watermark_robust.iter_robust_tiles(
+        width, height, config=_robust_config()
+    )
 
 
 def embed_robust_watermark(image: Image.Image, trace_id: str, strength_scale: float = 1.0) -> Image.Image:
-    return watermark_robust.embed_robust_watermark(image, trace_id, strength_scale)
+    return watermark_robust.embed_robust_watermark(
+        image,
+        trace_id,
+        strength_scale,
+        config=_robust_config(),
+        dependencies=_robust_dependencies(),
+    )
 
 
 def embed_robust_watermark_v2(
@@ -543,7 +603,13 @@ def embed_robust_watermark_v2(
     trace_id: str,
     strength_scale: float = 1.0,
 ) -> Image.Image:
-    return watermark_robust.embed_robust_watermark_v2(image, trace_id, strength_scale)
+    return watermark_robust.embed_robust_watermark_v2(
+        image,
+        trace_id,
+        strength_scale,
+        config=_robust_config(),
+        dependencies=_robust_dependencies(),
+    )
 
 
 def embed_robust_watermark_v3(
@@ -551,11 +617,24 @@ def embed_robust_watermark_v3(
     auth_code: bytes,
     strength_scale: float = 1.0,
 ) -> Image.Image:
-    return watermark_robust.embed_robust_watermark_v3(image, auth_code, strength_scale)
+    return watermark_robust.embed_robust_watermark_v3(
+        image,
+        auth_code,
+        strength_scale,
+        config=_robust_config(),
+        dependencies=_robust_dependencies(),
+    )
 
 
 def extract_robust_from_grid(arr: np.ndarray, cell: int, offset_x: int, offset_y: int) -> tuple[int | None, float, int]:
-    return watermark_robust.extract_robust_from_grid(arr, cell, offset_x, offset_y)
+    return watermark_robust.extract_robust_from_grid(
+        arr,
+        cell,
+        offset_x,
+        offset_y,
+        config=_robust_config(),
+        dependencies=_robust_dependencies(),
+    )
 
 
 def decode_aligned_robust_trace(
@@ -563,7 +642,13 @@ def decode_aligned_robust_trace(
     record: dict[str, Any],
     max_errors: int = 4,
 ) -> dict[str, Any] | None:
-    return watermark_robust.decode_aligned_robust_trace(alignment, record, max_errors)
+    return watermark_robust.decode_aligned_robust_trace(
+        alignment,
+        record,
+        max_errors,
+        config=_robust_config(),
+        dependencies=_robust_dependencies(),
+    )
 
 
 def _scores_to_byte(scores: np.ndarray) -> tuple[int, float]:
@@ -574,14 +659,24 @@ def _phase_scores_to_codeword(
     phase_scores: np.ndarray,
     phase_counts: list[int],
 ) -> tuple[bytes, list[float]]:
-    return watermark_robust._phase_scores_to_codeword(phase_scores, phase_counts)
+    return watermark_robust._phase_scores_to_codeword(
+        phase_scores,
+        phase_counts,
+        config=_robust_config(),
+        dependencies=_robust_dependencies(),
+    )
 
 
 def decode_aligned_robust_trace_v2(
     alignment: dict[str, Any],
     record: dict[str, Any],
 ) -> dict[str, Any] | None:
-    return watermark_robust.decode_aligned_robust_trace_v2(alignment, record)
+    return watermark_robust.decode_aligned_robust_trace_v2(
+        alignment,
+        record,
+        config=_robust_config(),
+        dependencies=_robust_dependencies(),
+    )
 
 
 def _record_v3_auth_code(record: dict[str, Any]) -> bytes | None:
@@ -594,7 +689,11 @@ def decode_aligned_robust_trace_v3(
     max_errors: int = 8,
 ) -> dict[str, Any] | None:
     return watermark_robust.decode_aligned_robust_trace_v3(
-        alignment, record, max_errors
+        alignment,
+        record,
+        max_errors,
+        config=_robust_config(),
+        dependencies=_robust_dependencies(),
     )
 
 
@@ -699,12 +798,18 @@ def detect_aligned_authenticated_watermark(
         codec_v2=ROBUST_WATERMARK_CODEC_V2,
         codec_v3=ROBUST_WATERMARK_CODEC_V3,
         watermark_layers=WATERMARK_LAYERS,
+        perf_counter=time.perf_counter,
     )
 
 
 def extract_robust_code(image: Image.Image, records: list[dict[str, Any]] | None = None) -> tuple[str | None, float, int]:
     current_records = records if records is not None else legacy_robust_candidate_records()
-    return watermark_robust.extract_robust_code(image, records=current_records)
+    return watermark_robust.extract_robust_code(
+        image,
+        records=current_records,
+        config=_robust_config(),
+        dependencies=_robust_dependencies(),
+    )
 
 
 def detect_robust_watermark(image: Image.Image) -> dict[str, Any] | None:
@@ -1479,12 +1584,7 @@ def extract_watermark_from_image(image: Image.Image) -> dict[str, Any]:
             status_code=404, detail="未检测到可识别的隐式水印"
         ),
         watermark_layers=WATERMARK_LAYERS,
-        aligned_authenticated_detection_enabled=app.state.aligned_authenticated_detection_enabled,
-        aligned_candidate_limit=app.state.aligned_candidate_limit,
-        watermark_detection_budget_seconds=app.state.watermark_detection_budget_seconds,
-        dense_watermark_fallback_enabled=app.state.dense_watermark_fallback_enabled,
-        visual_match_fallback_enabled=app.state.visual_match_fallback_enabled,
-        visible_watermark_detection_enabled=app.state.visible_watermark_detection_enabled,
+        state_value=lambda name: getattr(app.state, name),
     )
 
 

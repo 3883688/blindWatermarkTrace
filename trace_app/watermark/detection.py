@@ -15,12 +15,15 @@ Detector = Callable[[Image.Image], dict[str, Any] | None]
 class DetectionPipeline:
     detectors: tuple[Detector, ...]
 
-    def __call__(self, image: Image.Image) -> dict[str, Any] | None:
+    def detect(self, image: Image.Image) -> dict[str, Any] | None:
         for detector in self.detectors:
             result = detector(image)
             if result is not None:
                 return result
         return None
+
+    def __call__(self, image: Image.Image) -> dict[str, Any] | None:
+        return self.detect(image)
 
 
 def v4_candidate_records(
@@ -175,12 +178,7 @@ def extract_watermark_from_image(
     layer_scores_for_image: Callable[[Image.Image, str], Any],
     not_found_error: Callable[[], Exception],
     watermark_layers: Any,
-    aligned_authenticated_detection_enabled: bool,
-    aligned_candidate_limit: int,
-    watermark_detection_budget_seconds: float,
-    dense_watermark_fallback_enabled: bool,
-    visual_match_fallback_enabled: bool,
-    visible_watermark_detection_enabled: bool,
+    state_value: Callable[[str], Any],
 ) -> dict[str, Any]:
     if v4_candidates:
         if is_registered_original_image(image):
@@ -203,16 +201,16 @@ def extract_watermark_from_image(
             if dot_matrix_match:
                 record_detection_result(True)
                 return dot_matrix_match
-            if aligned_authenticated_detection_enabled:
+            if state_value("aligned_authenticated_detection_enabled"):
                 aligned_match = detect_aligned_authenticated_watermark(
                     image,
-                    candidate_limit=aligned_candidate_limit,
-                    budget_seconds=watermark_detection_budget_seconds,
+                    candidate_limit=state_value("aligned_candidate_limit"),
+                    budget_seconds=state_value("watermark_detection_budget_seconds"),
                 )
                 if aligned_match:
                     record_detection_result(True)
                     return aligned_match
-            if dense_watermark_fallback_enabled:
+            if state_value("dense_watermark_fallback_enabled"):
                 if should_run_visual_match_fallback(image):
                     visual_match = detect_by_visual_match(image)
                     if visual_match:
@@ -230,7 +228,7 @@ def extract_watermark_from_image(
                 if robust_match:
                     record_detection_result(True)
                     return robust_match
-        if visual_match_fallback_enabled:
+        if state_value("visual_match_fallback_enabled"):
             visual_match = detect_by_visual_match(image)
             if visual_match:
                 record_detection_result(True)
@@ -239,7 +237,7 @@ def extract_watermark_from_image(
         if residual_match:
             record_detection_result(True)
             return residual_match
-        if visible_watermark_detection_enabled:
+        if state_value("visible_watermark_detection_enabled"):
             fallback = detect_visible_copyright(image)
             if fallback:
                 record_detection_result(True)
