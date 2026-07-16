@@ -6,7 +6,7 @@ import re
 import shutil
 import sys
 import time
-import uuid
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -120,6 +120,7 @@ from trace_app.watermark import frequency as watermark_frequency
 from trace_app.watermark import lsb as watermark_lsb
 from trace_app.watermark import robust as watermark_robust
 from trace_app.watermark import small_crop as watermark_small_crop
+from trace_app.watermark.service import WatermarkOperations, WatermarkService
 from trace_app.watermark.frequency import (
     apply_dct_layer,
     apply_dwt_layer,
@@ -303,6 +304,92 @@ def get_auth_service() -> AuthService:
     return AuthService(repository)
 
 
+def get_watermark_service() -> WatermarkService:
+    generated_trace_ids = getattr(app.state, "generated_trace_ids", [])
+    runtime.generated_trace_ids = generated_trace_ids
+    effective_settings = settings
+    if settings.upload_dir != Path(UPLOAD_DIR) or settings.data_dir != Path(DATA_DIR):
+        effective_settings = replace(
+            settings,
+            upload_dir=Path(UPLOAD_DIR),
+            data_dir=Path(DATA_DIR),
+        )
+    return WatermarkService(
+        settings=effective_settings,
+        repository=repository,
+        runtime=runtime,
+        operations=WatermarkOperations(
+            ensure_dirs=ensure_dirs,
+            evidence_uuid_fields=evidence_uuid_fields,
+            load_upload_image=load_upload_image,
+            normalize_mode=normalize_mode,
+            apply_visible_copyright=apply_visible_copyright,
+            parse_bool=parse_bool,
+            clamp_float=clamp_float,
+            now_text=now_text,
+            mode_label=mode_label,
+            fidelity_to_strength=fidelity_to_strength,
+            robust_strength_to_scale=robust_strength_to_scale,
+            normalize_robust_watermark_version=normalize_robust_watermark_version,
+            v4_config=V4Config,
+            v4_authentication_tag=v4_authentication_tag,
+            auth_code_from_trace=auth_code_from_trace,
+            state_value=lambda name: getattr(app.state, name),
+            small_crop_strength_to_scale=small_crop_strength_to_scale,
+            normalize_small_crop_density=normalize_small_crop_density,
+            embed_v4_pilot=embed_v4_pilot,
+            encode_v4_codeword=encode_v4_codeword,
+            embed_v4_codeword=embed_v4_codeword,
+            embed_robust_watermark=embed_robust_watermark,
+            embed_robust_watermark_v2=embed_robust_watermark_v2,
+            embed_robust_watermark_v3=embed_robust_watermark_v3,
+            apply_frequency_layers=apply_frequency_layers,
+            apply_code_layer=apply_code_layer,
+            apply_small_crop_trace_layer=apply_small_crop_trace_layer,
+            apply_dot_matrix_trace_layer=apply_dot_matrix_trace_layer,
+            embed_lsb=embed_lsb,
+            save_thumbnail=save_thumbnail,
+            save_record_feature_index=save_record_feature_index,
+            save_record_feature_index_v4=save_record_feature_index_v4,
+            path_sha256=path_sha256,
+            image_content_sha256=image_content_sha256,
+            layer_scores_for_image=layer_scores_for_image,
+            matched_file_fingerprint=matched_file_fingerprint,
+            read_records=read_records,
+            load_image_from_bytes=load_image_from_bytes,
+            load_image_from_url=load_image_from_url,
+            v4_candidate_records=v4_candidate_records,
+            detect_v4_watermark=detect_v4_watermark,
+            extract_full_lsb=extract_full_lsb,
+            extract_block_lsb=extract_block_lsb,
+            is_registered_original_image=is_registered_original_image,
+            should_run_frequency_fallbacks=should_run_frequency_fallbacks,
+            should_run_visual_match_fallback=should_run_visual_match_fallback,
+            detect_dot_matrix_trace=detect_dot_matrix_trace,
+            detect_aligned_authenticated_watermark=detect_aligned_authenticated_watermark,
+            detect_by_visual_match=detect_by_visual_match,
+            detect_small_crop_trace=detect_small_crop_trace,
+            detect_watermark_code=detect_watermark_code,
+            detect_robust_watermark=detect_robust_watermark,
+            detect_by_residual_match=detect_by_residual_match,
+            detect_visible_copyright=detect_visible_copyright,
+            record_detection_result=record_detection_result,
+            with_evidence_fields=with_evidence_fields,
+            watermark_detection_pipeline=watermark_detection.extract_watermark_from_image,
+            default_watermark_auth_key=DEFAULT_WATERMARK_AUTH_KEY,
+            robust_version_v2=ROBUST_WATERMARK_VERSION_V2,
+            robust_version_v3=ROBUST_WATERMARK_VERSION_V3,
+            robust_version_v4=ROBUST_WATERMARK_VERSION_V4,
+            robust_codec_v2=ROBUST_WATERMARK_CODEC_V2,
+            robust_codec_v3=ROBUST_WATERMARK_CODEC_V3,
+            small_trace_version=SMALL_TRACE_VERSION,
+            dot_matrix_version=DOT_MATRIX_VERSION,
+            code_watermark_version=CODE_WATERMARK_VERSION,
+            watermark_layers=WATERMARK_LAYERS,
+        ),
+    )
+
+
 def public_users(users: dict[str, Any]) -> dict[str, dict[str, str]]:
     return get_auth_service().public_users(users)
 
@@ -323,12 +410,6 @@ def today_watermark_count(records: list[dict[str, Any]]) -> int:
     return repository.today_watermark_count(
         records, read_watermark_stats(), is_today=is_today_record
     )
-
-
-def remember_generated_trace(trace_id: str) -> None:
-    generated = list(getattr(app.state, "generated_trace_ids", []))
-    generated.insert(0, trace_id)
-    app.state.generated_trace_ids = generated[:24]
 
 
 def evidence_uuid_fields(evidence_uuid: str) -> dict[str, str]:
@@ -1342,231 +1423,39 @@ async def embed_watermark(
     dot_matrix_trace_enabled: str = Form("false"),
     dot_matrix_trace_strength: str = Form("0.85"),
 ) -> dict[str, Any]:
-    ensure_dirs()
-    image_id = uuid.uuid4().hex
-    trace_id = f"TR-{uuid.uuid4().hex[:16].upper()}"
-    evidence_uuid = uuid.uuid4().hex.upper()
-    evidence_fields = evidence_uuid_fields(evidence_uuid)
-    safe_name = Path(file.filename or "image.png").name
-    original_path = ORIGINAL_DIR / f"{image_id}-{safe_name}"
-    output_path = WATERMARKED_DIR / f"{image_id}-watermarked.png"
-    thumbnail_path = THUMBNAIL_DIR / f"{image_id}-thumb.png"
-
-    image = await load_upload_image(file)
-    image.save(original_path)
-    normalized_mode = normalize_mode(mode)
-    visible = apply_visible_copyright(
-        image,
-        parse_bool(copyright_enabled),
-        copyright_text,
-        clamp_float(copyright_opacity, 0.16, 0.02, 0.90),
-        copyright_complexity,
-        parse_bool(copyright_irregular_enabled),
-        parse_bool(copyright_prominent_corner_enabled),
+    return await get_watermark_service().embed(
+        file=file,
+        user_id=user_id,
+        mode=mode,
+        copyright_enabled=copyright_enabled,
+        copyright_text=copyright_text,
+        copyright_opacity=copyright_opacity,
+        copyright_complexity=copyright_complexity,
+        copyright_irregular_enabled=copyright_irregular_enabled,
+        copyright_prominent_corner_enabled=copyright_prominent_corner_enabled,
+        fidelity_level=fidelity_level,
+        robust_watermark_strength=robust_watermark_strength,
+        robust_watermark_version=robust_watermark_version,
+        small_crop_trace_enabled=small_crop_trace_enabled,
+        small_crop_trace_strength=small_crop_trace_strength,
+        small_crop_trace_density=small_crop_trace_density,
+        dot_matrix_trace_enabled=dot_matrix_trace_enabled,
+        dot_matrix_trace_strength=dot_matrix_trace_strength,
     )
-    created_at = now_text()
-    payload = {
-        "id": image_id,
-        "trace_id": trace_id,
-        **evidence_fields,
-        "user_id": user_id,
-        "mode": normalized_mode,
-        "mode_label": mode_label(normalized_mode),
-        "created_at": created_at,
-    }
-    strength_scale = fidelity_to_strength(fidelity_level)
-    robust_strength = robust_strength_to_scale(robust_watermark_strength)
-    robust_version = normalize_robust_watermark_version(robust_watermark_version)
-    robust_auth_code = None
-    v4_config = V4Config()
-    if robust_version == ROBUST_WATERMARK_VERSION_V4:
-        try:
-            robust_auth_code = v4_authentication_tag(
-                trace_id,
-                DEFAULT_WATERMARK_AUTH_KEY,
-            )
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-    elif robust_version == ROBUST_WATERMARK_VERSION_V3:
-        try:
-            robust_auth_code = auth_code_from_trace(trace_id, DEFAULT_WATERMARK_AUTH_KEY)
-        except ValueError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-    small_crop_enabled = (
-        app.state.small_crop_trace_default_enabled
-        if str(small_crop_trace_enabled or "").strip() == ""
-        else parse_bool(small_crop_trace_enabled)
-    )
-    small_crop_strength = small_crop_strength_to_scale(small_crop_trace_strength)
-    small_crop_density = normalize_small_crop_density(small_crop_trace_density)
-    dot_matrix_enabled = parse_bool(dot_matrix_trace_enabled)
-    dot_matrix_strength = clamp_float(dot_matrix_trace_strength, 0.85, 0.0, 1.0)
-    if robust_version == ROBUST_WATERMARK_VERSION_V4:
-        small_crop_enabled = False
-        dot_matrix_enabled = False
-        try:
-            watermarked = embed_v4_codeword(
-                embed_v4_pilot(visible, v4_config),
-                encode_v4_codeword(robust_auth_code),
-                v4_config,
-            )
-        except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-    else:
-        if robust_version == ROBUST_WATERMARK_VERSION_V3:
-            robust = embed_robust_watermark_v3(visible, robust_auth_code, robust_strength)
-        elif robust_version == ROBUST_WATERMARK_VERSION_V2:
-            robust = embed_robust_watermark_v2(visible, trace_id, robust_strength)
-        else:
-            robust = embed_robust_watermark(visible, trace_id, robust_strength)
-        frequency_marked = apply_frequency_layers(robust, trace_id)
-        code_marked = apply_code_layer(frequency_marked, trace_id, strength_scale)
-        small_crop_marked = (
-            apply_small_crop_trace_layer(
-                code_marked,
-                trace_id,
-                small_crop_strength,
-                small_crop_density,
-                strength_scale,
-            )
-            if small_crop_enabled
-            else code_marked
-        )
-        dot_matrix_marked = (
-            apply_dot_matrix_trace_layer(small_crop_marked, trace_id, dot_matrix_strength)
-            if dot_matrix_enabled
-            else small_crop_marked
-        )
-        watermarked = embed_lsb(dot_matrix_marked, payload)
-    watermarked.save(output_path, format="PNG")
-    save_thumbnail(watermarked, thumbnail_path)
-    feature_index_path = (
-        save_record_feature_index_v4(watermarked, image_id)
-        if robust_version == ROBUST_WATERMARK_VERSION_V4
-        else save_record_feature_index(watermarked, image_id)
-    )
-    original_file_sha256 = path_sha256(original_path)
-    watermarked_file_sha256 = path_sha256(output_path)
-    original_image_sha256 = image_content_sha256(image)
-    watermarked_image_sha256 = image_content_sha256(watermarked)
-
-    record = {
-        **payload,
-        "name": safe_name,
-        "image_width": image.width,
-        "image_height": image.height,
-        "size": f"{original_path.stat().st_size / 1024 / 1024:.1f} MB",
-        "status": "保护中",
-        "confidence": 98,
-        "original_url": f"/uploads/originals/{original_path.name}",
-        "download_url": f"/uploads/watermarked/{output_path.name}",
-        "thumbnail_url": f"/uploads/thumbnails/{thumbnail_path.name}",
-        "feature_index_path": feature_index_path,
-        "original_file_sha256": original_file_sha256,
-        "watermarked_file_sha256": watermarked_file_sha256,
-        "original_image_sha256": original_image_sha256,
-        "watermarked_image_sha256": watermarked_image_sha256,
-        "copyright_enabled": parse_bool(copyright_enabled),
-        "copyright_text": copyright_text.strip() or "© QQ:757675150",
-        "copyright_opacity": clamp_float(copyright_opacity, 0.16, 0.02, 0.90),
-        "copyright_complexity": copyright_complexity,
-        "copyright_irregular_enabled": parse_bool(copyright_irregular_enabled),
-        "copyright_prominent_corner_enabled": parse_bool(copyright_prominent_corner_enabled),
-        "fidelity_level": clamp_float(fidelity_level, 0.75, 0.0, 1.0),
-        "watermark_strength_scale": round(strength_scale, 4),
-        "robust_watermark_strength": round(robust_strength, 4),
-        "robust_watermark_version": robust_version,
-        "robust_watermark_codec": (
-            v4_config.codec
-            if robust_version == ROBUST_WATERMARK_VERSION_V4
-            else ROBUST_WATERMARK_CODEC_V3
-            if robust_version == ROBUST_WATERMARK_VERSION_V3
-            else ROBUST_WATERMARK_CODEC_V2
-            if robust_version == ROBUST_WATERMARK_VERSION_V2
-            else "legacy_robust_64"
-        ),
-        "robust_auth_code": robust_auth_code.hex() if robust_auth_code else None,
-        "small_crop_trace_enabled": small_crop_enabled,
-        "small_crop_trace_strength": small_crop_strength,
-        "small_crop_trace_density": small_crop_density,
-        "small_crop_trace_version": SMALL_TRACE_VERSION if small_crop_enabled else None,
-        "dot_matrix_trace_enabled": dot_matrix_enabled,
-        "dot_matrix_trace_strength": dot_matrix_strength,
-        "dot_matrix_trace_version": DOT_MATRIX_VERSION if dot_matrix_enabled else None,
-        "robust_watermark": True,
-        "watermark_code_version": (
-            None
-            if robust_version == ROBUST_WATERMARK_VERSION_V4
-            else CODE_WATERMARK_VERSION
-        ),
-        "watermark_layers": (
-            {"dct_authenticated": True, "fft_sync": True}
-            if robust_version == ROBUST_WATERMARK_VERSION_V4
-            else WATERMARK_LAYERS
-        ),
-        "layer_scores": (
-            {}
-            if robust_version == ROBUST_WATERMARK_VERSION_V4
-            else layer_scores_for_image(watermarked, trace_id)
-        ),
-    }
-    add_record(record)
-    record_watermark_generation()
-    remember_generated_trace(trace_id)
-    return record
 
 
 def extract_watermark_from_image(image: Image.Image) -> dict[str, Any]:
-    v4_candidates = v4_candidate_records()
-    return watermark_detection.extract_watermark_from_image(
-        image,
-        records=read_records,
-        v4_candidates=v4_candidates,
-        detect_v4_watermark=detect_v4_watermark,
-        extract_full_lsb=extract_full_lsb,
-        extract_block_lsb=extract_block_lsb,
-        is_registered_original_image=is_registered_original_image,
-        should_run_frequency_fallbacks=should_run_frequency_fallbacks,
-        should_run_visual_match_fallback=should_run_visual_match_fallback,
-        detect_dot_matrix_trace=detect_dot_matrix_trace,
-        detect_aligned_authenticated_watermark=detect_aligned_authenticated_watermark,
-        detect_by_visual_match=detect_by_visual_match,
-        detect_small_crop_trace=detect_small_crop_trace,
-        detect_watermark_code=detect_watermark_code,
-        detect_robust_watermark=detect_robust_watermark,
-        detect_by_residual_match=detect_by_residual_match,
-        detect_visible_copyright=detect_visible_copyright,
-        record_detection_result=record_detection_result,
-        with_evidence_fields=with_evidence_fields,
-        now_text=now_text,
-        mode_label=mode_label,
-        layer_scores_for_image=layer_scores_for_image,
-        not_found_error=lambda: HTTPException(
-            status_code=404, detail="未检测到可识别的隐式水印"
-        ),
-        watermark_layers=WATERMARK_LAYERS,
-        state_value=lambda name: getattr(app.state, name),
-    )
+    return get_watermark_service().extract_image(image)
 
 
 @app.post("/api/watermark/extract")
 async def extract_watermark(file: UploadFile = File(...)) -> dict[str, Any]:
-    content = await file.read()
-    fingerprint_match = matched_file_fingerprint(content)
-    if fingerprint_match:
-        if fingerprint_match.get("matched_file_type") == "original":
-            record_detection_result(False)
-            raise HTTPException(status_code=404, detail="未检测到可识别的隐式水印")
-        record_detection_result(True)
-        return fingerprint_match
-    image = load_image_from_bytes(content)
-    return extract_watermark_from_image(image)
+    return await get_watermark_service().extract_upload(file)
 
 
 @app.post("/api/watermark/extract-url")
 def extract_watermark_url(url: str = Form(...)) -> dict[str, Any]:
-    image = load_image_from_url(url)
-    return extract_watermark_from_image(image)
+    return get_watermark_service().extract_url(url)
 
 
 @app.get("/api/dashboard-stats")

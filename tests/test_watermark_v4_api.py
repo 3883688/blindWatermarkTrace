@@ -104,6 +104,20 @@ def test_v4_generation_persists_strict_codec_tag_and_feature_index() -> None:
     assert len(feature_index.descriptors) > 0
 
 
+def test_v4_generation_synchronizes_latest_generated_trace_ids() -> None:
+    current = [f"TR-OLD-{index}" for index in range(24)]
+    main.app.state.generated_trace_ids = current
+    main.runtime.generated_trace_ids = ["TR-STALE"]
+
+    response = _embed_v4(TestClient(main.app))
+
+    assert response.status_code == 200, response.text
+    assert main.runtime.generated_trace_ids is current
+    assert main.app.state.generated_trace_ids is current
+    assert current[0] == response.json()["trace_id"]
+    assert len(current) == 24
+
+
 def test_v4_generation_does_not_call_legacy_watermark_layers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -148,6 +162,10 @@ def test_v4_exact_watermarked_fingerprint_succeeds_and_original_rejects() -> Non
     assert watermarked_response.json()["trace_id"] == record["trace_id"]
     assert watermarked_response.json()["matched_file_type"] == "watermarked"
     assert original_response.status_code == 404
+    assert main.repository.read_detection_stats() == {
+        "attempts": 2,
+        "successes": 1,
+    }
 
 
 def test_v4_transformed_crop_is_uniquely_attributed() -> None:

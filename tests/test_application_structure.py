@@ -18,6 +18,7 @@ from trace_app.database.repositories import Repository
 from trace_app.imaging.fingerprints import file_sha256
 from trace_app.imaging.io import load_image_from_bytes
 from trace_app.runtime import Runtime
+from trace_app.watermark.service import WatermarkService
 from trace_app.watermark import small_crop as small_crop_module
 from trace_app.watermark import robust as robust_module
 from trace_app.watermark.lsb import bits_from_bytes, bytes_from_bits
@@ -25,6 +26,43 @@ from trace_app.watermark.small_crop import small_trace_short_code
 
 from io import BytesIO
 from PIL import Image
+
+
+def test_watermark_service_preserves_injected_dependencies(tmp_path: Path) -> None:
+    test_settings = Settings.from_values(
+        base_dir=tmp_path,
+        upload_dir="uploads",
+        data_dir="data",
+        db_url="",
+        admin_user="",
+        admin_pass="",
+    )
+    test_repository = object()
+    test_runtime = Runtime()
+
+    service = WatermarkService(
+        settings=test_settings,
+        repository=test_repository,
+        runtime=test_runtime,
+    )
+
+    assert service.settings is test_settings
+    assert service.repository is test_repository
+    assert service.runtime is test_runtime
+
+
+def test_watermark_service_factory_synchronizes_current_generated_trace_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generated = ["TR-CURRENT"]
+    monkeypatch.setattr(main.app.state, "generated_trace_ids", generated)
+
+    service = main.get_watermark_service()
+
+    assert service.repository is main.repository
+    assert service.runtime is main.runtime
+    assert service.settings is main.settings
+    assert service.runtime.generated_trace_ids is generated
 
 
 EXPECTED_ROUTES = {
@@ -545,16 +583,29 @@ def test_main_exposes_required_python_api() -> None:
     assert required <= set(dir(main))
 
 
-def test_main_still_contains_watermark_endpoint_implementation() -> None:
-    source = Path(main.__file__).read_text(encoding="utf-8")
-    module = ast.parse(source)
-    top_level_functions = {
-        node.name
+def test_watermark_routes_are_thin_service_delegators() -> None:
+    module = ast.parse(Path(main.__file__).read_text(encoding="utf-8"))
+    route_names = {
+        "embed_watermark",
+        "extract_watermark",
+        "extract_watermark_url",
+    }
+    routes = {
+        node.name: node
         for node in module.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in route_names
     }
 
-    assert "embed_watermark" in top_level_functions
+    assert set(routes) == route_names
+    for route in routes.values():
+        assert not any(isinstance(node, ast.If) for node in ast.walk(route))
+        assert any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "get_watermark_service"
+            for node in ast.walk(route)
+        )
 
 
 def test_settings_resolves_relative_directories_from_base_dir(tmp_path: Path) -> None:
