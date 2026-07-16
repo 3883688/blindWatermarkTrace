@@ -172,14 +172,15 @@ def normalize_robust_watermark_version(
 def robust_code_to_trace(
     code: int,
     *,
-    records: Iterable[Record],
+    records: Iterable[Record] | Callable[[], Iterable[Record]],
     config: RobustConfig = DEFAULT_CONFIG,
     dependencies: RobustDependencies = DEFAULT_DEPENDENCIES,
 ) -> str | None:
     if (code >> 48) != config.robust_magic:
         return None
+    current_records = records() if callable(records) else records
     code_from_trace = dependencies.robust_code_from_trace
-    for record in records:
+    for record in current_records:
         trace_id = record.get("trace_id")
         expected = (
             code_from_trace(trace_id)
@@ -199,7 +200,7 @@ def robust_code_to_trace_fuzzy(
     code: int,
     max_errors: int = 18,
     *,
-    records: Iterable[Record],
+    records: Iterable[Record] | Callable[[], Iterable[Record]],
     config: RobustConfig = DEFAULT_CONFIG,
     dependencies: RobustDependencies = DEFAULT_DEPENDENCIES,
 ) -> tuple[str | None, int]:
@@ -207,9 +208,10 @@ def robust_code_to_trace_fuzzy(
     magic_distance = distance_fn(code >> 48, config.robust_magic)
     if magic_distance > 6:
         return None, config.robust_bits + 1
+    current_records = records() if callable(records) else records
     best_trace = None
     best_distance = config.robust_bits + 1
-    for record in records:
+    for record in current_records:
         trace_id = record.get("trace_id")
         if not trace_id:
             continue
@@ -232,7 +234,7 @@ def robust_candidate_records(records: Iterable[Record]) -> list[Record]:
 
 
 def legacy_robust_candidate_records(
-    records: Iterable[Record],
+    records: Iterable[Record] | Callable[[], Iterable[Record]],
     *,
     normalize_version: Callable[[str | int | None], int],
     version_v1: int,
@@ -693,9 +695,9 @@ def detect_aligned_authenticated_watermark(
     watermark_layers: Any,
     perf_counter: Callable[[], float] = time.perf_counter,
 ) -> Record | None:
-    del generated_trace_ids
     started = perf_counter()
-    candidates = [record for record in records if record.get("trace_id") and record.get("robust_watermark")]
+    current_records = records() if callable(records) else records
+    candidates = [record for record in current_records if record.get("trace_id") and record.get("robust_watermark")]
     candidates = rank_candidates(image, candidates)[: max(1, candidate_limit)]
     authenticated = []
     for record in candidates:

@@ -550,7 +550,7 @@ def normalize_robust_watermark_version(value: str | int | None) -> int:
 def robust_code_to_trace(code: int) -> str | None:
     return watermark_robust.robust_code_to_trace(
         code,
-        records=read_records(),
+        records=read_records,
         config=_robust_config(),
         dependencies=_robust_dependencies(),
     )
@@ -564,7 +564,7 @@ def robust_code_to_trace_fuzzy(code: int, max_errors: int = 18) -> tuple[str | N
     return watermark_robust.robust_code_to_trace_fuzzy(
         code,
         max_errors,
-        records=read_records(),
+        records=read_records,
         config=_robust_config(),
         dependencies=_robust_dependencies(),
     )
@@ -777,7 +777,7 @@ def detect_aligned_authenticated_watermark(
     candidate_limit: int = 8,
     budget_seconds: float = 5.0,
 ) -> dict[str, Any] | None:
-    current_records = records if records is not None else robust_candidate_records()
+    current_records = records if records is not None else robust_candidate_records
     return watermark_robust.detect_aligned_authenticated_watermark(
         image,
         candidate_limit,

@@ -17,6 +17,7 @@ from trace_app.imaging.fingerprints import file_sha256
 from trace_app.imaging.io import load_image_from_bytes
 from trace_app.runtime import Runtime
 from trace_app.watermark import small_crop as small_crop_module
+from trace_app.watermark import robust as robust_module
 from trace_app.watermark.lsb import bits_from_bytes, bytes_from_bits
 from trace_app.watermark.small_crop import small_trace_short_code
 
@@ -93,6 +94,65 @@ def test_main_robust_code_uses_current_magic(monkeypatch) -> None:
     monkeypatch.setattr(main, "ROBUST_MAGIC", 0xBEEF)
 
     assert main.robust_code_from_trace("TRACE-DYNAMIC-MAGIC") >> 48 == 0xBEEF
+
+
+def test_invalid_robust_magic_does_not_read_records(monkeypatch) -> None:
+    invalid_code = (main.ROBUST_MAGIC ^ 0xFFFF) << 48
+    monkeypatch.setattr(
+        main,
+        "read_records",
+        lambda: (_ for _ in ()).throw(AssertionError("records loaded")),
+    )
+
+    assert main.robust_code_to_trace(invalid_code) is None
+    assert main.robust_code_to_trace_fuzzy(invalid_code) == (
+        None,
+        main.ROBUST_BITS + 1,
+    )
+
+
+def test_aligned_owner_starts_budget_before_loading_candidates() -> None:
+    events: list[str] = []
+    times = iter((0.0, 10.0))
+    record = {"trace_id": "TRACE-BUDGET", "robust_watermark": True}
+
+    def perf_counter() -> float:
+        events.append("clock")
+        return next(times)
+
+    def load_records():
+        events.append("records")
+        return [record]
+
+    def rank_candidates(image, records):
+        events.append("rank")
+        return records
+
+    result = robust_module.detect_aligned_authenticated_watermark(
+        Image.new("RGB", (1, 1)),
+        budget_seconds=5.0,
+        records=load_records,
+        rank_candidates=rank_candidates,
+        align_query=lambda image, candidate: (_ for _ in ()).throw(
+            AssertionError("budget must include candidate loading")
+        ),
+        decode_v1=lambda alignment, candidate: None,
+        decode_v2=lambda alignment, candidate: None,
+        decode_v3=lambda alignment, candidate: None,
+        normalize_version=lambda value: 1,
+        with_evidence_fields=lambda result, candidate: result,
+        now_text=lambda: "now",
+        version_v1=1,
+        version_v2=2,
+        version_v3=3,
+        codec_v2="v2",
+        codec_v3="v3",
+        watermark_layers={},
+        perf_counter=perf_counter,
+    )
+
+    assert result is None
+    assert events == ["clock", "records", "rank", "clock"]
 
 
 def test_main_extract_robust_code_uses_patchable_grid_decoder(monkeypatch) -> None:
