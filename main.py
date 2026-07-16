@@ -116,11 +116,6 @@ DB_ENABLED = not RUNNING_PYTEST
 
 app = FastAPI(title=settings.app_name)
 app.state.generated_trace_ids = []
-runtime = create_runtime(settings, enabled=False)
-repository = Repository(runtime.store)
-db_engine = runtime.engine
-db_store = runtime.store
-db_error = runtime.db_error
 
 
 def ensure_dirs() -> None:
@@ -128,6 +123,13 @@ def ensure_dirs() -> None:
     WATERMARKED_DIR.mkdir(parents=True, exist_ok=True)
     THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+runtime = create_runtime(settings, enabled=False)
+repository = Repository(runtime.store, ensure_dirs=ensure_dirs)
+db_engine = runtime.engine
+db_store = runtime.store
+db_error = runtime.db_error
 
 
 def require_store() -> DatabaseStore:
@@ -152,12 +154,12 @@ def initialize_database() -> None:
         failed_runtime = getattr(exc, "runtime", None)
         if failed_runtime is not None:
             runtime = failed_runtime
-            repository = Repository(runtime.store)
+            repository = Repository(runtime.store, ensure_dirs=ensure_dirs)
             db_engine = runtime.engine
             db_store = runtime.store
             db_error = runtime.db_error
         raise
-    repository = Repository(runtime.store)
+    repository = Repository(runtime.store, ensure_dirs=ensure_dirs)
     db_engine = runtime.engine
     db_store = runtime.store
     db_error = runtime.db_error
@@ -209,8 +211,7 @@ def record_detection_result(success: bool) -> None:
 
 
 def is_today_record(record: dict[str, Any]) -> bool:
-    created_at = str(record.get("created_at") or "")
-    return created_at.startswith(datetime.now().strftime("%Y-%m-%d"))
+    return repository.is_today_record(record)
 
 
 def read_watermark_stats() -> dict[str, dict[str, int]]:
@@ -252,7 +253,9 @@ def record_watermark_generation() -> None:
 
 
 def today_watermark_count(records: list[dict[str, Any]]) -> int:
-    return repository.today_watermark_count(records, read_watermark_stats())
+    return repository.today_watermark_count(
+        records, read_watermark_stats(), is_today=is_today_record
+    )
 
 
 def remember_generated_trace(trace_id: str) -> None:

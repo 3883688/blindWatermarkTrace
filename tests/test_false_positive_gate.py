@@ -38,7 +38,9 @@ def isolate_runtime_paths(monkeypatch, tmp_path):
     store.create_schema()
     store.replace_roles(main.DEFAULT_ROLES)
     monkeypatch.setattr(main.runtime, "store", store)
-    monkeypatch.setattr(main, "repository", Repository(store))
+    monkeypatch.setattr(
+        main, "repository", Repository(store, ensure_dirs=main.ensure_dirs)
+    )
     monkeypatch.setattr(main, "db_store", store)
 
 

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import HTTPException
 
@@ -7,8 +7,13 @@ from database_store import DatabaseStore
 
 
 class Repository:
-    def __init__(self, store: DatabaseStore | None) -> None:
+    def __init__(
+        self,
+        store: DatabaseStore | None,
+        ensure_dirs: Callable[[], None] | None = None,
+    ) -> None:
         self._store = store
+        self._ensure_dirs = ensure_dirs or (lambda: None)
 
     @property
     def store(self) -> DatabaseStore:
@@ -41,6 +46,7 @@ class Repository:
         }
 
     def write_detection_stats(self, stats: dict[str, int]) -> None:
+        self._ensure_dirs()
         normalized = {
             "attempts": int(stats.get("attempts", 0) or 0),
             "successes": int(stats.get("successes", 0) or 0),
@@ -62,6 +68,7 @@ class Repository:
         return {"daily": {str(day): int(count or 0) for day, count in daily.items()}}
 
     def write_watermark_stats(self, stats: dict[str, Any]) -> None:
+        self._ensure_dirs()
         daily = stats.get("daily", {})
         if not isinstance(daily, dict):
             daily = {}
@@ -86,14 +93,16 @@ class Repository:
         self,
         records: list[dict[str, Any]],
         stats: dict[str, dict[str, int]] | None = None,
+        is_today: Callable[[dict[str, Any]], bool] | None = None,
     ) -> int:
         stats = self.read_watermark_stats() if stats is None else stats
         today = datetime.now().strftime("%Y-%m-%d")
         if today in stats["daily"]:
             return int(stats["daily"][today])
-        return sum(1 for item in records if self._is_today_record(item))
+        predicate = self.is_today_record if is_today is None else is_today
+        return sum(1 for item in records if predicate(item))
 
     @staticmethod
-    def _is_today_record(record: dict[str, Any]) -> bool:
+    def is_today_record(record: dict[str, Any]) -> bool:
         created_at = str(record.get("created_at") or "")
         return created_at.startswith(datetime.now().strftime("%Y-%m-%d"))

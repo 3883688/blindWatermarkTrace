@@ -40,7 +40,9 @@ def isolated_v4_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     store.replace_roles(main.DEFAULT_ROLES)
     store.create_user("test-admin", "admin-password", "admin")
     monkeypatch.setattr(main.runtime, "store", store)
-    monkeypatch.setattr(main, "repository", Repository(store))
+    monkeypatch.setattr(
+        main, "repository", Repository(store, ensure_dirs=main.ensure_dirs)
+    )
     monkeypatch.setattr(main, "db_store", store, raising=False)
     main.app.state.generated_trace_ids = []
     main.ensure_dirs()

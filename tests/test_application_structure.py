@@ -222,3 +222,33 @@ def test_failed_database_initialization_synchronizes_compatibility_state(
     assert main.runtime.store is None
     assert main.db_store is None
     assert main.db_error == "OperationalError"
+
+
+def test_repository_ensures_directories_before_writing_stats() -> None:
+    store = DatabaseStore(create_engine("sqlite+pysqlite:///:memory:"))
+    store.create_schema()
+    calls: list[str] = []
+    repository = Repository(store, ensure_dirs=lambda: calls.append("called"))
+
+    repository.write_detection_stats({"attempts": 1, "successes": 1})
+    repository.write_watermark_stats({"daily": {"2026-07-16": 1}})
+
+    assert calls == ["called", "called"]
+
+
+def test_main_today_watermark_count_uses_patchable_date_predicate(
+    monkeypatch,
+) -> None:
+    store = DatabaseStore(create_engine("sqlite+pysqlite:///:memory:"))
+    store.create_schema()
+    monkeypatch.setattr(main, "repository", Repository(store))
+    monkeypatch.setattr(main, "read_watermark_stats", lambda: {"daily": {}})
+    monkeypatch.setattr(
+        main,
+        "is_today_record",
+        lambda record: record.get("id") == "selected",
+    )
+
+    count = main.today_watermark_count([{"id": "selected"}, {"id": "other"}])
+
+    assert count == 1
