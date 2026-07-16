@@ -305,15 +305,32 @@ def get_auth_service() -> AuthService:
     return AuthService(repository)
 
 
-def _record_aware_callback(callback):
-    parameters = inspect.signature(callback).parameters.values()
-    accepts_records = any(
-        parameter.name == "records"
-        or parameter.kind == inspect.Parameter.VAR_KEYWORD
-        for parameter in parameters
-    )
+def _records_call_mode(callback) -> str:
+    try:
+        parameters = inspect.signature(callback).parameters
+    except (TypeError, ValueError):
+        return "legacy"
+    records_parameter = parameters.get("records")
+    if (
+        records_parameter is not None
+        and records_parameter.kind == inspect.Parameter.POSITIONAL_ONLY
+    ):
+        return "positional"
+    if records_parameter is not None or any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    ):
+        return "keyword"
+    return "legacy"
 
-    if accepts_records:
+
+def _record_aware_callback(callback):
+    mode = _records_call_mode(callback)
+    if mode == "positional":
+        return lambda subject, records, **kwargs: callback(
+            subject, records, **kwargs
+        )
+    if mode == "keyword":
         return lambda subject, records, **kwargs: callback(
             subject, records=records, **kwargs
         )
@@ -321,27 +338,21 @@ def _record_aware_callback(callback):
 
 
 def _record_candidate_callback(callback):
-    parameters = inspect.signature(callback).parameters.values()
-    accepts_records = any(
-        parameter.name == "records"
-        or parameter.kind == inspect.Parameter.VAR_KEYWORD
-        for parameter in parameters
-    )
-
-    if accepts_records:
+    mode = _records_call_mode(callback)
+    if mode == "positional":
+        return lambda records: callback(records)
+    if mode == "keyword":
         return lambda records: callback(records=records)
     return lambda records: callback()
 
 
 def _v4_record_aware_callback(callback):
-    parameters = inspect.signature(callback).parameters.values()
-    accepts_records = any(
-        parameter.name == "records"
-        or parameter.kind == inspect.Parameter.VAR_KEYWORD
-        for parameter in parameters
-    )
-
-    if accepts_records:
+    mode = _records_call_mode(callback)
+    if mode == "positional":
+        return lambda image, candidates, records: callback(
+            image, candidates, records
+        )
+    if mode == "keyword":
         return lambda image, candidates, records: callback(
             image, candidates, records=records
         )

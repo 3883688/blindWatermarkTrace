@@ -351,51 +351,61 @@ class WatermarkService:
         self._remember_generated_trace(trace_id)
         return record
 
-    def extract_image(self, image: Image.Image) -> dict[str, Any]:
+    def extract_image(
+        self,
+        image: Image.Image,
+        records: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         op = self._operations()
-        records = self.repository.read_records()
-        v4_candidates = op.v4_candidate_records(records)
+        current_records = (
+            self.repository.read_records() if records is None else records
+        )
+        v4_candidates = op.v4_candidate_records(current_records)
         return op.watermark_detection_pipeline(
             image,
-            records=records,
+            records=current_records,
             v4_candidates=v4_candidates,
             detect_v4_watermark=lambda current_image, candidates: (
-                op.detect_v4_watermark(current_image, candidates, records)
+                op.detect_v4_watermark(
+                    current_image, candidates, current_records
+                )
             ),
             extract_full_lsb=op.extract_full_lsb,
             extract_block_lsb=op.extract_block_lsb,
             is_registered_original_image=lambda current_image: (
-                op.is_registered_original_image(current_image, records)
+                op.is_registered_original_image(current_image, current_records)
             ),
             should_run_frequency_fallbacks=op.should_run_frequency_fallbacks,
             should_run_visual_match_fallback=lambda current_image: (
-                op.should_run_visual_match_fallback(current_image, records)
+                op.should_run_visual_match_fallback(
+                    current_image, current_records
+                )
             ),
             detect_dot_matrix_trace=lambda current_image: (
-                op.detect_dot_matrix_trace(current_image, records)
+                op.detect_dot_matrix_trace(current_image, current_records)
             ),
             detect_aligned_authenticated_watermark=lambda current_image, **kwargs: (
                 op.detect_aligned_authenticated_watermark(
-                    current_image, records, **kwargs
+                    current_image, current_records, **kwargs
                 )
             ),
             detect_by_visual_match=lambda current_image: (
-                op.detect_by_visual_match(current_image, records)
+                op.detect_by_visual_match(current_image, current_records)
             ),
             detect_small_crop_trace=lambda current_image: (
-                op.detect_small_crop_trace(current_image, records)
+                op.detect_small_crop_trace(current_image, current_records)
             ),
             detect_watermark_code=lambda current_image: (
-                op.detect_watermark_code(current_image, records)
+                op.detect_watermark_code(current_image, current_records)
             ),
             detect_robust_watermark=lambda current_image: (
-                op.detect_robust_watermark(current_image, records)
+                op.detect_robust_watermark(current_image, current_records)
             ),
             detect_by_residual_match=lambda current_image: (
-                op.detect_by_residual_match(current_image, records)
+                op.detect_by_residual_match(current_image, current_records)
             ),
             detect_visible_copyright=lambda current_image: (
-                op.detect_visible_copyright(current_image, records)
+                op.detect_visible_copyright(current_image, current_records)
             ),
             record_detection_result=self.repository.record_detection_result,
             with_evidence_fields=op.with_evidence_fields,
@@ -423,7 +433,7 @@ class WatermarkService:
             self.repository.record_detection_result(True)
             return fingerprint_match
         image = op.load_image_from_bytes(content)
-        return self.extract_image(image)
+        return self.extract_image(image, records=records)
 
     def extract_url(self, url: str) -> dict[str, Any]:
         return self.extract_image(self._operations().load_image_from_url(url))

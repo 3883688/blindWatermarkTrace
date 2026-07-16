@@ -221,12 +221,17 @@ def test_watermark_service_fingerprint_miss_uses_repository_records(
 ) -> None:
     repository = _WatermarkRepositorySpy()
     seen: list[object] = []
+
+    def pipeline(image, **kwargs):
+        seen.append(kwargs["records"])
+        return {"mode": "miss"}
+
     operations = replace(
         main.get_watermark_service().operations,
         matched_file_fingerprint=lambda content, records: seen.append(records),
         load_image_from_bytes=lambda content: Image.new("RGB", (1, 1)),
         v4_candidate_records=lambda records: (),
-        watermark_detection_pipeline=lambda image, **kwargs: {"mode": "miss"},
+        watermark_detection_pipeline=pipeline,
     )
     monkeypatch.setattr(
         main,
@@ -258,7 +263,53 @@ def test_watermark_service_fingerprint_miss_uses_repository_records(
     )
 
     assert result == {"mode": "miss"}
-    assert seen == [repository.records]
+    assert repository.read_calls == 1
+    assert seen == [repository.records, repository.records]
+    assert seen[0] is seen[1]
+
+
+def test_record_adapters_support_positional_only_records() -> None:
+    records = [{"trace_id": "TR-POSITIONAL"}]
+
+    def detector(image, records, /):
+        return records
+
+    def candidates(records, /):
+        return records
+
+    def v4_detector(image, candidate_values, records, /):
+        return records
+
+    assert main._record_aware_callback(detector)(object(), records) is records
+    assert main._record_candidate_callback(candidates)(records) is records
+    assert main._v4_record_aware_callback(v4_detector)(
+        object(), (), records
+    ) is records
+
+
+def test_record_adapters_fall_back_when_signature_is_unavailable() -> None:
+    class Uninspectable:
+        @property
+        def __signature__(self):
+            raise ValueError("signature unavailable")
+
+        def __init__(self) -> None:
+            self.calls: list[tuple[object, ...]] = []
+
+        def __call__(self, *args):
+            self.calls.append(args)
+            return args
+
+    records = [{"trace_id": "TR-FALLBACK"}]
+    detector = Uninspectable()
+    candidates = Uninspectable()
+    v4_detector = Uninspectable()
+
+    assert main._record_aware_callback(detector)("image", records) == ("image",)
+    assert main._record_candidate_callback(candidates)(records) == ()
+    assert main._v4_record_aware_callback(v4_detector)(
+        "image", "candidates", records
+    ) == ("image", "candidates")
 
 
 def test_watermark_service_extract_upload_fingerprint_uses_repository_stats(
