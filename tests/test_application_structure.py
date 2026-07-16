@@ -1180,7 +1180,7 @@ def test_compat_all_matches_legacy_public_api_and_import_star() -> None:
         .read_text(encoding="utf-8")
         .splitlines()
     )
-    assert len(legacy_public_names) == 290
+    assert len(legacy_public_names) == 292
     assert set(compat.__all__) == legacy_public_names
 
     namespace: dict[str, object] = {}

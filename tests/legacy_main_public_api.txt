@@ -166,6 +166,7 @@ feature_match_score
 fft_layer_score
 fft_pattern
 fidelity_to_strength
+file_md5
 file_sha256
 get_auth_service
 get_management_service
@@ -213,6 +214,7 @@ np
 os
 packet_from_payload
 parse_bool
+path_md5
 path_sha256
 permuted_code_bits
 phase_permutation
