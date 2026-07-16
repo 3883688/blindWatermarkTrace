@@ -1,4 +1,5 @@
 import zipfile
+import stat
 from pathlib import Path
 
 
@@ -21,6 +22,18 @@ def test_shell_scripts_are_published_with_unix_line_endings() -> None:
     assert b"\r\n" not in (RELEASE_ROOT / "deploy.sh").read_bytes()
     with zipfile.ZipFile(RELEASE_ARCHIVE) as package:
         assert b"\r\n" not in package.read("deploy.sh")
+
+
+def test_release_archive_records_unix_file_permissions() -> None:
+    with zipfile.ZipFile(RELEASE_ARCHIVE) as package:
+        for entry in package.infolist():
+            if entry.is_dir():
+                continue
+            assert entry.create_system == 3
+            expected = 0o755 if entry.filename == "deploy.sh" else 0o644
+            mode = entry.external_attr >> 16
+            assert stat.S_IFMT(mode) == stat.S_IFREG
+            assert stat.S_IMODE(mode) == expected
 
 
 def test_install_service_prepares_v4_and_backs_up_before_restart() -> None:

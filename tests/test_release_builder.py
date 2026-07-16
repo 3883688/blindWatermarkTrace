@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+import tools.build_centos_release as builder
 from tools.build_centos_release import ROOT_FILES, is_release_source, release_files
 
 
@@ -99,3 +100,100 @@ def test_release_collector_fails_when_required_root_file_is_missing(
         release_files(tmp_path)
 
     assert missing in str(error.value)
+
+
+@pytest.mark.parametrize("linked_name", ("main.py", "trace_app", "trace_app/module.py"))
+def test_release_collector_rejects_link_or_junction_components(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    linked_name: str,
+) -> None:
+    _write_required_root_files(tmp_path)
+    for tree in builder.RECURSIVE_TREES:
+        (tmp_path / tree).mkdir(parents=True, exist_ok=True)
+    (tmp_path / "trace_app/module.py").write_bytes(b"module")
+    monkeypatch.setattr(
+        builder,
+        "_is_link_or_junction",
+        lambda path: path.relative_to(tmp_path).as_posix() == linked_name,
+        raising=False,
+    )
+
+    with pytest.raises(ValueError, match="link|junction"):
+        release_files(tmp_path)
+
+
+def test_release_collector_rejects_real_external_symlink(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    _write_required_root_files(source)
+    for tree in builder.RECURSIVE_TREES:
+        (source / tree).mkdir(parents=True, exist_ok=True)
+    secret = tmp_path / ".env"
+    secret.write_text("SECRET=value", encoding="utf-8")
+    link = source / "trace_app/external.py"
+    try:
+        link.symlink_to(secret)
+    except OSError as exc:
+        pytest.skip(f"symlink creation is unavailable: {exc}")
+
+    with pytest.raises(ValueError, match="link|junction"):
+        release_files(source)
+
+
+def test_build_rejects_external_release_root_before_deletion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sentinel.txt"
+    sentinel.write_text("preserve", encoding="utf-8")
+    monkeypatch.setattr(builder, "RELEASE_ROOT", outside)
+    monkeypatch.setattr(builder, "RELEASE_ARCHIVE", tmp_path / "release.zip")
+    monkeypatch.setattr(builder, "RELEASE_CHECKSUM", tmp_path / "release.zip.sha256")
+
+    with pytest.raises(ValueError, match="release"):
+        builder.build_release()
+
+    assert sentinel.read_text(encoding="utf-8") == "preserve"
+
+
+@pytest.mark.parametrize(
+    "target_name",
+    ("RELEASE_PARENT", "RELEASE_ARCHIVE", "RELEASE_CHECKSUM"),
+)
+def test_build_rejects_external_release_artifact_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target_name: str,
+) -> None:
+    target = tmp_path / target_name.casefold()
+    monkeypatch.setattr(builder, target_name, target)
+    release_main = builder.RELEASE_ROOT / "main.py"
+    original = release_main.read_bytes()
+
+    with pytest.raises(ValueError, match="release"):
+        builder.build_release()
+
+    assert release_main.read_bytes() == original
+
+
+@pytest.mark.parametrize("linked_target", ("RELEASE_PARENT", "RELEASE_ROOT"))
+def test_build_rejects_linked_release_target_before_deletion(
+    monkeypatch: pytest.MonkeyPatch,
+    linked_target: str,
+) -> None:
+    target = getattr(builder, linked_target)
+    release_main = builder.RELEASE_ROOT / "main.py"
+    original = release_main.read_bytes()
+    monkeypatch.setattr(
+        builder,
+        "_is_link_or_junction",
+        lambda path: path == target,
+        raising=False,
+    )
+
+    with pytest.raises(ValueError, match="link|junction"):
+        builder.build_release()
+
+    assert release_main.read_bytes() == original
