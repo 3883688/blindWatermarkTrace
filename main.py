@@ -359,8 +359,10 @@ def get_watermark_service() -> WatermarkService:
             ),
             load_image_from_bytes=load_image_from_bytes,
             load_image_from_url=load_image_from_url,
-            v4_candidate_records=v4_candidate_records,
-            detect_v4_watermark=detect_v4_watermark,
+            v4_candidate_records=lambda records: v4_candidate_records(records),
+            detect_v4_watermark=lambda image, candidates, records: detect_v4_watermark(
+                image, candidates, records=records
+            ),
             extract_full_lsb=extract_full_lsb,
             extract_block_lsb=extract_block_lsb,
             is_registered_original_image=is_registered_original_image,
@@ -801,9 +803,11 @@ def record_feature_index_path(record: dict[str, Any]) -> Path | None:
     return imaging_feature_matching.record_feature_index_path(record, DATA_DIR)
 
 
-def v4_candidate_records() -> tuple[V4Candidate, ...]:
+def v4_candidate_records(
+    records: list[dict[str, Any]] | None = None,
+) -> tuple[V4Candidate, ...]:
     return watermark_detection.v4_candidate_records(
-        records=read_records(),
+        records=read_records() if records is None else records,
         data_dir=DATA_DIR,
         version_v4=ROBUST_WATERMARK_VERSION_V4,
         config_factory=V4Config,
@@ -815,15 +819,21 @@ def v4_candidate_records() -> tuple[V4Candidate, ...]:
 def detect_v4_watermark(
     image: Image.Image,
     candidates: tuple[V4Candidate, ...] | None = None,
+    *,
+    records: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     return watermark_detection.detect_v4_watermark(
         image,
         candidates,
-        records=read_records,
+        records=read_records if records is None else records,
         generated_trace_ids=list(getattr(app.state, "generated_trace_ids", [])),
         version_v4=ROBUST_WATERMARK_VERSION_V4,
         config_factory=V4Config,
-        candidate_records=v4_candidate_records,
+        candidate_records=(
+            v4_candidate_records
+            if records is None
+            else lambda: v4_candidate_records(records)
+        ),
         detect=detect_v4,
         with_evidence_fields=with_evidence_fields,
         now_text=now_text,

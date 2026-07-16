@@ -55,8 +55,10 @@ class WatermarkOperations:
     ]
     load_image_from_bytes: Callable[[bytes], Image.Image]
     load_image_from_url: Callable[[str], Image.Image]
-    v4_candidate_records: Callable[[], Any]
-    detect_v4_watermark: Callable[..., dict[str, Any] | None]
+    v4_candidate_records: Callable[[list[dict[str, Any]]], Any]
+    detect_v4_watermark: Callable[
+        [Image.Image, Any, list[dict[str, Any]]], dict[str, Any] | None
+    ]
     extract_full_lsb: Callable[[Image.Image], dict[str, Any] | None]
     extract_block_lsb: Callable[[Image.Image], dict[str, Any] | None]
     is_registered_original_image: Callable[[Image.Image], bool]
@@ -333,12 +335,15 @@ class WatermarkService:
 
     def extract_image(self, image: Image.Image) -> dict[str, Any]:
         op = self._operations()
-        v4_candidates = op.v4_candidate_records()
+        records = self.repository.read_records()
+        v4_candidates = op.v4_candidate_records(records)
         return op.watermark_detection_pipeline(
             image,
-            records=self.repository.read_records,
+            records=records,
             v4_candidates=v4_candidates,
-            detect_v4_watermark=op.detect_v4_watermark,
+            detect_v4_watermark=lambda current_image, candidates: (
+                op.detect_v4_watermark(current_image, candidates, records)
+            ),
             extract_full_lsb=op.extract_full_lsb,
             extract_block_lsb=op.extract_block_lsb,
             is_registered_original_image=op.is_registered_original_image,

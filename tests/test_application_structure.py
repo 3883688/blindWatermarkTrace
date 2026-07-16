@@ -71,29 +71,59 @@ class _WatermarkRepositorySpy:
     def __init__(self) -> None:
         self.read_calls = 0
         self.detection_results: list[bool] = []
+        self.records = [{"trace_id": "TR-REPOSITORY"}]
 
     def read_records(self) -> list[dict[str, str]]:
         self.read_calls += 1
-        return [{"trace_id": "TR-REPOSITORY"}]
+        return self.records
 
     def record_detection_result(self, success: bool) -> None:
         self.detection_results.append(success)
 
 
-def test_watermark_service_extract_image_uses_injected_repository(
+@pytest.mark.parametrize("v4_hit", [False, True])
+def test_watermark_service_v4_extract_uses_one_repository_records_snapshot(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    v4_hit: bool,
 ) -> None:
     repository = _WatermarkRepositorySpy()
+    seen: list[tuple[str, object]] = []
+    expected = {"trace_id": "TR-V4-HIT", "mode": "v4_authenticated_dct"}
+
+    def candidate_records(records):
+        seen.append(("candidates", records))
+        return (object(),)
+
+    def detect_v4(image, candidates, records):
+        seen.append(("detect", records))
+        return expected if v4_hit else None
+
+    def pipeline(image, **kwargs):
+        seen.append(("pipeline", kwargs["records"]))
+        return main.watermark_detection.extract_watermark_from_image(image, **kwargs)
+
     operations = replace(
         main.get_watermark_service().operations,
-        v4_candidate_records=lambda: (),
-        watermark_detection_pipeline=lambda image, **kwargs: {
-            "records": kwargs["records"](),
-            "stats": kwargs["record_detection_result"](False),
-        },
+        v4_candidate_records=candidate_records,
+        detect_v4_watermark=detect_v4,
+        is_registered_original_image=lambda image: False,
+        watermark_detection_pipeline=pipeline,
     )
     assert not hasattr(operations, "read_records")
     assert not hasattr(operations, "record_detection_result")
+    monkeypatch.setattr(
+        main,
+        "repository",
+        SimpleNamespace(
+            read_records=lambda: (_ for _ in ()).throw(
+                AssertionError("global repository read")
+            ),
+            record_detection_result=lambda success: (_ for _ in ()).throw(
+                AssertionError("global repository write")
+            ),
+        ),
+    )
     service = WatermarkService(
         settings=Settings.from_values(
             base_dir=tmp_path,
@@ -108,11 +138,23 @@ def test_watermark_service_extract_image_uses_injected_repository(
         operations=operations,
     )
 
-    result = service.extract_image(Image.new("RGB", (1, 1)))
+    if v4_hit:
+        assert service.extract_image(Image.new("RGB", (1, 1))) is expected
+    else:
+        with pytest.raises(HTTPException) as exc_info:
+            service.extract_image(Image.new("RGB", (1, 1)))
+        assert (exc_info.value.status_code, exc_info.value.detail) == (
+            404,
+            "未检测到可识别的隐式水印",
+        )
 
-    assert result["records"] == [{"trace_id": "TR-REPOSITORY"}]
     assert repository.read_calls == 1
-    assert repository.detection_results == [False]
+    assert repository.detection_results == [v4_hit]
+    assert seen == [
+        ("candidates", repository.records),
+        ("pipeline", repository.records),
+        ("detect", repository.records),
+    ]
 
 
 def test_watermark_service_extract_upload_fingerprint_uses_repository_stats(
@@ -531,7 +573,7 @@ def test_main_extract_robust_code_uses_patchable_grid_decoder(monkeypatch) -> No
 
 def test_full_lsb_match_does_not_read_aligned_state(monkeypatch) -> None:
     payload = {"trace_id": "TRACE-LSB", "mode": "lsb"}
-    monkeypatch.setattr(main, "v4_candidate_records", lambda: ())
+    monkeypatch.setattr(main, "v4_candidate_records", lambda records: ())
     monkeypatch.setattr(main, "extract_full_lsb", lambda image: payload)
     monkeypatch.setattr(
         main,
