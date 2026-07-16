@@ -47,6 +47,7 @@ class WatermarkOperations:
     save_thumbnail: Callable[[Image.Image, Path], None]
     save_record_feature_index: Callable[[Image.Image, str], str]
     save_record_feature_index_v4: Callable[[Image.Image, str], str]
+    path_md5: Callable[[Path], str]
     path_sha256: Callable[[Path], str]
     image_content_sha256: Callable[[Image.Image], str]
     layer_scores_for_image: Callable[[Image.Image, str], dict[str, float]]
@@ -271,6 +272,8 @@ class WatermarkService:
             if robust_version == op.robust_version_v4
             else op.save_record_feature_index(watermarked, image_id)
         )
+        original_file_md5 = op.path_md5(original_path)
+        watermarked_file_md5 = op.path_md5(output_path)
         original_file_sha256 = op.path_sha256(original_path)
         watermarked_file_sha256 = op.path_sha256(output_path)
         original_image_sha256 = op.image_content_sha256(image)
@@ -288,6 +291,8 @@ class WatermarkService:
             "download_url": f"/uploads/watermarked/{output_path.name}",
             "thumbnail_url": f"/uploads/thumbnails/{thumbnail_path.name}",
             "feature_index_path": feature_index_path,
+            "original_file_md5": original_file_md5,
+            "watermarked_file_md5": watermarked_file_md5,
             "original_file_sha256": original_file_sha256,
             "watermarked_file_sha256": watermarked_file_sha256,
             "original_image_sha256": original_image_sha256,
@@ -425,11 +430,6 @@ class WatermarkService:
         records = self.repository.read_records()
         fingerprint_match = op.matched_file_fingerprint(content, records)
         if fingerprint_match:
-            if fingerprint_match.get("matched_file_type") == "original":
-                self.repository.record_detection_result(False)
-                raise HTTPException(
-                    status_code=404, detail="未检测到可识别的隐式水印"
-                )
             self.repository.record_detection_result(True)
             return fingerprint_match
         image = op.load_image_from_bytes(content)
