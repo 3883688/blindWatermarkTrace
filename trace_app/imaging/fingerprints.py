@@ -7,6 +7,14 @@ from PIL import Image
 from trace_app.imaging.io import load_image_from_bytes
 
 
+def file_md5(content: bytes) -> str:
+    return hashlib.md5(content).hexdigest().upper()
+
+
+def path_md5(path: Path) -> str:
+    return hashlib.md5(path.read_bytes()).hexdigest().upper()
+
+
 def file_sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest().upper()
 
@@ -31,26 +39,45 @@ def matched_file_fingerprint(
     with_evidence_fields: Callable[[dict[str, Any], dict[str, Any] | None], dict[str, Any]],
     now_text: Callable[[], str],
     watermark_layers: list[str],
+    file_md5_fn: Callable[[bytes], str] | None = None,
     file_sha256_fn: Callable[[bytes], str] | None = None,
     image_content_sha256_fn: Callable[[Image.Image], str] | None = None,
     load_image_from_bytes_fn: Callable[[bytes], Image.Image] | None = None,
 ) -> dict[str, Any] | None:
+    hash_md5 = file_md5_fn or file_md5
     hash_file = file_sha256_fn or file_sha256
     hash_image = image_content_sha256_fn or image_content_sha256
     load_image = load_image_from_bytes_fn or load_image_from_bytes
-    digest = hash_file(content)
+    md5_digest = hash_md5(content)
+    sha256_digest = hash_file(content)
     query_image_digest = None
     for record in read_records():
         for file_type in ("original", "watermarked"):
-            stored_file_digest = str(
+            stored_md5 = str(
+                record.get(f"{file_type}_file_md5") or ""
+            ).upper()
+            stored_sha256 = str(
                 record.get(f"{file_type}_file_sha256") or ""
             ).upper()
             stored_image_digest = str(
                 record.get(f"{file_type}_image_sha256") or ""
             ).upper()
-            if stored_file_digest and stored_file_digest == digest:
-                matched_hash_type = "file_bytes"
-                matched_hash = digest
+            matched_hash_type = None
+            matched_hash = None
+            if (
+                stored_md5 == md5_digest
+                and stored_sha256
+                and stored_sha256 == sha256_digest
+            ):
+                matched_hash_type = "file_md5_sha256"
+                matched_hash = sha256_digest
+            elif (
+                not stored_md5
+                and stored_sha256
+                and stored_sha256 == sha256_digest
+            ):
+                matched_hash_type = "file_sha256"
+                matched_hash = sha256_digest
             elif stored_image_digest:
                 try:
                     if query_image_digest is None:
@@ -74,7 +101,8 @@ def matched_file_fingerprint(
                 "phash_match": False,
                 "status": "文件指纹一样",
                 "extracted_at": now_text(),
-                "file_hash": digest,
+                "file_md5": md5_digest,
+                "file_hash": sha256_digest,
                 "image_hash": query_image_digest,
                 "matched_hash": matched_hash,
                 "matched_hash_type": matched_hash_type,

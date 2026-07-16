@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from PIL import Image, ImageDraw
 
 import main
+from trace_app.imaging.fingerprints import file_md5
 
 
 def textured_image(size: tuple[int, int] = (640, 480)) -> Image.Image:
@@ -639,27 +640,77 @@ def test_fingerprint_check_does_not_hash_legacy_record_files(tmp_path, monkeypat
     assert hash_calls == []
 
 
-def test_fingerprint_check_uses_stored_hash_without_file_io(monkeypatch):
-    content = b"stored-watermarked-file"
-    digest = main.file_sha256(content)
+@pytest.mark.parametrize("file_type", ("original", "watermarked"))
+def test_fingerprint_check_confirms_md5_with_sha256_without_image_decode(
+    monkeypatch: pytest.MonkeyPatch,
+    file_type: str,
+) -> None:
+    content = f"stored-{file_type}-file".encode("ascii")
     record = {
-        "id": "stored-hash-record",
-        "trace_id": "TR-STORED-HASH",
-        "watermarked_file_sha256": digest,
-        "user_id": "hash-user",
+        "id": f"{file_type}-record",
+        "trace_id": f"TR-{file_type.upper()}",
+        f"{file_type}_file_md5": file_md5(content),
+        f"{file_type}_file_sha256": main.file_sha256(content),
+        "original_url": "/uploads/originals/source.png",
+        "download_url": "/uploads/watermarked/marked.png",
     }
     monkeypatch.setattr(main, "read_records", lambda: [record])
     monkeypatch.setattr(
         main,
-        "path_sha256",
-        lambda path: (_ for _ in ()).throw(AssertionError("unexpected file IO")),
+        "load_image_from_bytes",
+        lambda value: (_ for _ in ()).throw(AssertionError("unexpected decode")),
     )
 
     result = main.matched_file_fingerprint(content)
 
     assert result is not None
-    assert result["trace_id"] == "TR-STORED-HASH"
-    assert result["matched_hash_type"] == "file_bytes"
+    assert result["trace_id"] == record["trace_id"]
+    assert result["matched_file_type"] == file_type
+    assert result["matched_hash_type"] == "file_md5_sha256"
+    assert result["file_md5"] == file_md5(content)
+    assert result["file_hash"] == main.file_sha256(content)
+
+
+def test_fingerprint_check_rejects_md5_candidate_when_sha256_differs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = b"collision-candidate"
+    monkeypatch.setattr(
+        main,
+        "read_records",
+        lambda: [{
+            "trace_id": "TR-COLLISION",
+            "watermarked_file_md5": file_md5(content),
+            "watermarked_file_sha256": "0" * 64,
+        }],
+    )
+    monkeypatch.setattr(
+        main,
+        "load_image_from_bytes",
+        lambda value: (_ for _ in ()).throw(ValueError("not an image")),
+    )
+
+    assert main.matched_file_fingerprint(content) is None
+
+
+def test_fingerprint_check_supports_legacy_sha256_only_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    content = b"legacy-watermarked-file"
+    monkeypatch.setattr(
+        main,
+        "read_records",
+        lambda: [{
+            "trace_id": "TR-LEGACY-SHA256",
+            "watermarked_file_sha256": main.file_sha256(content),
+        }],
+    )
+
+    result = main.matched_file_fingerprint(content)
+
+    assert result is not None
+    assert result["matched_hash_type"] == "file_sha256"
+    assert result["file_md5"] == file_md5(content)
 
 
 def test_extract_pipeline_skips_dense_fallbacks_when_disabled(monkeypatch):

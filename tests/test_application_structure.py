@@ -23,7 +23,7 @@ from trace_app.application import create_app
 from trace_app.config import Settings
 from trace_app.database.repositories import Repository
 from trace_app.dependencies import get_auth_service
-from trace_app.imaging.fingerprints import file_sha256
+from trace_app.imaging.fingerprints import file_md5, file_sha256, path_md5
 from trace_app.imaging.io import load_image_from_bytes
 from trace_app.runtime import Runtime
 from trace_app.watermark.service import WatermarkService
@@ -1008,6 +1008,14 @@ def test_imaging_fingerprints_hashes_file_bytes() -> None:
         "BA7816BF8F01CFEA414140DE5DAE2223"
         "B00361A396177A9CB410FF61F20015AD"
     )
+
+
+def test_imaging_fingerprints_hashes_file_bytes_with_md5(tmp_path: Path) -> None:
+    path = tmp_path / "vector.bin"
+    path.write_bytes(b"abc")
+
+    assert file_md5(b"abc") == "900150983CD24FB0D6963F7D28E17F72"
+    assert path_md5(path) == "900150983CD24FB0D6963F7D28E17F72"
 
 
 def test_main_alignment_wrapper_uses_patchable_resize_helper(
