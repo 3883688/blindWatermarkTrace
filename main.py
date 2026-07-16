@@ -14,7 +14,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -49,8 +48,6 @@ from watermark_v4.features import (
     save_feature_index as save_v4_feature_index,
 )
 from watermark_v4.detector import V4Candidate, detect_v4
-
-load_dotenv()
 
 from trace_app.config import (
     ADMIN_PASS,

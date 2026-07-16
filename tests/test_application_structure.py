@@ -1,4 +1,7 @@
 import ast
+import os
+import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -111,6 +114,39 @@ def test_settings_from_values_reads_app_name_from_environment(
     )
 
     assert settings.app_name == "EnvironmentApp"
+
+
+def test_config_loads_dotenv_before_constructing_global_settings() -> None:
+    script = """
+import os
+import sys
+import types
+
+dotenv = types.ModuleType("dotenv")
+
+def load_dotenv():
+    os.environ["APP_NAME"] = "LoadedFromDotenv"
+
+dotenv.load_dotenv = load_dotenv
+sys.modules["dotenv"] = dotenv
+
+from trace_app.config import settings
+
+assert settings.app_name == "LoadedFromDotenv", settings.app_name
+"""
+    env = os.environ.copy()
+    env.pop("APP_NAME", None)
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_runtime_starts_without_database_state() -> None:
