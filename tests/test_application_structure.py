@@ -16,6 +16,7 @@ from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
 from trace_app.auth.service import AuthService
 from trace_app.application import create_app
 from trace_app.config import Settings
@@ -539,6 +540,37 @@ def test_application_lifespan_disposes_sqlite_engine(tmp_path: Path) -> None:
     client.close()
     database_path.unlink()
 
+    assert not database_path.exists()
+
+
+def test_failed_runtime_creation_disposes_sqlite_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from trace_app.database import connection
+
+    database_path = tmp_path / "failed-runtime.sqlite3"
+    test_settings = Settings.from_values(
+        base_dir=Path(__file__).resolve().parents[1],
+        upload_dir=tmp_path / "uploads",
+        data_dir=tmp_path / "data",
+        db_url=f"sqlite+pysqlite:///{database_path}",
+        admin_user="admin",
+        admin_pass="secret",
+    )
+
+    def fail_seed(store, settings) -> None:
+        raise SQLAlchemyError("seed failed")
+
+    monkeypatch.setattr(connection, "seed_database_defaults", fail_seed)
+
+    with pytest.raises(RuntimeError, match="Database initialization failed") as exc_info:
+        create_app(settings=test_settings, initialize_database=True)
+
+    failed_runtime = getattr(exc_info.value, "runtime")
+    assert failed_runtime.db_error == "SQLAlchemyError"
+    assert failed_runtime.store is None
+    assert failed_runtime.engine is not None
+    database_path.unlink()
     assert not database_path.exists()
 
 
@@ -1247,6 +1279,7 @@ def test_failed_database_reinitialization_disposes_replaced_engine(
     setattr(failure, "runtime", failed_runtime)
 
     def fail_create_runtime(settings):
+        failed_engine.dispose()
         raise failure
 
     monkeypatch.setattr(main, "DB_ENABLED", True)
@@ -1259,7 +1292,7 @@ def test_failed_database_reinitialization_disposes_replaced_engine(
 
     assert main.runtime is failed_runtime
     assert previous_engine.dispose_calls == 1
-    assert failed_engine.dispose_calls == 0
+    assert failed_engine.dispose_calls >= 1
 
 
 def test_failed_database_initialization_synchronizes_compatibility_state(

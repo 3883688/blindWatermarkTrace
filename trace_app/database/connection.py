@@ -3,7 +3,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from database_store import DatabaseStore
 from trace_app.config import DEFAULT_ROLES, Settings
-from trace_app.runtime import Runtime
+from trace_app.runtime import Runtime, dispose_engine
 
 
 def seed_database_defaults(store: DatabaseStore, settings: Settings) -> None:
@@ -47,6 +47,7 @@ def create_runtime(settings: Settings, *, enabled: bool = True) -> Runtime:
     except SQLAlchemyError as exc:
         runtime.db_error = type(exc).__name__
         runtime.store = None
+        dispose_engine(runtime.engine)
         error = RuntimeError("Database initialization failed")
         setattr(error, "runtime", runtime)
         raise error from exc

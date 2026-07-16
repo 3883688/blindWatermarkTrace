@@ -5,7 +5,6 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from collections.abc import Callable
-from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -17,6 +16,7 @@ from trace_app.config import Settings, settings as default_settings
 from trace_app.database.connection import create_runtime
 from trace_app.database.repositories import Repository
 from trace_app.management.service import ManagementService
+from trace_app.runtime import dispose_engine, dispose_runtime
 from trace_app.watermark.service import WatermarkService
 from trace_app.watermark.default_operations import build_default_operations
 
@@ -32,15 +32,6 @@ def ensure_directories(settings: Settings) -> None:
     settings.watermarked_dir.mkdir(parents=True, exist_ok=True)
     settings.thumbnail_dir.mkdir(parents=True, exist_ok=True)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
-
-
-def dispose_engine(engine: Any | None) -> None:
-    if engine is not None:
-        engine.dispose()
-
-
-def dispose_runtime(runtime: Runtime) -> None:
-    dispose_engine(runtime.engine)
 
 
 @asynccontextmanager
