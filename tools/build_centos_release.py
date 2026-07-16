@@ -36,31 +36,43 @@ ROOT_FILES = (
     "watermark_ecc.py",
 )
 RECURSIVE_TREES = ("assets", "trace_app", "watermark_v4")
-EXCLUDED_DIRECTORIES = {
+RECURSIVE_SUFFIX_ALLOWLIST = {
+    "assets": {".css", ".ttf", ".woff", ".woff2"},
+    "trace_app": {".py"},
+    "watermark_v4": {".py"},
+}
+FORBIDDEN_DIRECTORIES = {
     ".cache",
+    ".git",
+    ".hg",
     ".mypy_cache",
     ".pytest_cache",
     ".ruff_cache",
+    ".svn",
+    ".venv",
     "__pycache__",
+    "cvs",
+    "env",
+    "node_modules",
     "secrets",
     "tests",
+    "tool",
+    "tools",
+    "venv",
+    "virtualenv",
 }
-EXCLUDED_SUFFIXES = {".key", ".p12", ".pem", ".pfx", ".pyc", ".pyo"}
-SSH_KEY_NAMES = ("id_dsa", "id_ecdsa", "id_ed25519", "id_rsa")
 
 
 def is_release_source(relative: Path) -> bool:
     parts = tuple(part.casefold() for part in relative.parts)
-    if any(part in EXCLUDED_DIRECTORIES for part in parts[:-1]):
+    if len(parts) < 2 or any(part.startswith(".") for part in parts):
         return False
-    name = parts[-1]
-    if name == ".env" or name.startswith(".env."):
+    allowed_suffixes = RECURSIVE_SUFFIX_ALLOWLIST.get(parts[0])
+    if allowed_suffixes is None:
         return False
-    if any(name == key or name.startswith(f"{key}.") for key in SSH_KEY_NAMES):
+    if any(part in FORBIDDEN_DIRECTORIES for part in parts[1:-1]):
         return False
-    if name.startswith("secrets") and name.endswith(".json"):
-        return False
-    return relative.suffix.casefold() not in EXCLUDED_SUFFIXES
+    return relative.suffix.casefold() in allowed_suffixes
 
 
 def _is_link_or_junction(path: Path) -> bool:
@@ -99,7 +111,8 @@ def _validate_source_entry(path: Path, allowed_root: Path) -> Path:
     return _resolve_inside(path, allowed_root, strict=True)
 
 
-def release_files(root: Path = ROOT) -> tuple[Path, ...]:
+def release_files(root: Path | None = None) -> tuple[Path, ...]:
+    root = ROOT if root is None else root
     if not root.is_dir():
         raise FileNotFoundError(f"Release source root is missing: {root}")
     _reject_link_components(root, root)
@@ -128,7 +141,10 @@ def release_files(root: Path = ROOT) -> tuple[Path, ...]:
             for name in directory_names:
                 directory = current / name
                 _validate_source_entry(directory, tree_root)
-                if name.casefold() not in EXCLUDED_DIRECTORIES:
+                if (
+                    not name.startswith(".")
+                    and name.casefold() not in FORBIDDEN_DIRECTORIES
+                ):
                     kept_directories.append(name)
             directory_names[:] = kept_directories
             for name in file_names:
@@ -184,7 +200,7 @@ def _validate_release_targets() -> None:
 
 def build_release() -> str:
     _validate_release_targets()
-    files = release_files()
+    files = release_files(ROOT)
     if RELEASE_ROOT.exists():
         shutil.rmtree(RELEASE_ROOT)
     RELEASE_ROOT.mkdir(parents=True)

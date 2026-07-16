@@ -1,4 +1,6 @@
+import hashlib
 from pathlib import Path
+import zipfile
 
 import pytest
 
@@ -40,6 +42,18 @@ def _write_required_root_files(root: Path, *, missing: str | None = None) -> Non
         "trace_app/id_ed25519",
         "assets/secrets.json",
         "assets/secrets-production.json",
+        "trace_app/credentials.json",
+        "trace_app/.npmrc",
+        "trace_app/nested/.hidden.py",
+        "trace_app/nested/.git/config",
+        "trace_app/nested/.venv/module.py",
+        "trace_app/nested/venv/module.py",
+        "trace_app/nested/tools/helper.py",
+        "assets/customer-export.csv",
+        "assets/unknown.bin",
+        "assets/metadata.json",
+        "trace_app/metadata.json",
+        "unknown/module.py",
     ),
 )
 def test_release_source_filter_rejects_private_and_development_paths(
@@ -51,15 +65,21 @@ def test_release_source_filter_rejects_private_and_development_paths(
 @pytest.mark.parametrize(
     "relative",
     (
-        "password_security.py",
         "trace_app/password_security.py",
         "trace_app/module.py",
         "watermark_v4/config.py",
+        "assets/tabler-icons.css",
+        "assets/fonts/tabler-icons.ttf",
+        "assets/fonts/tabler-icons.woff",
         "assets/fonts/tabler-icons.woff2",
     ),
 )
 def test_release_source_filter_allows_runtime_sources(relative: str) -> None:
     assert is_release_source(Path(relative))
+
+
+def test_root_password_security_module_remains_explicitly_allowed() -> None:
+    assert "password_security.py" in ROOT_FILES
 
 
 def test_release_collector_filters_nested_fixture_tree(tmp_path: Path) -> None:
@@ -77,6 +97,12 @@ def test_release_collector_filters_nested_fixture_tree(tmp_path: Path) -> None:
         "trace_app/nested/private.pem",
         "assets/.pytest_cache/state",
         "assets/secrets-release.json",
+        "trace_app/credentials.json",
+        "trace_app/.npmrc",
+        "trace_app/nested/.git/config",
+        "assets/customer-export.csv",
+        "assets/unknown.bin",
+        "assets/metadata.json",
     }
     for relative in allowed | excluded:
         path = tmp_path / relative
@@ -176,6 +202,53 @@ def test_build_rejects_external_release_artifact_paths(
         builder.build_release()
 
     assert release_main.read_bytes() == original
+
+
+def test_build_is_deterministic_and_does_not_modify_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    _write_required_root_files(source)
+    recursive_files = {
+        "trace_app/module.py": b"trace fixture",
+        "watermark_v4/config.py": b"watermark fixture",
+        "assets/app.css": b"asset fixture",
+        "assets/fonts/icons.woff2": b"font fixture",
+    }
+    for relative, content in recursive_files.items():
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    release_parent = source / "release"
+    release_parent.mkdir()
+    release_root = release_parent / builder.RELEASE_NAME
+    archive = release_parent / f"{builder.RELEASE_NAME}.zip"
+    checksum = archive.with_suffix(".zip.sha256")
+    monkeypatch.setattr(builder, "ROOT", source)
+    monkeypatch.setattr(builder, "RELEASE_PARENT", release_parent)
+    monkeypatch.setattr(builder, "RELEASE_ROOT", release_root)
+    monkeypatch.setattr(builder, "RELEASE_ARCHIVE", archive)
+    monkeypatch.setattr(builder, "RELEASE_CHECKSUM", checksum)
+    source_paths = release_files(source)
+    source_hashes = {
+        relative: hashlib.sha256((source / relative).read_bytes()).hexdigest()
+        for relative in source_paths
+    }
+
+    first_digest = builder.build_release()
+    first_archive = archive.read_bytes()
+    second_digest = builder.build_release()
+
+    assert first_digest == second_digest
+    assert archive.read_bytes() == first_archive
+    assert {
+        relative: hashlib.sha256((source / relative).read_bytes()).hexdigest()
+        for relative in source_paths
+    } == source_hashes
+    with zipfile.ZipFile(archive) as package:
+        assert package.read("main.py") == b"required"
+        assert package.read("trace_app/module.py") == b"trace fixture"
 
 
 @pytest.mark.parametrize("linked_target", ("RELEASE_PARENT", "RELEASE_ROOT"))
