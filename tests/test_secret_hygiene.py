@@ -67,7 +67,7 @@ def test_environment_example_has_empty_credentials() -> None:
 
 
 def test_source_and_frontend_have_no_credential_defaults() -> None:
-    source = (ROOT / "main.py").read_text(encoding="utf-8")
+    source = (ROOT / "trace_app" / "config.py").read_text(encoding="utf-8")
     frontend = (ROOT / "index.html").read_text(encoding="utf-8")
     assert 'os.getenv("DB_URL", "")' in source
     assert 'os.getenv("ADMIN_USER", "")' in source
