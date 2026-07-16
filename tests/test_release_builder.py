@@ -2,7 +2,16 @@ from pathlib import Path
 
 import pytest
 
-from tools.build_centos_release import is_release_source, release_files
+from tools.build_centos_release import ROOT_FILES, is_release_source, release_files
+
+
+def _write_required_root_files(root: Path, *, missing: str | None = None) -> None:
+    for relative in ROOT_FILES:
+        if relative == missing:
+            continue
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"required")
 
 
 @pytest.mark.parametrize(
@@ -53,6 +62,7 @@ def test_release_source_filter_allows_runtime_sources(relative: str) -> None:
 
 
 def test_release_collector_filters_nested_fixture_tree(tmp_path: Path) -> None:
+    _write_required_root_files(tmp_path)
     allowed = {
         "trace_app/module.py",
         "trace_app/password_security.py",
@@ -76,3 +86,16 @@ def test_release_collector_filters_nested_fixture_tree(tmp_path: Path) -> None:
 
     assert allowed <= collected
     assert not (excluded & collected)
+
+
+@pytest.mark.parametrize("missing", ("main.py", "deploy.sh", "requirements.txt"))
+def test_release_collector_fails_when_required_root_file_is_missing(
+    tmp_path: Path,
+    missing: str,
+) -> None:
+    _write_required_root_files(tmp_path, missing=missing)
+
+    with pytest.raises(FileNotFoundError) as error:
+        release_files(tmp_path)
+
+    assert missing in str(error.value)

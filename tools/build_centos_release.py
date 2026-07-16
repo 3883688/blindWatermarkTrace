@@ -62,11 +62,11 @@ def is_release_source(relative: Path) -> bool:
 
 
 def release_files(root: Path = ROOT) -> tuple[Path, ...]:
-    paths = {
-        Path(relative)
-        for relative in ROOT_FILES
-        if (root / relative).is_file()
-    }
+    paths = set()
+    for relative in ROOT_FILES:
+        if not (root / relative).is_file():
+            raise FileNotFoundError(f"Required release source is missing: {relative}")
+        paths.add(Path(relative))
     for tree in RECURSIVE_TREES:
         paths.update(
             relative
