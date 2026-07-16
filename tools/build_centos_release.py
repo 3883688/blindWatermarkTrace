@@ -34,15 +34,46 @@ ROOT_FILES = (
     "watermark_ecc.py",
 )
 RECURSIVE_TREES = ("assets", "trace_app", "watermark_v4")
+EXCLUDED_DIRECTORIES = {
+    ".cache",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "secrets",
+    "tests",
+}
+EXCLUDED_SUFFIXES = {".key", ".p12", ".pem", ".pfx", ".pyc", ".pyo"}
+SSH_KEY_NAMES = ("id_dsa", "id_ecdsa", "id_ed25519", "id_rsa")
 
 
-def release_files() -> tuple[Path, ...]:
-    paths = {Path(relative) for relative in ROOT_FILES}
+def is_release_source(relative: Path) -> bool:
+    parts = tuple(part.casefold() for part in relative.parts)
+    if any(part in EXCLUDED_DIRECTORIES for part in parts[:-1]):
+        return False
+    name = parts[-1]
+    if name == ".env" or name.startswith(".env."):
+        return False
+    if any(name == key or name.startswith(f"{key}.") for key in SSH_KEY_NAMES):
+        return False
+    if name.startswith("secrets") and name.endswith(".json"):
+        return False
+    return relative.suffix.casefold() not in EXCLUDED_SUFFIXES
+
+
+def release_files(root: Path = ROOT) -> tuple[Path, ...]:
+    paths = {
+        Path(relative)
+        for relative in ROOT_FILES
+        if (root / relative).is_file()
+    }
     for tree in RECURSIVE_TREES:
         paths.update(
-            path.relative_to(ROOT)
-            for path in (ROOT / tree).rglob("*")
-            if path.is_file() and "__pycache__" not in path.parts
+            relative
+            for path in (root / tree).rglob("*")
+            if path.is_file()
+            for relative in (path.relative_to(root),)
+            if is_release_source(relative)
         )
     return tuple(sorted(paths, key=lambda path: path.as_posix()))
 
