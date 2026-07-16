@@ -55,6 +55,16 @@ def test_auth_service_filters_unknown_menu_keys() -> None:
     ) == ["watermark", "trace"]
 
 
+def test_auth_service_defers_missing_repository_failure_until_database_access() -> None:
+    service = AuthService(repository=None)
+
+    assert service.repository is None
+    with pytest.raises(HTTPException) as exc_info:
+        service.list_roles()
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "数据库不可用"
+
+
 def _auth_service() -> AuthService:
     store = DatabaseStore(create_engine("sqlite+pysqlite:///:memory:"))
     store.create_schema()
