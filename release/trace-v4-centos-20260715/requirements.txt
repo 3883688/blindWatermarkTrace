@@ -7,6 +7,6 @@ sqlalchemy
 pymysql
 pytest
 httpx
-opencv-python-headless
+opencv-python-headless==4.13.0.92
 PyWavelets
 reedsolo==1.7.0
