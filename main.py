@@ -354,8 +354,9 @@ def get_watermark_service() -> WatermarkService:
             path_sha256=path_sha256,
             image_content_sha256=image_content_sha256,
             layer_scores_for_image=layer_scores_for_image,
-            matched_file_fingerprint=matched_file_fingerprint,
-            read_records=read_records,
+            matched_file_fingerprint=lambda content, records: matched_file_fingerprint(
+                content, records=records
+            ),
             load_image_from_bytes=load_image_from_bytes,
             load_image_from_url=load_image_from_url,
             v4_candidate_records=v4_candidate_records,
@@ -373,7 +374,6 @@ def get_watermark_service() -> WatermarkService:
             detect_robust_watermark=detect_robust_watermark,
             detect_by_residual_match=detect_by_residual_match,
             detect_visible_copyright=detect_visible_copyright,
-            record_detection_result=record_detection_result,
             with_evidence_fields=with_evidence_fields,
             watermark_detection_pipeline=watermark_detection.extract_watermark_from_image,
             default_watermark_auth_key=DEFAULT_WATERMARK_AUTH_KEY,
@@ -1327,10 +1327,13 @@ def image_content_sha256(image: Image.Image) -> str:
     return imaging_fingerprints.image_content_sha256(image)
 
 
-def matched_file_fingerprint(content: bytes) -> dict[str, Any] | None:
+def matched_file_fingerprint(
+    content: bytes,
+    records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     return imaging_fingerprints.matched_file_fingerprint(
         content,
-        read_records=read_records,
+        read_records=read_records if records is None else lambda: records,
         with_evidence_fields=with_evidence_fields,
         now_text=now_text,
         watermark_layers=WATERMARK_LAYERS,

@@ -50,8 +50,9 @@ class WatermarkOperations:
     path_sha256: Callable[[Path], str]
     image_content_sha256: Callable[[Image.Image], str]
     layer_scores_for_image: Callable[[Image.Image, str], dict[str, float]]
-    matched_file_fingerprint: Callable[[bytes], dict[str, Any] | None]
-    read_records: Callable[[], list[dict[str, Any]]]
+    matched_file_fingerprint: Callable[
+        [bytes, list[dict[str, Any]]], dict[str, Any] | None
+    ]
     load_image_from_bytes: Callable[[bytes], Image.Image]
     load_image_from_url: Callable[[str], Image.Image]
     v4_candidate_records: Callable[[], Any]
@@ -69,7 +70,6 @@ class WatermarkOperations:
     detect_robust_watermark: Callable[[Image.Image], dict[str, Any] | None]
     detect_by_residual_match: Callable[[Image.Image], dict[str, Any] | None]
     detect_visible_copyright: Callable[[Image.Image], dict[str, Any] | None]
-    record_detection_result: Callable[[bool], None]
     with_evidence_fields: Callable[..., dict[str, Any]]
     watermark_detection_pipeline: Callable[..., dict[str, Any]]
     default_watermark_auth_key: str
@@ -336,7 +336,7 @@ class WatermarkService:
         v4_candidates = op.v4_candidate_records()
         return op.watermark_detection_pipeline(
             image,
-            records=op.read_records,
+            records=self.repository.read_records,
             v4_candidates=v4_candidates,
             detect_v4_watermark=op.detect_v4_watermark,
             extract_full_lsb=op.extract_full_lsb,
@@ -354,7 +354,7 @@ class WatermarkService:
             detect_robust_watermark=op.detect_robust_watermark,
             detect_by_residual_match=op.detect_by_residual_match,
             detect_visible_copyright=op.detect_visible_copyright,
-            record_detection_result=op.record_detection_result,
+            record_detection_result=self.repository.record_detection_result,
             with_evidence_fields=op.with_evidence_fields,
             now_text=op.now_text,
             mode_label=op.mode_label,
@@ -369,14 +369,15 @@ class WatermarkService:
     async def extract_upload(self, file: UploadFile) -> dict[str, Any]:
         op = self._operations()
         content = await file.read()
-        fingerprint_match = op.matched_file_fingerprint(content)
+        records = self.repository.read_records()
+        fingerprint_match = op.matched_file_fingerprint(content, records)
         if fingerprint_match:
             if fingerprint_match.get("matched_file_type") == "original":
-                op.record_detection_result(False)
+                self.repository.record_detection_result(False)
                 raise HTTPException(
                     status_code=404, detail="未检测到可识别的隐式水印"
                 )
-            op.record_detection_result(True)
+            self.repository.record_detection_result(True)
             return fingerprint_match
         image = op.load_image_from_bytes(content)
         return self.extract_image(image)

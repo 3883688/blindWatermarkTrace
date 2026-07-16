@@ -1,15 +1,18 @@
 import ast
+import asyncio
 import importlib
 import os
 import subprocess
 import sys
+from dataclasses import replace
+from io import BytesIO
 from types import SimpleNamespace
 from collections import Counter
 from pathlib import Path
 
 import main
 from database_store import DatabaseStore
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 import pytest
 from sqlalchemy import create_engine
 from trace_app.auth.service import AuthService
@@ -24,7 +27,6 @@ from trace_app.watermark import robust as robust_module
 from trace_app.watermark.lsb import bits_from_bytes, bytes_from_bits
 from trace_app.watermark.small_crop import small_trace_short_code
 
-from io import BytesIO
 from PIL import Image
 
 
@@ -63,6 +65,90 @@ def test_watermark_service_factory_synchronizes_current_generated_trace_list(
     assert service.runtime is main.runtime
     assert service.settings is main.settings
     assert service.runtime.generated_trace_ids is generated
+
+
+class _WatermarkRepositorySpy:
+    def __init__(self) -> None:
+        self.read_calls = 0
+        self.detection_results: list[bool] = []
+
+    def read_records(self) -> list[dict[str, str]]:
+        self.read_calls += 1
+        return [{"trace_id": "TR-REPOSITORY"}]
+
+    def record_detection_result(self, success: bool) -> None:
+        self.detection_results.append(success)
+
+
+def test_watermark_service_extract_image_uses_injected_repository(
+    tmp_path: Path,
+) -> None:
+    repository = _WatermarkRepositorySpy()
+    operations = replace(
+        main.get_watermark_service().operations,
+        v4_candidate_records=lambda: (),
+        watermark_detection_pipeline=lambda image, **kwargs: {
+            "records": kwargs["records"](),
+            "stats": kwargs["record_detection_result"](False),
+        },
+    )
+    assert not hasattr(operations, "read_records")
+    assert not hasattr(operations, "record_detection_result")
+    service = WatermarkService(
+        settings=Settings.from_values(
+            base_dir=tmp_path,
+            upload_dir="uploads",
+            data_dir="data",
+            db_url="",
+            admin_user="",
+            admin_pass="",
+        ),
+        repository=repository,
+        runtime=Runtime(),
+        operations=operations,
+    )
+
+    result = service.extract_image(Image.new("RGB", (1, 1)))
+
+    assert result["records"] == [{"trace_id": "TR-REPOSITORY"}]
+    assert repository.read_calls == 1
+    assert repository.detection_results == [False]
+
+
+def test_watermark_service_extract_upload_fingerprint_uses_repository_stats(
+    tmp_path: Path,
+) -> None:
+    repository = _WatermarkRepositorySpy()
+    operations = replace(
+        main.get_watermark_service().operations,
+        matched_file_fingerprint=lambda content, records: {
+            "trace_id": "TR-HIT",
+            "matched_file_type": "watermarked",
+        },
+    )
+    service = WatermarkService(
+        settings=Settings.from_values(
+            base_dir=tmp_path,
+            upload_dir="uploads",
+            data_dir="data",
+            db_url="",
+            admin_user="",
+            admin_pass="",
+        ),
+        repository=repository,
+        runtime=Runtime(),
+        operations=operations,
+    )
+
+    result = asyncio.run(
+        service.extract_upload(
+            UploadFile(filename="matched.png", file=BytesIO(b"matched"))
+        )
+    )
+
+    assert result["trace_id"] == "TR-HIT"
+    assert repository.read_calls == 1
+    assert repository.detection_results == [True]
 
 
 EXPECTED_ROUTES = {
@@ -447,8 +533,14 @@ def test_full_lsb_match_does_not_read_aligned_state(monkeypatch) -> None:
     payload = {"trace_id": "TRACE-LSB", "mode": "lsb"}
     monkeypatch.setattr(main, "v4_candidate_records", lambda: ())
     monkeypatch.setattr(main, "extract_full_lsb", lambda image: payload)
-    monkeypatch.setattr(main, "read_records", lambda: [])
-    monkeypatch.setattr(main, "record_detection_result", lambda success: None)
+    monkeypatch.setattr(
+        main,
+        "repository",
+        SimpleNamespace(
+            read_records=lambda: [],
+            record_detection_result=lambda success: None,
+        ),
+    )
     monkeypatch.delattr(main.app.state, "aligned_candidate_limit", raising=False)
 
     result = main.extract_watermark_from_image(Image.new("RGB", (1, 1)))

@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -568,7 +569,14 @@ def test_extract_pipeline_uses_aligned_authenticated_detector(monkeypatch):
     monkeypatch.setattr(main, "should_run_frequency_fallbacks", lambda image: True)
     monkeypatch.setattr(main, "detect_dot_matrix_trace", lambda image: None)
     monkeypatch.setattr(main, "detect_aligned_authenticated_watermark", lambda image, **kwargs: expected)
-    monkeypatch.setattr(main, "record_detection_result", lambda success: None)
+    monkeypatch.setattr(
+        main,
+        "repository",
+        SimpleNamespace(
+            read_records=lambda: [],
+            record_detection_result=lambda success: None,
+        ),
+    )
     monkeypatch.setattr(main.app.state, "aligned_authenticated_detection_enabled", True, raising=False)
 
     result = main.extract_watermark_from_image(Image.new("RGB", (256, 256), "white"))
@@ -665,7 +673,14 @@ def test_extract_pipeline_skips_dense_fallbacks_when_disabled(monkeypatch):
     monkeypatch.setattr(main, "detect_small_crop_trace", lambda image: (_ for _ in ()).throw(AssertionError("dense scan")))
     monkeypatch.setattr(main, "detect_watermark_code", lambda image: (_ for _ in ()).throw(AssertionError("dense scan")))
     monkeypatch.setattr(main, "detect_robust_watermark", lambda image: (_ for _ in ()).throw(AssertionError("dense scan")))
-    monkeypatch.setattr(main, "record_detection_result", lambda success: None)
+    monkeypatch.setattr(
+        main,
+        "repository",
+        SimpleNamespace(
+            read_records=lambda: [],
+            record_detection_result=lambda success: None,
+        ),
+    )
     monkeypatch.setattr(main.app.state, "aligned_authenticated_detection_enabled", True, raising=False)
     monkeypatch.setattr(main.app.state, "dense_watermark_fallback_enabled", False, raising=False)
     monkeypatch.setattr(main.app.state, "visual_match_fallback_enabled", False)
