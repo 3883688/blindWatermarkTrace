@@ -12,7 +12,12 @@ import pytest
 from sqlalchemy import create_engine
 from trace_app.config import Settings
 from trace_app.database.repositories import Repository
+from trace_app.imaging.fingerprints import file_sha256
+from trace_app.imaging.io import load_image_from_bytes
 from trace_app.runtime import Runtime
+
+from io import BytesIO
+from PIL import Image
 
 
 EXPECTED_ROUTES = {
@@ -35,6 +40,20 @@ EXPECTED_ROUTES = {
     ("DELETE", "/api/images/{image_id}"),
     ("POST", "/api/dev/reset"),
 }
+
+
+def test_imaging_io_loads_image_from_bytes() -> None:
+    buffer = BytesIO()
+    Image.new("RGB", (1, 1), "white").save(buffer, format="PNG")
+
+    assert load_image_from_bytes(buffer.getvalue()).size == (1, 1)
+
+
+def test_imaging_fingerprints_hashes_file_bytes() -> None:
+    assert file_sha256(b"abc") == (
+        "BA7816BF8F01CFEA414140DE5DAE2223"
+        "B00361A396177A9CB410FF61F20015AD"
+    )
 
 
 def test_main_exposes_expected_routes() -> None:

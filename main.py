@@ -6,18 +6,16 @@ import re
 import shutil
 import sys
 import time
-import urllib.request
 import uuid
 from datetime import datetime
 from functools import lru_cache
-from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageFont
 import cv2
 import numpy as np
 import pywt
@@ -26,12 +24,6 @@ cv2.setNumThreads(1)
 
 from watermark_ecc import codeword_phase, decode_expected_codeword, encode_codeword, tile_phase
 from watermark_auth import auth_code_from_trace, inverse_permutation, permuted_code_bits, phase_permutation
-from candidate_feature_index import (
-    descriptor_match_score,
-    extract_feature_descriptors,
-    load_feature_descriptors,
-    save_feature_descriptors,
-)
 from database_store import DatabaseStore
 from watermark_v4 import (
     V4Config,
@@ -41,9 +33,7 @@ from watermark_v4 import (
     encode_codeword as encode_v4_codeword,
 )
 from watermark_v4.features import (
-    extract_feature_index as extract_v4_feature_index,
     load_feature_index as load_v4_feature_index,
-    save_feature_index as save_v4_feature_index,
 )
 from watermark_v4.detector import V4Candidate, detect_v4
 
@@ -76,9 +66,6 @@ from trace_app.config import (
     DOT_MATRIX_TILE,
     DOT_MATRIX_VERSION,
     DWT_DELTA,
-    FEATURE_MATCH_MIN_GOOD,
-    FEATURE_RECENT_BACKFILL,
-    FEATURE_RECENT_RESERVE,
     FFT_DELTA,
     MAGIC,
     MENU_LABELS,
@@ -112,6 +99,10 @@ from trace_app.database.connection import (
     seed_database_defaults as seed_runtime_defaults,
 )
 from trace_app.database.repositories import Repository
+from trace_app.imaging import feature_matching as imaging_feature_matching
+from trace_app.imaging import fingerprints as imaging_fingerprints
+from trace_app.imaging import io as imaging_io
+from trace_app.imaging import visible_mark as imaging_visible_mark
 
 RUNNING_PYTEST = "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None
 DB_ENABLED = not RUNNING_PYTEST
@@ -2061,36 +2052,15 @@ def decode_aligned_robust_trace_v3(
 
 
 def save_record_feature_index(image: Image.Image, record_id: str) -> str:
-    safe_id = re.sub(r"[^A-Za-z0-9_-]", "", str(record_id))
-    if not safe_id:
-        raise ValueError("feature index record id is invalid")
-    relative = Path("feature_index") / f"{safe_id}.npz"
-    descriptors = extract_feature_descriptors(image)
-    save_feature_descriptors(DATA_DIR / relative, descriptors)
-    return relative.as_posix()
+    return imaging_feature_matching.save_record_feature_index(image, record_id, DATA_DIR)
 
 
 def save_record_feature_index_v4(image: Image.Image, record_id: str) -> str:
-    safe_id = re.sub(r"[^A-Za-z0-9_-]", "", str(record_id))
-    if not safe_id:
-        raise ValueError("feature index record id is invalid")
-    relative = Path("feature_index_v4") / f"{safe_id}.npz"
-    index = extract_v4_feature_index(image)
-    save_v4_feature_index(DATA_DIR / relative, index)
-    return relative.as_posix()
+    return imaging_feature_matching.save_record_feature_index_v4(image, record_id, DATA_DIR)
 
 
 def record_feature_index_path(record: dict[str, Any]) -> Path | None:
-    raw = str(record.get("feature_index_path") or "").strip()
-    if raw:
-        relative = Path(raw.replace("\\", "/"))
-        if relative.is_absolute() or ".." in relative.parts:
-            return None
-        return DATA_DIR / relative
-    record_id = re.sub(r"[^A-Za-z0-9_-]", "", str(record.get("id") or ""))
-    if not record_id:
-        return None
-    return DATA_DIR / "feature_index" / f"{record_id}.npz"
+    return imaging_feature_matching.record_feature_index_path(record, DATA_DIR)
 
 
 def v4_candidate_records() -> tuple[V4Candidate, ...]:
@@ -2193,101 +2163,13 @@ def rank_aligned_candidates(
     image: Image.Image,
     records: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    query_ratio = image.width / max(1, image.height)
-    generated_trace_ids = list(getattr(app.state, "generated_trace_ids", []))
-    recent_trace_ids = list(generated_trace_ids[:FEATURE_RECENT_BACKFILL])
-    for record in records:
-        trace_id = record.get("trace_id")
-        if len(recent_trace_ids) >= FEATURE_RECENT_BACKFILL:
-            break
-        if trace_id and record.get("created_at") and trace_id not in recent_trace_ids:
-            recent_trace_ids.append(trace_id)
-    recent_order = {
-        trace_id: index
-        for index, trace_id in enumerate(recent_trace_ids[:FEATURE_RECENT_RESERVE])
-    }
-    backfill_trace_ids = set(recent_trace_ids)
-
-    for record in records:
-        if record.get("trace_id") not in backfill_trace_ids:
-            continue
-        path = record_feature_index_path(record)
-        if path and path.exists():
-            continue
-        url = record.get("download_url")
-        record_id = record.get("id")
-        if not record_id or not url or not url.startswith("/uploads/"):
-            continue
-        image_path = UPLOAD_DIR / url.replace("/uploads/", "")
-        try:
-            with Image.open(image_path) as target:
-                save_record_feature_index(target.convert("RGB"), str(record_id))
-        except (OSError, ValueError):
-            continue
-
-    query_descriptors = extract_feature_descriptors(image)
-    feature_ranked = []
-    remaining = []
-    for record in records:
-        path = record_feature_index_path(record)
-        descriptors = (
-            load_feature_descriptors(path)
-            if path is not None and path.exists()
-            else np.empty((0, 32), dtype=np.uint8)
-        )
-        match_count, match_quality = descriptor_match_score(query_descriptors, descriptors)
-        if match_count >= FEATURE_MATCH_MIN_GOOD:
-            feature_ranked.append({
-                **record,
-                "_feature_match_count": match_count,
-                "_feature_match_quality": match_quality,
-            })
-        else:
-            remaining.append(record)
-
-    feature_ranked.sort(
-        key=lambda record: (
-            -int(record.get("_feature_match_count", 0)),
-            -float(record.get("_feature_match_quality", 0.0)),
-        )
+    return imaging_feature_matching.rank_aligned_candidates(
+        image,
+        records,
+        upload_dir=UPLOAD_DIR,
+        data_dir=DATA_DIR,
+        generated_trace_ids=list(getattr(app.state, "generated_trace_ids", [])),
     )
-
-    def ratio_distance(record: dict[str, Any]) -> float:
-        recorded_width = record.get("image_width")
-        recorded_height = record.get("image_height")
-        if recorded_width and recorded_height:
-            try:
-                target_ratio = float(recorded_width) / max(1.0, float(recorded_height))
-                return abs(target_ratio - query_ratio)
-            except (TypeError, ValueError):
-                pass
-        url = record.get("download_url")
-        if not url or not url.startswith("/uploads/"):
-            return float("inf")
-        path = UPLOAD_DIR / url.replace("/uploads/", "")
-        try:
-            with Image.open(path) as target:
-                target_ratio = target.width / max(1, target.height)
-        except Exception:
-            return float("inf")
-        return abs(target_ratio - query_ratio)
-
-    feature_trace_ids = {record.get("trace_id") for record in feature_ranked}
-    recent_ranked = sorted(
-        [
-            record
-            for record in remaining
-            if record.get("trace_id") in recent_order
-            and record.get("trace_id") not in feature_trace_ids
-        ],
-        key=lambda record: recent_order[record.get("trace_id")],
-    )[:FEATURE_RECENT_RESERVE]
-    reserved_ids = {id(record) for record in recent_ranked}
-    aspect_ranked = sorted(
-        [record for record in remaining if id(record) not in reserved_ids],
-        key=ratio_distance,
-    )
-    return feature_ranked + recent_ranked + aspect_ranked
 
 
 def detect_aligned_authenticated_watermark(
@@ -2726,241 +2608,48 @@ def should_run_visual_match_fallback(image: Image.Image) -> bool:
 
 
 def detect_visible_copyright(image: Image.Image) -> dict[str, Any] | None:
-    records = read_records()
-    copyright_records = [item for item in records if item.get("copyright_enabled") and item.get("copyright_text")]
-    if not copyright_records:
-        return None
-
-    # The visible copyright layer is human-readable but not OCR-backed in this lightweight version.
-    # If hidden extraction fails and the image contains strong watermark-like bright overlays,
-    # return the configured copyright source as a lower-confidence fallback.
-    grayscale = image.convert("L")
-    histogram = grayscale.histogram()
-    total = max(1, sum(histogram))
-    bright_ratio = sum(histogram[205:]) / total
-    if bright_ratio < 0.05:
-        return None
-
-    record = copyright_records[0]
-    text = str(record.get("copyright_text", "")).strip()
-    user_id = "QQ:757675150" if "757675150" in text else text.replace("©", "").strip()
-    digest = hashlib.sha1(text.encode("utf-8")).hexdigest()[:12].upper()
-    return with_evidence_fields({
-        "id": record.get("id"),
-        "trace_id": f"VISIBLE-{digest}",
-        "user_id": user_id or record.get("user_id") or "VISIBLE-WATERMARK",
-        "mode": "visible",
-        "mode_label": "可见版权水印",
-        "created_at": record.get("created_at"),
-        "confidence": 68,
-        "phash_match": False,
-        "status": "检测到可见版权水印",
-        "extracted_at": now_text(),
-    }, record)
+    return imaging_visible_mark.detect_visible_copyright(
+        image,
+        records=read_records(),
+        with_evidence_fields=with_evidence_fields,
+        now_text=now_text,
+    )
 
 
 def image_to_cv_gray(image: Image.Image, max_side: int = 1200):
-    rgb = image.convert("RGB")
-    arr = cv2.cvtColor(np.array(rgb), cv2.COLOR_RGB2GRAY)
-    height, width = arr.shape[:2]
-    scale = min(1.0, max_side / max(width, height))
-    if scale < 1.0:
-        arr = cv2.resize(arr, (int(width * scale), int(height * scale)), interpolation=cv2.INTER_AREA)
-    return arr
+    return imaging_feature_matching.image_to_cv_gray(image, max_side)
 
 
 def record_visual_consistency(image: Image.Image, record: dict[str, Any]) -> tuple[bool, int, float, float]:
-    url = record.get("download_url")
-    original_url = record.get("original_url")
-    if not url or not original_url or not url.startswith("/uploads/") or not original_url.startswith("/uploads/"):
-        return False, 0, 0.0, 0.0
-    path = UPLOAD_DIR / url.replace("/uploads/", "")
-    original_path = UPLOAD_DIR / original_url.replace("/uploads/", "")
-    if not path.exists() or not original_path.exists():
-        return False, 0, 0.0, 0.0
-    try:
-        query = image_to_cv_gray(image)
-        target = image_to_cv_gray(Image.open(path))
-    except Exception:
-        return False, 0, 0.0, 0.0
-    inliers, ratio = feature_match_score(query, target)
-    residual_score = robust_residual_score(image, original_path, path, min_inliers=18, min_ratio=0.32)
-    standard_match = inliers >= 18 and ratio >= 0.32 and residual_score >= 0.08
-    strong_visual_small_crop_match = inliers >= 30 and ratio >= 0.65 and residual_score >= 0.06
-    return (standard_match or strong_visual_small_crop_match), inliers, ratio, residual_score
+    return imaging_feature_matching.record_visual_consistency(image, record, UPLOAD_DIR)
 
 
 def residual_candidate_evidence(image: Image.Image) -> dict[str, Any] | None:
-    records = [record for record in read_records() if record.get("robust_watermark")]
-    if not records:
-        return None
-
-    best_record = None
-    best_inliers = 0
-    best_ratio = 0.0
-    best_residual = 0.0
-    for record in records:
-        consistent, inliers, ratio, residual_score = record_visual_consistency(image, record)
-        if not consistent:
-            continue
-        if residual_score > best_residual or (
-            residual_score == best_residual and (inliers > best_inliers or (inliers == best_inliers and ratio > best_ratio))
-        ):
-            best_record = record
-            best_inliers = inliers
-            best_ratio = ratio
-            best_residual = residual_score
-
-    if not best_record or best_residual < 0.12:
-        return None
-
-    return {
-        "candidate_id": best_record.get("id"),
-        "candidate_trace_id": best_record.get("trace_id"),
-        "visual_inliers": best_inliers,
-        "visual_ratio": round(best_ratio, 3),
-        "residual_score": round(best_residual, 4),
-    }
+    return imaging_feature_matching.residual_candidate_evidence(
+        image,
+        records=read_records(),
+        record_visual_consistency_fn=record_visual_consistency,
+    )
 
 
 def detect_by_residual_match(image: Image.Image) -> dict[str, Any] | None:
-    # Visual and residual similarity can rank candidates but cannot prove that the
-    # query contains a watermark. Code-backed detectors perform final attribution.
-    return None
+    return imaging_feature_matching.detect_by_residual_match(image)
 
 
 def feature_match_score(query_gray, target_gray) -> tuple[int, float]:
-    orb = cv2.ORB_create(nfeatures=3000, scaleFactor=1.2, nlevels=8, fastThreshold=7)
-    q_keypoints, q_descriptors = orb.detectAndCompute(query_gray, None)
-    t_keypoints, t_descriptors = orb.detectAndCompute(target_gray, None)
-    if q_descriptors is None or t_descriptors is None or len(q_keypoints) < 12 or len(t_keypoints) < 12:
-        return 0, 0.0
-
-    matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
-    raw_matches = matcher.knnMatch(q_descriptors, t_descriptors, k=2)
-    good = []
-    for pair in raw_matches:
-        if len(pair) != 2:
-            continue
-        first, second = pair
-        if first.distance < 0.78 * second.distance:
-            good.append(first)
-
-    if len(good) < 10:
-        return len(good), 0.0
-
-    q_points = np.float32([q_keypoints[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-    t_points = np.float32([t_keypoints[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
-    _, mask = cv2.findHomography(q_points, t_points, cv2.RANSAC, 5.0)
-    if mask is None:
-        return len(good), 0.0
-    inliers = int(mask.ravel().sum())
-    ratio = inliers / max(1, len(good))
-    return inliers, ratio
+    return imaging_feature_matching.feature_match_score(query_gray, target_gray)
 
 
 def feature_match_homography(query_gray, target_gray):
-    orb = cv2.ORB_create(nfeatures=3000, scaleFactor=1.2, nlevels=8, fastThreshold=7)
-    q_keypoints, q_descriptors = orb.detectAndCompute(query_gray, None)
-    t_keypoints, t_descriptors = orb.detectAndCompute(target_gray, None)
-    if q_descriptors is None or t_descriptors is None or len(q_keypoints) < 12 or len(t_keypoints) < 12:
-        return None, 0, 0.0
-
-    matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
-    raw_matches = matcher.knnMatch(q_descriptors, t_descriptors, k=2)
-    good = []
-    for pair in raw_matches:
-        if len(pair) != 2:
-            continue
-        first, second = pair
-        if first.distance < 0.78 * second.distance:
-            good.append(first)
-
-    if len(good) < 10:
-        return None, len(good), 0.0
-
-    q_points = np.float32([q_keypoints[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)
-    t_points = np.float32([t_keypoints[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)
-    query_to_target, mask = cv2.findHomography(q_points, t_points, cv2.RANSAC, 5.0)
-    if mask is None or query_to_target is None:
-        return None, len(good), 0.0
-    inliers = int(mask.ravel().sum())
-    ratio = inliers / max(1, len(good))
-    try:
-        target_to_query = np.linalg.inv(query_to_target)
-    except np.linalg.LinAlgError:
-        return None, inliers, ratio
-    return target_to_query, inliers, ratio
+    return imaging_feature_matching.feature_match_homography(query_gray, target_gray)
 
 
 def align_query_to_record(image: Image.Image, record: dict[str, Any]) -> dict[str, Any] | None:
-    url = record.get("download_url")
-    if not url or not url.startswith("/uploads/"):
-        return None
-    target_path = UPLOAD_DIR / url.replace("/uploads/", "")
-    if not target_path.exists():
-        return None
-    try:
-        query_image = resize_for_residual(image)
-        original_target = Image.open(target_path).convert("RGB")
-        target_image = resize_for_residual(original_target)
-    except Exception:
-        return None
-
-    query = np.asarray(query_image, dtype=np.uint8)
-    target = np.asarray(target_image, dtype=np.uint8)
-    query_gray = cv2.cvtColor(query, cv2.COLOR_RGB2GRAY)
-    target_gray = cv2.cvtColor(target, cv2.COLOR_RGB2GRAY)
-    target_to_query, inliers, ratio = feature_match_homography(query_gray, target_gray)
-    if target_to_query is None or inliers < 18 or ratio < 0.32:
-        return None
-    try:
-        query_to_target = np.linalg.inv(target_to_query)
-    except np.linalg.LinAlgError:
-        return None
-    if not np.isfinite(query_to_target).all() or abs(float(np.linalg.det(query_to_target))) < 1e-9:
-        return None
-
-    target_height, target_width = target.shape[:2]
-    aligned = cv2.warpPerspective(
-        query,
-        query_to_target,
-        (target_width, target_height),
-        flags=cv2.INTER_CUBIC,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=(0, 0, 0),
-    )
-    valid_mask = cv2.warpPerspective(
-        np.ones(query.shape[:2], dtype=np.uint8) * 255,
-        query_to_target,
-        (target_width, target_height),
-        flags=cv2.INTER_NEAREST,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=0,
-    ) > 0
-    coverage = float(valid_mask.mean())
-    if coverage < 0.05 or coverage > 1.0:
-        return None
-    target_scale = target_width / max(1, original_target.width)
-    return {
-        "image": aligned,
-        "valid_mask": valid_mask,
-        "inliers": inliers,
-        "ratio": round(ratio, 4),
-        "coverage": round(coverage, 4),
-        "target_scale": target_scale,
-        "target_size": (target_width, target_height),
-        "homography": query_to_target,
-    }
+    return imaging_feature_matching.align_query_to_record(image, record, UPLOAD_DIR)
 
 
 def resize_for_residual(image: Image.Image, max_side: int = 1200) -> Image.Image:
-    rgb = image.convert("RGB")
-    width, height = rgb.size
-    scale = min(1.0, max_side / max(width, height))
-    if scale < 1.0:
-        rgb = rgb.resize((int(width * scale), int(height * scale)), Image.Resampling.BICUBIC)
-    return rgb
+    return imaging_feature_matching.resize_for_residual(image, max_side)
 
 
 def robust_residual_score(
@@ -2970,280 +2659,45 @@ def robust_residual_score(
     min_inliers: int = 80,
     min_ratio: float = 0.80,
 ) -> float:
-    query = np.array(resize_for_residual(query_image), dtype=np.float32)
-    watermarked = np.array(resize_for_residual(Image.open(watermarked_path)), dtype=np.float32)
-    original = np.array(resize_for_residual(Image.open(original_path)), dtype=np.float32)
-    query_gray = cv2.cvtColor(query.astype(np.uint8), cv2.COLOR_RGB2GRAY)
-    target_gray = cv2.cvtColor(watermarked.astype(np.uint8), cv2.COLOR_RGB2GRAY)
-    homography, inliers, ratio = feature_match_homography(query_gray, target_gray)
-    if homography is None or inliers < min_inliers or ratio < min_ratio:
-        return 0.0
-
-    query_height, query_width = query.shape[:2]
-    warped_watermarked = cv2.warpPerspective(watermarked, homography, (query_width, query_height))
-    warped_original = cv2.warpPerspective(original, homography, (query_width, query_height))
-    valid = cv2.warpPerspective(
-        np.ones(watermarked.shape[:2], dtype=np.uint8) * 255,
-        homography,
-        (query_width, query_height),
-    ) > 0
-    if int(valid.sum()) < query_width * query_height * 0.30:
-        return 0.0
-
-    expected = (warped_watermarked[:, :, ROBUST_CHANNEL] - warped_original[:, :, ROBUST_CHANNEL])[valid]
-    observed = (query[:, :, ROBUST_CHANNEL] - warped_original[:, :, ROBUST_CHANNEL])[valid]
-    expected = expected - expected.mean()
-    observed = observed - observed.mean()
-    expected_norm = float(np.linalg.norm(expected))
-    observed_norm = float(np.linalg.norm(observed))
-    if expected_norm < 1e-6 or observed_norm < 1e-6:
-        return 0.0
-    return float(np.dot(expected, observed) / (expected_norm * observed_norm))
+    return imaging_feature_matching.robust_residual_score(
+        query_image, original_path, watermarked_path, min_inliers, min_ratio,
+    )
 
 
 def detect_by_visual_match(image: Image.Image) -> dict[str, Any] | None:
-    records = read_records()
-    if not records:
-        return None
-
-    query = image_to_cv_gray(image)
-    best_record = None
-    best_inliers = 0
-    best_ratio = 0.0
-    for record in records:
-        if not record.get("robust_watermark"):
-            continue
-        url = record.get("download_url")
-        original_url = record.get("original_url")
-        if not url or not original_url or not url.startswith("/uploads/") or not original_url.startswith("/uploads/"):
-            continue
-        path = UPLOAD_DIR / url.replace("/uploads/", "")
-        original_path = UPLOAD_DIR / original_url.replace("/uploads/", "")
-        if not path.exists() or not original_path.exists():
-            continue
-        try:
-            target = image_to_cv_gray(Image.open(path))
-        except Exception:
-            continue
-        inliers, ratio = feature_match_score(query, target)
-        if inliers >= 80 and ratio >= 0.80:
-            residual_score = robust_residual_score(image, original_path, path)
-            if residual_score < 0.18:
-                continue
-        else:
-            residual_score = 0.0
-        if inliers > best_inliers or (inliers == best_inliers and ratio > best_ratio):
-            best_record = {**record, "_residual_score": residual_score}
-            best_inliers = inliers
-            best_ratio = ratio
-
-    if not best_record or best_inliers < 80 or best_ratio < 0.80:
-        return None
-
-    confidence = min(96, max(75, int(75 + best_record.get("_residual_score", 0) * 25)))
-    return with_evidence_fields({
-        "id": best_record.get("id"),
-        "trace_id": best_record.get("trace_id"),
-        "user_id": best_record.get("user_id"),
-        "mode": "robust_dct",
-        "mode_label": "30% 局部截图匹配",
-        "created_at": best_record.get("created_at"),
-        "confidence": confidence,
-        "phash_match": True,
-        "status": "局部截图命中",
-        "extracted_at": now_text(),
-        "match_inliers": best_inliers,
-        "match_ratio": round(best_ratio, 3),
-        "watermark_layers": best_record.get("watermark_layers", WATERMARK_LAYERS),
-        "layer_scores": {
-            "dct": round(float(best_record.get("_residual_score", 0.0)), 4),
-            "dwt": round(float(best_record.get("_residual_score", 0.0)), 4),
-            "fft": round(float(best_record.get("_residual_score", 0.0)), 4),
-        },
-    }, best_record)
+    return imaging_feature_matching.detect_by_visual_match(
+        image,
+        records=read_records(),
+        upload_dir=UPLOAD_DIR,
+        with_evidence_fields=with_evidence_fields,
+        now_text=now_text,
+    )
 
 
 def is_registered_original_image(image: Image.Image) -> bool:
-    query = np.array(image.convert("RGB"), dtype=np.int16)
-    query_height, query_width = query.shape[:2]
-    for record in read_records():
-        original_url = record.get("original_url")
-        if not original_url or not original_url.startswith("/uploads/"):
-            continue
-        original_path = UPLOAD_DIR / original_url.replace("/uploads/", "")
-        if not original_path.exists():
-            continue
-        try:
-            with Image.open(original_path) as original:
-                if original.size != (query_width, query_height):
-                    continue
-                original_arr = np.array(original.convert("RGB"), dtype=np.int16)
-        except Exception:
-            continue
-        diff = np.abs(query - original_arr)
-        if float(diff.mean()) <= 0.05 and int(diff.max()) <= 1:
-            return True
-    return False
+    return imaging_feature_matching.is_registered_original_image(
+        image, records=read_records(), upload_dir=UPLOAD_DIR,
+    )
 
 
 def load_font(size: int) -> ImageFont.ImageFont:
-    for name in ("arial.ttf", "simhei.ttf", "msyh.ttc"):
-        try:
-            return ImageFont.truetype(name, size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
+    return imaging_visible_mark.load_font(size)
 
 
 def load_random_font(size: int, rng: np.random.Generator) -> ImageFont.ImageFont:
-    font_names = [
-        "arial.ttf",
-        "arialbd.ttf",
-        "simhei.ttf",
-        "msyh.ttc",
-        "msyhbd.ttc",
-        "simsun.ttc",
-        "simkai.ttf",
-        "consola.ttf",
-        "verdana.ttf",
-        "tahoma.ttf",
-        "times.ttf",
-    ]
-    font_paths = []
-    windows_font_dir = Path(os.getenv("WINDIR", "C:\\Windows")) / "Fonts"
-    for name in font_names:
-        font_paths.append(windows_font_dir / name)
-        font_paths.append(Path(name))
-    rng.shuffle(font_paths)
-    for path in font_paths:
-        try:
-            return ImageFont.truetype(str(path), size)
-        except OSError:
-            continue
-    return load_font(size)
+    return imaging_visible_mark.load_random_font(size, rng)
 
 
 def draw_text_pattern(layer: Image.Image, text: str, angle: int, gap: int, opacity: int) -> None:
-    width, height = layer.size
-    tile = Image.new("RGBA", (width * 2, height * 2), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(tile)
-    font = load_font(max(18, min(width, height) // 18))
-    try:
-        bbox = draw.textbbox((0, 0), text, font=font)
-    except UnicodeEncodeError:
-        text = text.replace("©", "Copyright")
-        bbox = draw.textbbox((0, 0), text, font=font)
-    text_width = max(80, bbox[2] - bbox[0])
-    text_height = max(24, bbox[3] - bbox[1])
-    step_x = text_width + gap
-    step_y = text_height + gap
-    for y in range(-height, height * 2, step_y):
-        for x in range(-width, width * 2, step_x):
-            draw.text((x, y), text, fill=(255, 255, 255, opacity), font=font)
-    rotated = tile.rotate(angle, expand=False, resample=Image.Resampling.BICUBIC)
-    layer.alpha_composite(rotated.crop((width // 2, height // 2, width // 2 + width, height // 2 + height)))
+    return imaging_visible_mark.draw_text_pattern(layer, text, angle, gap, opacity)
 
 
 def draw_irregular_text_pattern(layer: Image.Image, text: str, opacity: int, complexity: str) -> None:
-    width, height = layer.size
-    rng = np.random.default_rng(int.from_bytes(os.urandom(8), "big"))
-    base_size = max(16, min(width, height) // 20)
-    density = {
-        "low": 0.55,
-        "medium": 0.90,
-        "high": 1.25,
-        "extreme": 1.75,
-        "低": 0.55,
-        "中": 0.90,
-        "高": 1.25,
-        "极": 1.75,
-    }.get(complexity, 0.90)
-    count = max(10, int((width * height / 130_000) * density))
-    colors = [
-        (255, 255, 255),
-        (255, 248, 196),
-        (210, 245, 255),
-        (235, 235, 255),
-    ]
-    safe_text = text
-    for index in range(count):
-        size = int(base_size * float(rng.uniform(0.70, 1.35)))
-        font = load_random_font(size, rng)
-        if rng.random() < 0.18:
-            draw_text = safe_text.replace(" ", "")
-            size = max(10, int(size * float(rng.uniform(0.45, 0.65))))
-            font = load_random_font(size, rng)
-        else:
-            draw_text = safe_text
-        try:
-            bbox = ImageDraw.Draw(Image.new("RGBA", (1, 1))).textbbox((0, 0), draw_text, font=font)
-        except UnicodeEncodeError:
-            safe_text = safe_text.replace("©", "Copyright")
-            draw_text = draw_text.replace("©", "Copyright")
-            bbox = ImageDraw.Draw(Image.new("RGBA", (1, 1))).textbbox((0, 0), draw_text, font=font)
-        text_width = max(1, bbox[2] - bbox[0])
-        text_height = max(1, bbox[3] - bbox[1])
-        patch = Image.new("RGBA", (text_width + 24, text_height + 24), (0, 0, 0, 0))
-        patch_draw = ImageDraw.Draw(patch)
-        color = colors[int(rng.integers(0, len(colors)))]
-        alpha = max(8, min(220, int(opacity * float(rng.uniform(0.45, 1.25)))))
-        patch_draw.text((12, 12), draw_text, fill=(*color, alpha), font=font)
-        angle = float(rng.uniform(-38, 38))
-        if rng.random() < 0.25:
-            angle += float(rng.choice(np.array([-58, 58], dtype=np.int16)))
-        rotated = patch.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
-        x = int(rng.integers(-rotated.width // 3, max(1, width - rotated.width * 2 // 3)))
-        y = int(rng.integers(-rotated.height // 3, max(1, height - rotated.height * 2 // 3)))
-        layer.alpha_composite(rotated, (x, y))
-
-    micro_count = max(18, int(count * 1.8))
-    micro_font = load_random_font(max(9, base_size // 2), rng)
-    micro_text = text.replace(" ", "")
-    for _ in range(micro_count):
-        x = int(rng.integers(0, max(1, width - 24)))
-        y = int(rng.integers(0, max(1, height - 12)))
-        alpha = max(5, int(opacity * float(rng.uniform(0.18, 0.45))))
-        ImageDraw.Draw(layer).text((x, y), micro_text, fill=(255, 255, 255, alpha), font=micro_font)
+    return imaging_visible_mark.draw_irregular_text_pattern(layer, text, opacity, complexity)
 
 
 def draw_prominent_corner_label(image: Image.Image, text: str) -> Image.Image:
-    base = image.convert("RGBA")
-    draw = ImageDraw.Draw(base)
-    safe_text = text.strip() or "© QQ:757675150"
-    font_size = max(22, min(base.size) // 14)
-    font = load_font(font_size)
-    try:
-        bbox = draw.textbbox((0, 0), safe_text, font=font, stroke_width=max(2, font_size // 18))
-    except UnicodeEncodeError:
-        safe_text = safe_text.replace("©", "Copyright")
-        bbox = draw.textbbox((0, 0), safe_text, font=font, stroke_width=max(2, font_size // 18))
-    max_text_width = max(120, int(base.width * 0.72))
-    while bbox[2] - bbox[0] > max_text_width and font_size > 16:
-        font_size -= 2
-        font = load_font(font_size)
-        bbox = draw.textbbox((0, 0), safe_text, font=font, stroke_width=max(2, font_size // 18))
-
-    stroke_width = max(2, font_size // 18)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] - bbox[1]
-    padding_x = max(12, font_size // 3)
-    padding_y = max(8, font_size // 4)
-    margin = max(14, min(base.size) // 40)
-    right = base.width - margin
-    bottom = base.height - margin
-    left = max(margin, right - text_width - padding_x * 2)
-    top = max(margin, bottom - text_height - padding_y * 2)
-    radius = max(5, font_size // 6)
-    draw.rounded_rectangle((left, top, right, bottom), radius=radius, fill=(0, 0, 0, 205))
-    draw.text(
-        (left + padding_x, top + padding_y - bbox[1]),
-        safe_text,
-        font=font,
-        fill=(255, 212, 0, 255),
-        stroke_width=stroke_width,
-        stroke_fill=(0, 0, 0, 255),
-    )
-    return base.convert("RGB")
+    return imaging_visible_mark.draw_prominent_corner_label(image, text)
 
 
 def apply_visible_copyright(
@@ -3255,155 +2709,50 @@ def apply_visible_copyright(
     irregular: bool = True,
     prominent_corner: bool = False,
 ) -> Image.Image:
-    if not enabled:
-        return image.convert("RGB")
-
-    base = image.convert("RGBA")
-    layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    text = text.strip() or "© QQ:757675150"
-    alpha = int(255 * opacity)
-    settings = {
-        "low": [(-24, 220)],
-        "medium": [(-24, 110)],
-        "high": [(-24, 105), (24, 105)],
-        "extreme": [(-32, 75), (0, 75), (32, 75)],
-        "低": [(-24, 220)],
-        "中": [(-24, 110)],
-        "高": [(-24, 105), (24, 105)],
-        "极": [(-32, 75), (0, 75), (32, 75)],
-    }.get(complexity, [(-24, 110)])
-    if irregular:
-        draw_irregular_text_pattern(layer, text, alpha, complexity)
-    else:
-        for angle, gap in settings:
-            draw_text_pattern(layer, text, angle, gap, alpha)
-    result = Image.alpha_composite(base, layer).convert("RGB")
-    if prominent_corner:
-        result = draw_prominent_corner_label(result, text)
-    return result
+    return imaging_visible_mark.apply_visible_copyright(
+        image, enabled, text, opacity, complexity, irregular, prominent_corner,
+    )
 
 
 async def load_upload_image(file: UploadFile) -> Image.Image:
-    content = await file.read()
-    return load_image_from_bytes(content)
+    return await imaging_io.load_upload_image(file)
 
 
 def load_image_from_bytes(content: bytes) -> Image.Image:
-    try:
-        image = Image.open(BytesIO(content))
-        image.load()
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="上传文件不是有效图片") from exc
-    return image
+    return imaging_io.load_image_from_bytes(content)
 
 
 def file_sha256(content: bytes) -> str:
-    return hashlib.sha256(content).hexdigest().upper()
+    return imaging_fingerprints.file_sha256(content)
 
 
 def path_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+    return imaging_fingerprints.path_sha256(path)
 
 
 def image_content_sha256(image: Image.Image) -> str:
-    rgb = image.convert("RGB")
-    width, height = rgb.size
-    digest = hashlib.sha256()
-    digest.update(f"{width}x{height}:RGB:".encode("ascii"))
-    digest.update(rgb.tobytes())
-    return digest.hexdigest().upper()
+    return imaging_fingerprints.image_content_sha256(image)
 
 
 def matched_file_fingerprint(content: bytes) -> dict[str, Any] | None:
-    digest = file_sha256(content)
-    query_image_digest = None
-    for record in read_records():
-        for file_type in ("original", "watermarked"):
-            stored_file_digest = str(
-                record.get(f"{file_type}_file_sha256") or ""
-            ).upper()
-            stored_image_digest = str(
-                record.get(f"{file_type}_image_sha256") or ""
-            ).upper()
-            if stored_file_digest and stored_file_digest == digest:
-                matched_hash_type = "file_bytes"
-                matched_hash = digest
-            elif stored_image_digest:
-                try:
-                    if query_image_digest is None:
-                        query_image_digest = image_content_sha256(
-                            load_image_from_bytes(content)
-                        )
-                except Exception:
-                    return None
-                if stored_image_digest != query_image_digest:
-                    continue
-                matched_hash_type = "image_pixels"
-                matched_hash = query_image_digest
-            else:
-                continue
-            return with_evidence_fields({
-                "id": record.get("id"),
-                "trace_id": record.get("trace_id"),
-                "user_id": record.get("user_id"),
-                "mode": "file_fingerprint",
-                "mode_label": "文件指纹一样",
-                "created_at": record.get("created_at"),
-                "confidence": 100,
-                "phash_match": False,
-                "status": "文件指纹一样",
-                "extracted_at": now_text(),
-                "file_hash": digest,
-                "image_hash": query_image_digest,
-                "matched_hash": matched_hash,
-                "matched_hash_type": matched_hash_type,
-                "matched_file_type": file_type,
-                "matched_file_url": record.get(
-                    "original_url" if file_type == "original" else "download_url"
-                ),
-                "watermark_layers": record.get("watermark_layers", WATERMARK_LAYERS),
-                "layer_scores": {},
-            }, record)
-    return None
+    return imaging_fingerprints.matched_file_fingerprint(
+        content,
+        read_records=read_records,
+        with_evidence_fields=with_evidence_fields,
+        now_text=now_text,
+        watermark_layers=WATERMARK_LAYERS,
+        file_sha256_fn=file_sha256,
+        image_content_sha256_fn=image_content_sha256,
+        load_image_from_bytes_fn=load_image_from_bytes,
+    )
 
 
 def save_thumbnail(image: Image.Image, path: Path, scale: float = 0.20) -> None:
-    rgb = image.convert("RGB")
-    width, height = rgb.size
-    thumb_size = (max(1, int(round(width * scale))), max(1, int(round(height * scale))))
-    thumbnail = rgb.resize(thumb_size, Image.Resampling.LANCZOS)
-    thumbnail.save(path, format="PNG", optimize=True)
+    return imaging_io.save_thumbnail(image, path, scale)
 
 
 def load_image_from_url(url: str) -> Image.Image:
-    text = str(url or "").strip()
-    if not text:
-        raise HTTPException(status_code=400, detail="请输入图片链接")
-    if text.startswith("/uploads/"):
-        path = UPLOAD_DIR / text.replace("/uploads/", "")
-        if not path.exists() or not path.is_file():
-            raise HTTPException(status_code=404, detail="图片链接不存在")
-        try:
-            return Image.open(path).convert("RGB")
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail="图片链接不是有效图片") from exc
-    if not text.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="仅支持 http(s) 或 /uploads/ 图片链接")
-    try:
-        request = urllib.request.Request(text, headers={"User-Agent": "WatermarkSystem/1.0"})
-        with urllib.request.urlopen(request, timeout=10) as response:
-            content_type = response.headers.get("content-type", "")
-            data = response.read(20 * 1024 * 1024 + 1)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="无法读取图片链接") from exc
-    if len(data) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="图片链接文件超过 20MB")
-    if content_type and "image" not in content_type.lower():
-        raise HTTPException(status_code=400, detail="链接内容不是图片")
-    try:
-        return Image.open(BytesIO(data)).convert("RGB")
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="图片链接不是有效图片") from exc
+    return imaging_io.load_image_from_url(url, UPLOAD_DIR)
 
 
 @app.get("/")
