@@ -13,11 +13,14 @@ from pathlib import Path
 import main
 from database_store import DatabaseStore
 from fastapi import HTTPException, UploadFile
+from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy import create_engine
 from trace_app.auth.service import AuthService
+from trace_app.application import create_app
 from trace_app.config import Settings
 from trace_app.database.repositories import Repository
+from trace_app.dependencies import get_auth_service
 from trace_app.imaging.fingerprints import file_sha256
 from trace_app.imaging.io import load_image_from_bytes
 from trace_app.runtime import Runtime
@@ -370,6 +373,99 @@ EXPECTED_ROUTES = {
 }
 
 
+def _factory_settings(tmp_path: Path) -> Settings:
+    return Settings.from_values(
+        base_dir=tmp_path,
+        upload_dir="uploads",
+        data_dir="data",
+        db_url="",
+        admin_user="",
+        admin_pass="",
+    )
+
+
+def test_application_factory_registers_each_route_once_without_database(
+    tmp_path: Path,
+) -> None:
+    factory_app = create_app(
+        settings=_factory_settings(tmp_path), initialize_database=False
+    )
+    actual_routes = Counter(
+        (method, route.path)
+        for route in factory_app.routes
+        for method in getattr(route, "methods", set())
+    )
+
+    for expected_route in EXPECTED_ROUTES:
+        assert actual_routes[expected_route] == 1
+    assert factory_app.state.runtime.store is None
+    assert factory_app.state.repository is not None
+    assert (
+        factory_app.state.generated_trace_ids
+        is factory_app.state.runtime.generated_trace_ids
+    )
+
+
+def test_application_dependencies_call_current_factories_per_request(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+
+    class AuthSpy:
+        def login(self, username: str, password: str) -> dict[str, str]:
+            calls.append(f"auth:{username}:{password}")
+            return {"kind": "auth"}
+
+    class WatermarkSpy:
+        def extract_url(self, url: str) -> dict[str, str]:
+            calls.append(f"watermark:{url}")
+            return {"kind": "watermark"}
+
+    class ManagementSpy:
+        def dashboard_stats(self) -> dict[str, int]:
+            calls.append("management")
+            return {"today": 0}
+
+    factory_app = create_app(
+        settings=_factory_settings(tmp_path),
+        initialize_database=False,
+        auth_service_factory=lambda: AuthSpy(),
+        watermark_service_factory=lambda: WatermarkSpy(),
+        management_service_factory=lambda: ManagementSpy(),
+    )
+    client = TestClient(factory_app)
+
+    assert client.post(
+        "/auth/login", data={"username": "alice", "password": "secret"}
+    ).json() == {"kind": "auth"}
+    assert client.post(
+        "/api/watermark/extract-url", data={"url": "https://example.test/a.png"}
+    ).json() == {"kind": "watermark"}
+    assert client.get("/api/dashboard-stats").json() == {"today": 0}
+    assert calls == [
+        "auth:alice:secret",
+        "watermark:https://example.test/a.png",
+        "management",
+    ]
+
+
+def test_application_dependency_overrides_replace_state_service(tmp_path: Path) -> None:
+    class AuthOverride:
+        def login(self, username: str, password: str) -> dict[str, str]:
+            return {"username": username, "source": "override"}
+
+    factory_app = create_app(
+        settings=_factory_settings(tmp_path), initialize_database=False
+    )
+    factory_app.dependency_overrides[get_auth_service] = lambda: AuthOverride()
+
+    response = TestClient(factory_app).post(
+        "/auth/login", data={"username": "alice", "password": "secret"}
+    )
+
+    assert response.json() == {"username": "alice", "source": "override"}
+
+
 def test_auth_service_filters_unknown_menu_keys() -> None:
     assert AuthService(repository=None).allowed_menu_keys(
         ["watermark", "unknown", "trace"]
@@ -494,7 +590,13 @@ def test_auth_service_factory_uses_current_repository(
 
 
 def test_auth_routes_are_thin_service_delegators() -> None:
-    module = ast.parse(Path(main.__file__).read_text(encoding="utf-8"))
+    from trace_app.api import auth, users
+
+    module = ast.parse(
+        Path(auth.__file__).read_text(encoding="utf-8")
+        + "\n"
+        + Path(users.__file__).read_text(encoding="utf-8")
+    )
     route_names = {
         "login",
         "get_roles",
@@ -516,8 +618,9 @@ def test_auth_routes_are_thin_service_delegators() -> None:
         assert not any(isinstance(node, ast.If) for node in ast.walk(route))
         assert any(
             isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "get_auth_service"
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "service"
             for node in ast.walk(route)
         )
 
@@ -873,7 +976,9 @@ def test_main_exposes_required_python_api() -> None:
 
 
 def test_watermark_routes_are_thin_service_delegators() -> None:
-    module = ast.parse(Path(main.__file__).read_text(encoding="utf-8"))
+    from trace_app.api import watermark
+
+    module = ast.parse(Path(watermark.__file__).read_text(encoding="utf-8"))
     route_names = {
         "embed_watermark",
         "extract_watermark",
@@ -891,10 +996,19 @@ def test_watermark_routes_are_thin_service_delegators() -> None:
         assert not any(isinstance(node, ast.If) for node in ast.walk(route))
         assert any(
             isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "get_watermark_service"
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "service"
             for node in ast.walk(route)
         )
+
+
+def test_main_defines_no_fastapi_routes() -> None:
+    source = Path(main.__file__).read_text(encoding="utf-8")
+
+    assert "@app." not in source
+    assert "FastAPI(" not in source
+    assert ".mount(" not in source
 
 
 def test_settings_resolves_relative_directories_from_base_dir(tmp_path: Path) -> None:

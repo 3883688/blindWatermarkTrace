@@ -1,20 +1,15 @@
 import hashlib
 import json
 import inspect
-import mimetypes
 import os
 import re
-import shutil
-import sys
 import time
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi import HTTPException, UploadFile
 from PIL import Image, ImageFont
 import cv2
 import numpy as np
@@ -46,6 +41,7 @@ from watermark_v4.features import (
 from watermark_v4.detector import V4Candidate, detect_v4
 
 from trace_app.auth.service import AuthService
+from trace_app.application import create_app, running_pytest
 from trace_app.config import (
     ADMIN_PASS,
     ADMIN_USER,
@@ -111,6 +107,8 @@ from trace_app.database.connection import (
     seed_database_defaults as seed_runtime_defaults,
 )
 from trace_app.database.repositories import Repository
+from trace_app.management.service import ManagementService
+from trace_app.runtime import Runtime
 from trace_app.imaging import feature_matching as imaging_feature_matching
 from trace_app.imaging import fingerprints as imaging_fingerprints
 from trace_app.imaging import io as imaging_io
@@ -182,12 +180,8 @@ from trace_app.watermark.small_crop import (
     trace_tile_agreement,
 )
 
-RUNNING_PYTEST = "pytest" in sys.modules or os.getenv("PYTEST_CURRENT_TEST") is not None
+RUNNING_PYTEST = running_pytest()
 DB_ENABLED = not RUNNING_PYTEST
-
-app = FastAPI(title=settings.app_name)
-app.state.generated_trace_ids = []
-
 
 def ensure_dirs() -> None:
     ORIGINAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -196,7 +190,7 @@ def ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
-runtime = create_runtime(settings, enabled=False)
+runtime = Runtime()
 repository = Repository(runtime.store, ensure_dirs=ensure_dirs)
 db_engine = runtime.engine
 db_store = runtime.store
@@ -215,6 +209,18 @@ def seed_database_defaults(store: DatabaseStore) -> None:
     seed_runtime_defaults(store, settings)
 
 
+def _sync_application_state() -> None:
+    current_app = globals().get("app")
+    if current_app is None:
+        return
+    current_app.state.runtime = runtime
+    current_app.state.repository = repository
+    current_app.state.generated_trace_ids = runtime.generated_trace_ids
+    current_app.state.auth_service = AuthService(repository)
+    current_app.state.watermark_service = get_watermark_service()
+    current_app.state.management_service = get_management_service()
+
+
 def initialize_database() -> None:
     global db_engine, db_error, db_store, repository, runtime
     if not DB_ENABLED:
@@ -229,24 +235,17 @@ def initialize_database() -> None:
             db_engine = runtime.engine
             db_store = runtime.store
             db_error = runtime.db_error
+            _sync_application_state()
         raise
     repository = Repository(runtime.store, ensure_dirs=ensure_dirs)
     db_engine = runtime.engine
     db_store = runtime.store
     db_error = runtime.db_error
+    _sync_application_state()
 
 
 def db_clear_all() -> None:
     repository.db_clear_all()
-
-
-ensure_dirs()
-initialize_database()
-mimetypes.add_type("font/woff2", ".woff2")
-mimetypes.add_type("font/woff", ".woff")
-mimetypes.add_type("font/ttf", ".ttf")
-app.mount("/assets", StaticFiles(directory=str(BASE_DIR / "assets")), name="assets")
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 
 def now_text() -> str:
@@ -1028,57 +1027,12 @@ def env_bool(name: str, default: str = "false", legacy_name: str | None = None) 
     return parse_bool(default if value is None else value)
 
 
-app.state.visible_watermark_detection_enabled = env_bool(
-    "ENABLE_VISIBLE_WATERMARK_DETECTION", "false", "VISIBLE_WATERMARK_DETECTION_ENABLED"
-)
-app.state.visual_match_fallback_enabled = env_bool(
-    "ENABLE_VISUAL_MATCH_FALLBACK", "false", "VISUAL_MATCH_FALLBACK_ENABLED"
-)
-app.state.small_crop_trace_default_enabled = env_bool(
-    "ENABLE_SMALL_CROP_TRACE_REDUNDANCY", "true"
-)
-app.state.aligned_authenticated_detection_enabled = env_bool(
-    "ENABLE_ALIGNED_AUTHENTICATED_DETECTION", "true"
-)
-app.state.dense_watermark_fallback_enabled = env_bool(
-    "ENABLE_DENSE_WATERMARK_FALLBACK", "false"
-)
-try:
-    app.state.aligned_candidate_limit = max(1, min(32, int(os.getenv("ALIGNED_CANDIDATE_LIMIT", "8"))))
-except ValueError:
-    app.state.aligned_candidate_limit = 8
-
-
 def clamp_float(value: str | float | None, default: float, low: float, high: float) -> float:
     try:
         number = float(value)
     except (TypeError, ValueError):
         number = default
     return max(low, min(high, number))
-
-
-app.state.watermark_detection_budget_seconds = clamp_float(
-    os.getenv("WATERMARK_DETECTION_BUDGET_SECONDS", "5"),
-    5.0,
-    0.1,
-    60.0,
-)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1476,183 +1430,45 @@ def load_image_from_url(url: str) -> Image.Image:
     return imaging_io.load_image_from_url(url, UPLOAD_DIR)
 
 
-@app.get("/")
-def index() -> FileResponse:
-    return FileResponse(BASE_DIR / "index.html")
-
-
-@app.get("/site-logo.png")
-def site_logo() -> FileResponse:
-    return FileResponse(BASE_DIR / "site-logo.png")
-
-
-@app.get("/favicon.ico")
-def favicon() -> FileResponse:
-    return FileResponse(BASE_DIR / "favicon.ico")
-
-
-@app.get("/favico.ico")
-def favico() -> FileResponse:
-    return FileResponse(BASE_DIR / "favico.ico")
-
-
-@app.post("/auth/login")
-def login(username: str = Form(...), password: str = Form(...)) -> dict[str, Any]:
-    return get_auth_service().login(username, password)
-
-
-@app.get("/api/roles")
-def get_roles() -> dict[str, Any]:
-    return get_auth_service().list_roles()
-
-
-@app.put("/api/roles/{role_key}")
-def update_role(role_key: str, payload: dict[str, Any]) -> dict[str, Any]:
-    return get_auth_service().update_role(role_key, payload)
-
-
-@app.get("/api/users")
-def get_users() -> dict[str, Any]:
-    return get_auth_service().list_users()
-
-
-@app.post("/api/users")
-def create_user(payload: dict[str, Any]) -> dict[str, Any]:
-    return get_auth_service().create_user(payload)
-
-
-@app.put("/api/users/{username}")
-def update_user(username: str, payload: dict[str, Any]) -> dict[str, Any]:
-    return get_auth_service().update_user(username, payload)
-
-
-@app.delete("/api/users/{username}")
-def delete_user(username: str) -> dict[str, Any]:
-    return get_auth_service().delete_user(username)
-
-
-@app.post("/api/watermark/embed")
-async def embed_watermark(
-    file: UploadFile = File(...),
-    user_id: str = Form(...),
-    mode: str = Form("dct"),
-    copyright_enabled: str = Form("false"),
-    copyright_text: str = Form("© QQ:757675150"),
-    copyright_opacity: str = Form("0.16"),
-    copyright_complexity: str = Form("medium"),
-    copyright_irregular_enabled: str = Form("true"),
-    copyright_prominent_corner_enabled: str = Form("false"),
-    fidelity_level: str = Form("0.75"),
-    robust_watermark_strength: str = Form(DEFAULT_ROBUST_WATERMARK_STRENGTH),
-    robust_watermark_version: str = Form(DEFAULT_ROBUST_WATERMARK_VERSION),
-    small_crop_trace_enabled: str = Form(""),
-    small_crop_trace_strength: str = Form("1.0"),
-    small_crop_trace_density: str = Form("high"),
-    dot_matrix_trace_enabled: str = Form("false"),
-    dot_matrix_trace_strength: str = Form("0.85"),
-) -> dict[str, Any]:
-    return await get_watermark_service().embed(
-        file=file,
-        user_id=user_id,
-        mode=mode,
-        copyright_enabled=copyright_enabled,
-        copyright_text=copyright_text,
-        copyright_opacity=copyright_opacity,
-        copyright_complexity=copyright_complexity,
-        copyright_irregular_enabled=copyright_irregular_enabled,
-        copyright_prominent_corner_enabled=copyright_prominent_corner_enabled,
-        fidelity_level=fidelity_level,
-        robust_watermark_strength=robust_watermark_strength,
-        robust_watermark_version=robust_watermark_version,
-        small_crop_trace_enabled=small_crop_trace_enabled,
-        small_crop_trace_strength=small_crop_trace_strength,
-        small_crop_trace_density=small_crop_trace_density,
-        dot_matrix_trace_enabled=dot_matrix_trace_enabled,
-        dot_matrix_trace_strength=dot_matrix_trace_strength,
-    )
-
-
 def extract_watermark_from_image(image: Image.Image) -> dict[str, Any]:
     return get_watermark_service().extract_image(image)
 
 
-@app.post("/api/watermark/extract")
-async def extract_watermark(file: UploadFile = File(...)) -> dict[str, Any]:
-    return await get_watermark_service().extract_upload(file)
+def get_management_service() -> ManagementService:
+    effective_settings = settings
+    if settings.upload_dir != Path(UPLOAD_DIR) or settings.data_dir != Path(DATA_DIR):
+        effective_settings = replace(
+            settings,
+            upload_dir=Path(UPLOAD_DIR),
+            data_dir=Path(DATA_DIR),
+        )
+    return ManagementService(
+        settings=effective_settings,
+        repository=repository,
+        runtime=runtime,
+        ensure_directories=ensure_dirs,
+        database_enabled=DB_ENABLED,
+        today_watermark_count=today_watermark_count,
+        read_records=read_records,
+        read_detection_stats=read_detection_stats,
+        write_records=write_records,
+        database_ready=database_ready,
+        database_error=lambda: db_error,
+        masked_db_url=masked_db_url,
+        clear_database=db_clear_all,
+        seed_database=lambda: seed_database_defaults(require_store()),
+    )
 
 
-@app.post("/api/watermark/extract-url")
-def extract_watermark_url(url: str = Form(...)) -> dict[str, Any]:
-    return get_watermark_service().extract_url(url)
-
-
-@app.get("/api/dashboard-stats")
-def dashboard_stats() -> dict[str, int | float]:
-    records = read_records()
-    detection_stats = read_detection_stats()
-    attempts = detection_stats["attempts"]
-    successes = detection_stats["successes"]
-    success_rate = round((successes / attempts) * 100, 1) if attempts else 0.0
-    return {
-        "today": today_watermark_count(records),
-        "detection_success_rate": success_rate,
-    }
-
-
-@app.get("/api/images")
-def list_images() -> dict[str, Any]:
-    records = read_records()
-    protected = sum(1 for item in records if item.get("status") == "保护中")
-    leaks = sum(1 for item in records if item.get("status") == "泄露预警")
-    hits = sum(1 for item in records if item.get("status") == "溯源命中")
-    detection_stats = read_detection_stats()
-    attempts = detection_stats["attempts"]
-    successes = detection_stats["successes"]
-    success_rate = round((successes / attempts) * 100, 1) if attempts else 0.0
-    return {
-        "items": records,
-        "stats": {
-            "total": len(records),
-            "protected": protected,
-            "leaks": leaks,
-            "hits": hits,
-            "today": today_watermark_count(records),
-            "detection_attempts": attempts,
-            "detection_successes": successes,
-            "detection_success_rate": success_rate,
-        },
-        "db_enabled": DB_ENABLED,
-        "db_ready": database_ready(),
-        "db_error": db_error,
-        "db_url": masked_db_url(),
-    }
-
-
-@app.delete("/api/images/{image_id}")
-def delete_image(image_id: str) -> dict[str, bool]:
-    records = read_records()
-    target = next((item for item in records if item.get("id") == image_id), None)
-    if not target:
-        raise HTTPException(status_code=404, detail="图片不存在")
-    kept = [item for item in records if item.get("id") != image_id]
-    write_records(kept)
-    for key in ("original_url", "download_url", "thumbnail_url"):
-        value = target.get(key)
-        if value and value.startswith("/uploads/"):
-            path = UPLOAD_DIR / value.replace("/uploads/", "")
-            if path.exists():
-                path.unlink()
-    return {"deleted": True}
-
-
-@app.post("/api/dev/reset")
-def reset_dev_data() -> dict[str, bool]:
-    if UPLOAD_DIR.exists():
-        shutil.rmtree(UPLOAD_DIR)
-    if database_ready():
-        db_clear_all()
-        seed_database_defaults(require_store())
-    if DATA_DIR.exists():
-        shutil.rmtree(DATA_DIR)
-    ensure_dirs()
-    return {"reset": True}
+app = create_app(
+    settings=settings,
+    initialize_database=DB_ENABLED,
+    auth_service_factory=get_auth_service,
+    watermark_service_factory=get_watermark_service,
+    management_service_factory=get_management_service,
+)
+runtime = app.state.runtime
+repository = app.state.repository
+db_engine = runtime.engine
+db_store = runtime.store
+db_error = runtime.db_error
