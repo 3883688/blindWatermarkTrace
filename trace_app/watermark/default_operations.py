@@ -253,6 +253,7 @@ def build_default_operations(
         save_thumbnail=io.save_thumbnail,
         save_record_feature_index=save_feature,
         save_record_feature_index_v4=save_feature_v4,
+        path_md5=fingerprints.path_md5,
         path_sha256=fingerprints.path_sha256,
         image_content_sha256=fingerprints.image_content_sha256,
         layer_scores_for_image=frequency.layer_scores_for_image,

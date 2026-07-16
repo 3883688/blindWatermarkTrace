@@ -102,6 +102,14 @@ def test_v4_generation_persists_strict_codec_tag_and_feature_index() -> None:
     assert feature_index is not None
     assert (feature_index.image_width, feature_index.image_height) == (512, 384)
     assert len(feature_index.descriptors) > 0
+    original_path = main.UPLOAD_DIR / record["original_url"].replace(
+        "/uploads/", ""
+    )
+    watermarked_path = main.UPLOAD_DIR / record["download_url"].replace(
+        "/uploads/", ""
+    )
+    assert record["original_file_md5"] == main.path_md5(original_path)
+    assert record["watermarked_file_md5"] == main.path_md5(watermarked_path)
 
 
 def test_v4_generation_synchronizes_latest_generated_trace_ids() -> None:

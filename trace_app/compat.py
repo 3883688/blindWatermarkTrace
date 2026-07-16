@@ -418,6 +418,7 @@ def get_watermark_service() -> WatermarkService:
             save_thumbnail=save_thumbnail,
             save_record_feature_index=save_record_feature_index,
             save_record_feature_index_v4=save_record_feature_index_v4,
+            path_md5=path_md5,
             path_sha256=path_sha256,
             image_content_sha256=image_content_sha256,
             layer_scores_for_image=layer_scores_for_image,
@@ -1372,6 +1373,14 @@ def load_image_from_bytes(content: bytes) -> Image.Image:
     return imaging_io.load_image_from_bytes(content)
 
 
+def file_md5(content: bytes) -> str:
+    return imaging_fingerprints.file_md5(content)
+
+
+def path_md5(path: Path) -> str:
+    return imaging_fingerprints.path_md5(path)
+
+
 def file_sha256(content: bytes) -> str:
     return imaging_fingerprints.file_sha256(content)
 
@@ -1394,6 +1403,7 @@ def matched_file_fingerprint(
         with_evidence_fields=with_evidence_fields,
         now_text=now_text,
         watermark_layers=WATERMARK_LAYERS,
+        file_md5_fn=file_md5,
         file_sha256_fn=file_sha256,
         image_content_sha256_fn=image_content_sha256,
         load_image_from_bytes_fn=load_image_from_bytes,
@@ -1492,7 +1502,7 @@ embed_v4_pilot encode_codeword encode_v4_codeword ensure_dirs env_bool
 evidence_uuid_fields extract_block_lsb extract_feature_descriptors extract_full_lsb
 extract_lsb extract_robust_code extract_robust_from_grid extract_v4_feature_index
 extract_watermark_from_image feature_match_homography feature_match_score
-fft_layer_score fft_pattern fidelity_to_strength file_sha256 get_auth_service
+fft_layer_score fft_pattern fidelity_to_strength file_md5 file_sha256 get_auth_service
 get_management_service get_watermark_service hamming_distance hashlib
 image_content_sha256 image_to_cv_gray imaging_feature_matching imaging_fingerprints
 imaging_io imaging_visible_mark initialize_database inspect inverse_permutation
@@ -1503,7 +1513,7 @@ load_feature_descriptors load_font load_image_from_bytes load_image_from_url
 load_random_font load_upload_image load_v4_feature_index lsb_bits_from_pixels
 masked_db_url match_small_trace_code matched_file_fingerprint mode_label
 normalize_carrier normalize_mode normalize_robust_watermark_version
-normalize_small_crop_density now_text np os packet_from_payload parse_bool path_sha256
+normalize_small_crop_density now_text np os packet_from_payload parse_bool path_md5 path_sha256
 permuted_code_bits phase_permutation pseudo_random_signs public_users pywt
 rank_aligned_candidates re read_detection_stats read_records read_roles read_users
 read_watermark_stats record_detection_result record_feature_index_path
