@@ -114,8 +114,10 @@ from trace_app.imaging import fingerprints as imaging_fingerprints
 from trace_app.imaging import io as imaging_io
 from trace_app.imaging import visible_mark as imaging_visible_mark
 from trace_app.watermark import dot_matrix as watermark_dot_matrix
+from trace_app.watermark import detection as watermark_detection
 from trace_app.watermark import frequency as watermark_frequency
 from trace_app.watermark import lsb as watermark_lsb
+from trace_app.watermark import robust as watermark_robust
 from trace_app.watermark import small_crop as watermark_small_crop
 from trace_app.watermark.frequency import (
     apply_dct_layer,
@@ -349,37 +351,27 @@ def with_evidence_fields(result: dict[str, Any], record: dict[str, Any] | None) 
 
 
 def robust_code_from_trace(trace_id: str) -> int:
-    digest = hashlib.blake2b(trace_id.encode("utf-8"), digest_size=6).digest()
-    body = int.from_bytes(digest, "big")
-    return (ROBUST_MAGIC << 48) | body
+    return watermark_robust.robust_code_from_trace(trace_id)
 
 
 def robust_bits_from_code(code: int) -> list[int]:
-    return [(code >> shift) & 1 for shift in range(ROBUST_BITS - 1, -1, -1)]
+    return watermark_robust.robust_bits_from_code(code)
 
 
 def robust_payload_bytes(trace_id: str) -> bytes:
-    return robust_code_from_trace(trace_id).to_bytes(8, "big")
+    return watermark_robust.robust_payload_bytes(trace_id)
 
 
 def code_crc16(value: int) -> int:
-    return int.from_bytes(hashlib.blake2b(value.to_bytes(4, "big"), digest_size=2).digest(), "big")
+    return watermark_robust.code_crc16(value)
 
 
 def watermark_payload_from_trace(trace_id: str) -> int:
-    digest = hashlib.blake2b(trace_id.encode("utf-8"), digest_size=2).digest()
-    body = int.from_bytes(digest, "big")
-    checksum = code_crc16((ROBUST_MAGIC << 16) | body)
-    return (ROBUST_MAGIC << 32) | (body << 16) | checksum
+    return watermark_robust.watermark_payload_from_trace(trace_id)
 
 
 def watermark_bits_from_trace(trace_id: str) -> list[int]:
-    payload = watermark_payload_from_trace(trace_id)
-    base = [(payload >> shift) & 1 for shift in range(CODE_PAYLOAD_BITS - 1, -1, -1)]
-    repeated = []
-    for index in range(CODE_PHYSICAL_BITS):
-        repeated.append(base[index % CODE_PAYLOAD_BITS])
-    return repeated
+    return watermark_robust.watermark_bits_from_trace(trace_id)
 
 
 
@@ -387,17 +379,7 @@ def watermark_bits_from_trace(trace_id: str) -> list[int]:
 
 
 def recover_payload_from_code(code: int) -> tuple[int, int]:
-    bits = [(code >> shift) & 1 for shift in range(CODE_PHYSICAL_BITS - 1, -1, -1)]
-    recovered = 0
-    corrections = 0
-    for index in range(CODE_PAYLOAD_BITS):
-        votes = [bits[pos] for pos in range(index, CODE_PHYSICAL_BITS, CODE_PAYLOAD_BITS)]
-        one_votes = sum(votes)
-        zero_votes = len(votes) - one_votes
-        bit = 1 if one_votes >= zero_votes else 0
-        corrections += min(one_votes, zero_votes)
-        recovered = (recovered << 1) | bit
-    return recovered, corrections
+    return watermark_robust.recover_payload_from_code(code)
 
 
 
@@ -437,19 +419,13 @@ def robust_strength_to_scale(value: str | float | None) -> float:
 
 
 def normalize_robust_watermark_version(value: str | int | None) -> int:
-    try:
-        version = int(
-            value if value is not None else ROBUST_WATERMARK_VERSION_V1
-        )
-    except (TypeError, ValueError):
-        version = ROBUST_WATERMARK_VERSION_V1
-    if version == ROBUST_WATERMARK_VERSION_V4:
-        return ROBUST_WATERMARK_VERSION_V4
-    if version == ROBUST_WATERMARK_VERSION_V3:
-        return ROBUST_WATERMARK_VERSION_V3
-    if version == ROBUST_WATERMARK_VERSION_V2:
-        return ROBUST_WATERMARK_VERSION_V2
-    return ROBUST_WATERMARK_VERSION_V1
+    return watermark_robust.normalize_robust_watermark_version(
+        value,
+        version_v1=ROBUST_WATERMARK_VERSION_V1,
+        version_v2=ROBUST_WATERMARK_VERSION_V2,
+        version_v3=ROBUST_WATERMARK_VERSION_V3,
+        version_v4=ROBUST_WATERMARK_VERSION_V4,
+    )
 
 
 
@@ -529,81 +505,37 @@ def normalize_robust_watermark_version(value: str | int | None) -> int:
 
 
 def robust_code_to_trace(code: int) -> str | None:
-    if (code >> 48) != ROBUST_MAGIC:
-        return None
-    for record in read_records():
-        trace_id = record.get("trace_id")
-        if trace_id and robust_code_from_trace(trace_id) == code:
-            return trace_id
-    return None
+    return watermark_robust.robust_code_to_trace(code, records=read_records())
 
 
 def hamming_distance(left: int, right: int) -> int:
-    return (left ^ right).bit_count()
+    return watermark_robust.hamming_distance(left, right)
 
 
 def robust_code_to_trace_fuzzy(code: int, max_errors: int = 18) -> tuple[str | None, int]:
-    magic_distance = hamming_distance(code >> 48, ROBUST_MAGIC)
-    if magic_distance > 6:
-        return None, ROBUST_BITS + 1
-    best_trace = None
-    best_distance = ROBUST_BITS + 1
-    for record in read_records():
-        trace_id = record.get("trace_id")
-        if not trace_id:
-            continue
-        distance = hamming_distance(code, robust_code_from_trace(trace_id))
-        if distance < best_distance:
-            best_trace = trace_id
-            best_distance = distance
-    if best_trace and best_distance <= max_errors:
-        return best_trace, best_distance
-    return None, best_distance
+    return watermark_robust.robust_code_to_trace_fuzzy(
+        code, max_errors, records=read_records()
+    )
 
 
 def robust_candidate_records() -> list[dict[str, Any]]:
-    return [
-        record
-        for record in read_records()
-        if record.get("trace_id") and record.get("robust_watermark")
-    ]
+    return watermark_robust.robust_candidate_records(read_records())
 
 
 def legacy_robust_candidate_records() -> list[dict[str, Any]]:
-    return [
-        record
-        for record in robust_candidate_records()
-        if normalize_robust_watermark_version(
-            record.get("robust_watermark_version", ROBUST_WATERMARK_VERSION_V1)
-        )
-        == ROBUST_WATERMARK_VERSION_V1
-    ]
+    return watermark_robust.legacy_robust_candidate_records(
+        read_records(),
+        normalize_version=normalize_robust_watermark_version,
+        version_v1=ROBUST_WATERMARK_VERSION_V1,
+    )
 
 
 def iter_robust_tiles(width: int, height: int):
-    for y in range(0, height - ROBUST_TILE + 1, ROBUST_TILE):
-        for x in range(0, width - ROBUST_TILE + 1, ROBUST_TILE):
-            yield x, y
+    yield from watermark_robust.iter_robust_tiles(width, height)
 
 
 def embed_robust_watermark(image: Image.Image, trace_id: str, strength_scale: float = 1.0) -> Image.Image:
-    arr = np.array(image.convert("RGB"), dtype=np.float32)
-    height, width = arr.shape[:2]
-    bits = robust_bits_from_code(robust_code_from_trace(trace_id))
-    for x, y in iter_robust_tiles(width, height):
-        for bit_index, bit in enumerate(bits):
-            row = bit_index // ROBUST_GRID
-            col = bit_index % ROBUST_GRID
-            y0 = y + row * ROBUST_CELL
-            x0 = x + col * ROBUST_CELL
-            patch = arr[y0 : y0 + ROBUST_CELL, x0 : x0 + ROBUST_CELL, ROBUST_CHANNEL]
-            pattern = robust_pattern(bit_index, ROBUST_CELL)
-            delta = pattern * ((ROBUST_DELTA * strength_scale) if bit else -(ROBUST_DELTA * strength_scale))
-            if bit:
-                patch[:, :] = np.clip(patch + delta, 0, 255)
-            else:
-                patch[:, :] = np.clip(patch + delta, 0, 255)
-    return Image.fromarray(np.clip(np.rint(arr), 0, 255).astype(np.uint8), "RGB")
+    return watermark_robust.embed_robust_watermark(image, trace_id, strength_scale)
 
 
 def embed_robust_watermark_v2(
@@ -611,28 +543,7 @@ def embed_robust_watermark_v2(
     trace_id: str,
     strength_scale: float = 1.0,
 ) -> Image.Image:
-    arr = np.array(image.convert("RGB"), dtype=np.float32)
-    codeword = encode_codeword(robust_payload_bytes(trace_id))
-    for x, y in iter_robust_tiles(image.width, image.height):
-        phase = tile_phase(x // ROBUST_TILE, y // ROBUST_TILE)
-        phase_bytes = codeword_phase(codeword, phase)
-        bits = robust_bits_from_code(int.from_bytes(phase_bytes, "big"))
-        for bit_index, bit in enumerate(bits):
-            row, col = divmod(bit_index, ROBUST_GRID)
-            y0 = y + row * ROBUST_CELL
-            x0 = x + col * ROBUST_CELL
-            patch = arr[y0 : y0 + ROBUST_CELL, x0 : x0 + ROBUST_CELL, ROBUST_CHANNEL]
-            sign = 1.0 if bit else -1.0
-            patch[:, :] = np.clip(
-                patch
-                + robust_pattern(bit_index, ROBUST_CELL)
-                * ROBUST_DELTA
-                * strength_scale
-                * sign,
-                0,
-                255,
-            )
-    return Image.fromarray(np.clip(np.rint(arr), 0, 255).astype(np.uint8), "RGB")
+    return watermark_robust.embed_robust_watermark_v2(image, trace_id, strength_scale)
 
 
 def embed_robust_watermark_v3(
@@ -640,73 +551,11 @@ def embed_robust_watermark_v3(
     auth_code: bytes,
     strength_scale: float = 1.0,
 ) -> Image.Image:
-    arr = np.array(image.convert("RGB"), dtype=np.float32)
-    for x, y in iter_robust_tiles(image.width, image.height):
-        phase = tile_phase(x // ROBUST_TILE, y // ROBUST_TILE)
-        bits = permuted_code_bits(auth_code, phase)
-        for bit_index, bit in enumerate(bits):
-            row, col = divmod(bit_index, ROBUST_GRID)
-            y0 = y + row * ROBUST_CELL
-            x0 = x + col * ROBUST_CELL
-            patch = arr[y0 : y0 + ROBUST_CELL, x0 : x0 + ROBUST_CELL, ROBUST_CHANNEL]
-            sign = 1.0 if bit else -1.0
-            patch[:, :] = np.clip(
-                patch
-                + robust_pattern(bit_index, ROBUST_CELL)
-                * ROBUST_DELTA
-                * strength_scale
-                * sign,
-                0,
-                255,
-            )
-    return Image.fromarray(np.clip(np.rint(arr), 0, 255).astype(np.uint8), "RGB")
+    return watermark_robust.embed_robust_watermark_v3(image, auth_code, strength_scale)
 
 
 def extract_robust_from_grid(arr: np.ndarray, cell: int, offset_x: int, offset_y: int) -> tuple[int | None, float, int]:
-    height, width = arr.shape[:2]
-    tile = cell * ROBUST_GRID
-    votes = [[0, 0] for _ in range(ROBUST_BITS)]
-    tiles = 0
-    for y in range(offset_y, height - tile + 1, tile):
-        for x in range(offset_x, width - tile + 1, tile):
-            tiles += 1
-            for bit_index in range(ROBUST_BITS):
-                row = bit_index // ROBUST_GRID
-                col = bit_index % ROBUST_GRID
-                y0 = y + row * cell
-                x0 = x + col * cell
-                patch = arr[y0 : y0 + cell, x0 : x0 + cell, :]
-                if patch.size == 0:
-                    continue
-                blue = patch[:, :, ROBUST_CHANNEL]
-                if blue.shape != (cell, cell):
-                    continue
-                pattern = robust_pattern(bit_index, cell).astype(np.float32)
-                centered = blue - blue.mean()
-                score = float((centered * pattern).mean())
-                if score > 0:
-                    votes[bit_index][1] += 1
-                else:
-                    votes[bit_index][0] += 1
-
-    if tiles < 2:
-        return None, 0.0, 0
-
-    code = 0
-    margins = []
-    decided = 0
-    for zero_votes, one_votes in votes:
-        total = zero_votes + one_votes
-        if total == 0:
-            code = code << 1
-            margins.append(0.0)
-            continue
-        decided += 1
-        bit = 1 if one_votes > zero_votes else 0
-        code = (code << 1) | bit
-        margins.append(abs(one_votes - zero_votes) / total)
-    confidence = sum(margins) / len(margins) if margins else 0.0
-    return code, confidence, decided
+    return watermark_robust.extract_robust_from_grid(arr, cell, offset_x, offset_y)
 
 
 def decode_aligned_robust_trace(
@@ -714,187 +563,29 @@ def decode_aligned_robust_trace(
     record: dict[str, Any],
     max_errors: int = 4,
 ) -> dict[str, Any] | None:
-    trace_id = record.get("trace_id")
-    aligned = alignment.get("image")
-    valid_mask = alignment.get("valid_mask")
-    target_scale = float(alignment.get("target_scale", 1.0))
-    if (
-        not trace_id
-        or not isinstance(aligned, np.ndarray)
-        or not isinstance(valid_mask, np.ndarray)
-        or aligned.ndim != 3
-        or aligned.shape[:2] != valid_mask.shape
-        or target_scale <= 0
-    ):
-        return None
-
-    height, width = aligned.shape[:2]
-    original_width = int(round(width / target_scale))
-    original_height = int(round(height / target_scale))
-    aggregate_scores = np.zeros(ROBUST_BITS, dtype=np.float64)
-    authenticated_tiles = 0
-    for x, y in iter_robust_tiles(original_width, original_height):
-        x0 = max(0, int(round(x * target_scale)))
-        y0 = max(0, int(round(y * target_scale)))
-        x1 = min(width, int(round((x + ROBUST_TILE) * target_scale)))
-        y1 = min(height, int(round((y + ROBUST_TILE) * target_scale)))
-        if x1 <= x0 or y1 <= y0:
-            continue
-        mask_tile = valid_mask[y0:y1, x0:x1]
-        if not mask_tile.size or float(mask_tile.mean()) < 0.70:
-            continue
-        tile = cv2.resize(
-            aligned[y0:y1, x0:x1, :],
-            (ROBUST_TILE, ROBUST_TILE),
-            interpolation=cv2.INTER_CUBIC,
-        ).astype(np.float32)
-        authenticated_tiles += 1
-        for bit_index in range(ROBUST_BITS):
-            row = bit_index // ROBUST_GRID
-            col = bit_index % ROBUST_GRID
-            cell = tile[
-                row * ROBUST_CELL : (row + 1) * ROBUST_CELL,
-                col * ROBUST_CELL : (col + 1) * ROBUST_CELL,
-                ROBUST_CHANNEL,
-            ]
-            centered = cell - cell.mean()
-            aggregate_scores[bit_index] += float(
-                np.mean(centered * robust_pattern(bit_index, ROBUST_CELL))
-            )
-    if authenticated_tiles < 2:
-        return None
-
-    decoded_code = 0
-    for score in aggregate_scores:
-        decoded_code = (decoded_code << 1) | int(score > 0)
-    expected_code = robust_code_from_trace(trace_id)
-    bit_errors = hamming_distance(decoded_code, expected_code)
-    magic_errors = hamming_distance(decoded_code >> 48, ROBUST_MAGIC)
-    if bit_errors > max_errors or magic_errors > max_errors:
-        return None
-    average_scores = aggregate_scores / authenticated_tiles
-    return {
-        "record": record,
-        "trace_id": trace_id,
-        "decoded_code": decoded_code,
-        "bit_errors": bit_errors,
-        "magic_errors": magic_errors,
-        "authenticated_tiles": authenticated_tiles,
-        "mean_abs_score": round(float(np.mean(np.abs(average_scores))), 6),
-    }
+    return watermark_robust.decode_aligned_robust_trace(alignment, record, max_errors)
 
 
 def _scores_to_byte(scores: np.ndarray) -> tuple[int, float]:
-    value = 0
-    absolute = np.abs(scores.astype(np.float64))
-    scale = max(1e-6, float(np.median(absolute)))
-    for score in scores:
-        value = (value << 1) | int(score > 0)
-    return value, float(np.min(absolute / scale))
+    return watermark_robust._scores_to_byte(scores)
 
 
 def _phase_scores_to_codeword(
     phase_scores: np.ndarray,
     phase_counts: list[int],
 ) -> tuple[bytes, list[float]]:
-    observed = bytearray()
-    confidences = []
-    for phase in range(3):
-        average = phase_scores[phase] / max(1, phase_counts[phase])
-        for start in range(0, ROBUST_BITS, 8):
-            value, confidence = _scores_to_byte(average[start : start + 8])
-            observed.append(value)
-            confidences.append(confidence)
-    return bytes(observed), confidences
+    return watermark_robust._phase_scores_to_codeword(phase_scores, phase_counts)
 
 
 def decode_aligned_robust_trace_v2(
     alignment: dict[str, Any],
     record: dict[str, Any],
 ) -> dict[str, Any] | None:
-    trace_id = record.get("trace_id")
-    aligned = alignment.get("image")
-    valid_mask = alignment.get("valid_mask")
-    target_scale = float(alignment.get("target_scale", 1.0))
-    if (
-        not trace_id
-        or not isinstance(aligned, np.ndarray)
-        or not isinstance(valid_mask, np.ndarray)
-        or aligned.ndim != 3
-        or aligned.shape[:2] != valid_mask.shape
-        or target_scale <= 0
-    ):
-        return None
-
-    height, width = aligned.shape[:2]
-    original_width = int(round(width / target_scale))
-    original_height = int(round(height / target_scale))
-    phase_scores = np.zeros((3, ROBUST_BITS), dtype=np.float64)
-    phase_counts = [0, 0, 0]
-    for x, y in iter_robust_tiles(original_width, original_height):
-        x0 = max(0, int(round(x * target_scale)))
-        y0 = max(0, int(round(y * target_scale)))
-        x1 = min(width, int(round((x + ROBUST_TILE) * target_scale)))
-        y1 = min(height, int(round((y + ROBUST_TILE) * target_scale)))
-        if x1 <= x0 or y1 <= y0:
-            continue
-        mask_tile = valid_mask[y0:y1, x0:x1]
-        if not mask_tile.size or float(mask_tile.mean()) < 0.70:
-            continue
-        tile = cv2.resize(
-            aligned[y0:y1, x0:x1, :],
-            (ROBUST_TILE, ROBUST_TILE),
-            interpolation=cv2.INTER_CUBIC,
-        ).astype(np.float32)
-        phase = tile_phase(x // ROBUST_TILE, y // ROBUST_TILE)
-        phase_counts[phase] += 1
-        for bit_index in range(ROBUST_BITS):
-            row, col = divmod(bit_index, ROBUST_GRID)
-            cell = tile[
-                row * ROBUST_CELL : (row + 1) * ROBUST_CELL,
-                col * ROBUST_CELL : (col + 1) * ROBUST_CELL,
-                ROBUST_CHANNEL,
-            ]
-            centered = cell - cell.mean()
-            phase_scores[phase, bit_index] += float(
-                np.mean(centered * robust_pattern(bit_index, ROBUST_CELL))
-            )
-    if min(phase_counts) < 2:
-        return None
-
-    observed, confidences = _phase_scores_to_codeword(phase_scores, phase_counts)
-    decoded = decode_expected_codeword(
-        observed,
-        robust_payload_bytes(trace_id),
-        confidences,
-    )
-    if not decoded:
-        return None
-
-    average_scores = np.vstack(
-        [phase_scores[index] / phase_counts[index] for index in range(3)]
-    )
-    return {
-        "record": record,
-        "trace_id": trace_id,
-        "corrected_symbols": decoded["corrected_symbols"],
-        "erasure_count": decoded["erasure_count"],
-        "bit_errors": decoded["bit_errors"],
-        "recovery_method": decoded["recovery_method"],
-        "phase_tile_counts": phase_counts,
-        "mean_abs_score": round(float(np.mean(np.abs(average_scores))), 6),
-    }
+    return watermark_robust.decode_aligned_robust_trace_v2(alignment, record)
 
 
 def _record_v3_auth_code(record: dict[str, Any]) -> bytes | None:
-    text = str(record.get("robust_auth_code") or "").strip().lower()
-    if len(text) != 16 or not re.fullmatch(r"[0-9a-f]{16}", text):
-        return None
-    try:
-        code = bytes.fromhex(text)
-    except ValueError:
-        return None
-    return code if len(code) == 8 else None
+    return watermark_robust._record_v3_auth_code(record)
 
 
 def decode_aligned_robust_trace_v3(
@@ -902,89 +593,9 @@ def decode_aligned_robust_trace_v3(
     record: dict[str, Any],
     max_errors: int = 8,
 ) -> dict[str, Any] | None:
-    trace_id = record.get("trace_id")
-    auth_code = _record_v3_auth_code(record)
-    aligned = alignment.get("image")
-    valid_mask = alignment.get("valid_mask")
-    target_scale = float(alignment.get("target_scale", 1.0))
-    if (
-        not trace_id
-        or auth_code is None
-        or not isinstance(aligned, np.ndarray)
-        or not isinstance(valid_mask, np.ndarray)
-        or aligned.ndim != 3
-        or aligned.shape[:2] != valid_mask.shape
-        or target_scale <= 0
-    ):
-        return None
-
-    height, width = aligned.shape[:2]
-    original_width = int(round(width / target_scale))
-    original_height = int(round(height / target_scale))
-    aggregate_scores = np.zeros(ROBUST_BITS, dtype=np.float64)
-    phase_counts = [0, 0, 0]
-    authenticated_tiles = 0
-    for x, y in iter_robust_tiles(original_width, original_height):
-        x0 = max(0, int(round(x * target_scale)))
-        y0 = max(0, int(round(y * target_scale)))
-        x1 = min(width, int(round((x + ROBUST_TILE) * target_scale)))
-        y1 = min(height, int(round((y + ROBUST_TILE) * target_scale)))
-        if x1 <= x0 or y1 <= y0:
-            continue
-        mask_tile = valid_mask[y0:y1, x0:x1]
-        if not mask_tile.size or float(mask_tile.mean()) < 0.70:
-            continue
-        tile = cv2.resize(
-            aligned[y0:y1, x0:x1, :],
-            (ROBUST_TILE, ROBUST_TILE),
-            interpolation=cv2.INTER_CUBIC,
-        ).astype(np.float32)
-        physical_scores = np.zeros(ROBUST_BITS, dtype=np.float64)
-        for bit_index in range(ROBUST_BITS):
-            row, col = divmod(bit_index, ROBUST_GRID)
-            cell = tile[
-                row * ROBUST_CELL : (row + 1) * ROBUST_CELL,
-                col * ROBUST_CELL : (col + 1) * ROBUST_CELL,
-                ROBUST_CHANNEL,
-            ]
-            centered = cell - cell.mean()
-            physical_scores[bit_index] = float(
-                np.mean(centered * robust_pattern(bit_index, ROBUST_CELL))
-            )
-        scale = max(1e-6, float(np.median(np.abs(physical_scores))))
-        physical_scores = np.clip(physical_scores / scale, -3.0, 3.0)
-        phase = tile_phase(x // ROBUST_TILE, y // ROBUST_TILE)
-        permutation = phase_permutation(phase)
-        for logical, physical in enumerate(permutation):
-            aggregate_scores[logical] += physical_scores[physical]
-        phase_counts[phase] += 1
-        authenticated_tiles += 1
-
-    if authenticated_tiles < 2 or sum(count > 0 for count in phase_counts) < 2:
-        return None
-
-    expected_value = int.from_bytes(auth_code, "big")
-    expected_bits = np.array(
-        [(expected_value >> shift) & 1 for shift in range(ROBUST_BITS - 1, -1, -1)],
-        dtype=np.int8,
+    return watermark_robust.decode_aligned_robust_trace_v3(
+        alignment, record, max_errors
     )
-    observed_bits = (aggregate_scores > 0).astype(np.int8)
-    bit_errors = int(np.count_nonzero(observed_bits != expected_bits))
-    expected_signs = expected_bits.astype(np.float64) * 2.0 - 1.0
-    average_scores = aggregate_scores / authenticated_tiles
-    mean_signed_agreement = float(np.mean(average_scores * expected_signs))
-    if bit_errors > max_errors or mean_signed_agreement <= 0:
-        return None
-
-    return {
-        "record": record,
-        "trace_id": trace_id,
-        "bit_errors": bit_errors,
-        "authenticated_tiles": authenticated_tiles,
-        "phase_tile_counts": phase_counts,
-        "mean_signed_agreement": round(mean_signed_agreement, 6),
-        "mean_abs_score": round(float(np.mean(np.abs(average_scores))), 6),
-    }
 
 
 def save_record_feature_index(image: Image.Image, record_id: str) -> str:
@@ -1012,99 +623,32 @@ def record_feature_index_path(record: dict[str, Any]) -> Path | None:
 
 
 def v4_candidate_records() -> tuple[V4Candidate, ...]:
-    config = V4Config()
-    candidates = []
-    for record in read_records():
-        if record.get("robust_watermark_version") != ROBUST_WATERMARK_VERSION_V4:
-            continue
-        if record.get("robust_watermark_codec") != config.codec:
-            continue
-        record_id = str(record.get("id") or "").strip()
-        trace_id = str(record.get("trace_id") or "").strip()
-        auth_hex = str(record.get("robust_auth_code") or "").strip()
-        if (
-            not record_id
-            or not trace_id
-            or not re.fullmatch(r"[0-9a-f]{8}", auth_hex)
-        ):
-            continue
-        path = record_feature_index_path(record)
-        if path is None:
-            continue
-        feature_index = load_v4_feature_index(path)
-        if feature_index is None:
-            continue
-        candidates.append(
-            V4Candidate(
-                record_id=record_id,
-                trace_id=trace_id,
-                auth_tag=bytes.fromhex(auth_hex),
-                feature_index=feature_index,
-            )
-        )
-    return tuple(candidates)
+    return watermark_detection.v4_candidate_records(
+        records=read_records(),
+        data_dir=DATA_DIR,
+        version_v4=ROBUST_WATERMARK_VERSION_V4,
+        config_factory=V4Config,
+        record_feature_index_path=lambda record, data_dir: record_feature_index_path(record),
+        load_feature_index=load_v4_feature_index,
+    )
 
 
 def detect_v4_watermark(
     image: Image.Image,
     candidates: tuple[V4Candidate, ...] | None = None,
 ) -> dict[str, Any] | None:
-    available = v4_candidate_records() if candidates is None else candidates
-    if not available:
-        return None
-    records = read_records()
-    record_by_id = {
-        str(record.get("id")): record
-        for record in records
-        if record.get("robust_watermark_version") == ROBUST_WATERMARK_VERSION_V4
-    }
-    generated_trace_ids = list(getattr(app.state, "generated_trace_ids", []))
-    recent_record_ids = tuple(
-        candidate.record_id
-        for trace_id in generated_trace_ids
-        for candidate in available
-        if candidate.trace_id == trace_id
+    return watermark_detection.detect_v4_watermark(
+        image,
+        candidates,
+        records=read_records,
+        generated_trace_ids=list(getattr(app.state, "generated_trace_ids", [])),
+        version_v4=ROBUST_WATERMARK_VERSION_V4,
+        config_factory=V4Config,
+        candidate_records=v4_candidate_records,
+        detect=detect_v4,
+        with_evidence_fields=with_evidence_fields,
+        now_text=now_text,
     )
-    result = detect_v4(
-        image.convert("RGB"),
-        available,
-        V4Config(),
-        recent_record_ids=recent_record_ids,
-    )
-    if result is None:
-        return None
-    record = record_by_id.get(result.record_id)
-    if record is None:
-        return None
-    return with_evidence_fields({
-        "id": result.record_id,
-        "trace_id": result.trace_id,
-        "user_id": record.get("user_id"),
-        "mode": "v4_authenticated_dct",
-        "mode_label": "V4 认证水印",
-        "created_at": record.get("created_at"),
-        "confidence": max(80, min(99, 99 - result.bit_errors * 4)),
-        "phash_match": False,
-        "status": "V4 认证命中",
-        "extracted_at": now_text(),
-        "watermark_layers": record.get("watermark_layers"),
-        "layer_scores": {},
-        "code_recovery": {
-            "method": result.geometry_method,
-            "codec": result.codec,
-            "candidate_count": result.candidate_count,
-            "authenticated_tiles": result.tile_count,
-            "phase_count": result.phase_count,
-            "corrected_symbols": result.corrected_symbols,
-            "erasure_count": result.erasure_count,
-            "bit_errors": result.bit_errors,
-            "mean_abs_score": round(result.mean_abs_score, 6),
-            "orb_inliers": result.orb_inliers,
-            "orb_ratio": round(result.orb_ratio, 6),
-            "sync_confidence": result.sync_confidence,
-            "elapsed_ms": round(result.elapsed_seconds * 1000.0, 3),
-        },
-    }, record)
 
 
 def rank_aligned_candidates(
@@ -1134,162 +678,48 @@ def detect_aligned_authenticated_watermark(
     candidate_limit: int = 8,
     budget_seconds: float = 5.0,
 ) -> dict[str, Any] | None:
-    started = time.perf_counter()
-    candidates = records if records is not None else robust_candidate_records()
-    candidates = [
-        record
-        for record in candidates
-        if record.get("trace_id") and record.get("robust_watermark")
-    ]
-    candidates = rank_aligned_candidates(image, candidates)[: max(1, candidate_limit)]
-    authenticated = []
-    for record in candidates:
-        if budget_seconds > 0 and time.perf_counter() - started >= budget_seconds:
-            break
-        alignment = align_query_to_record(image, record)
-        if not alignment:
-            continue
-        version = normalize_robust_watermark_version(
-            record.get("robust_watermark_version", ROBUST_WATERMARK_VERSION_V1)
-        )
-        if version == ROBUST_WATERMARK_VERSION_V3:
-            decoded = decode_aligned_robust_trace_v3(alignment, record)
-        elif version == ROBUST_WATERMARK_VERSION_V2:
-            decoded = decode_aligned_robust_trace_v2(alignment, record)
-        else:
-            decoded = decode_aligned_robust_trace(alignment, record)
-        if decoded:
-            authenticated.append((decoded, alignment))
-    trace_ids = {decoded["trace_id"] for decoded, _ in authenticated}
-    if len(authenticated) != 1 or len(trace_ids) != 1:
-        return None
-
-    decoded, alignment = authenticated[0]
-    record = decoded["record"]
-    version = normalize_robust_watermark_version(
-        record.get("robust_watermark_version", ROBUST_WATERMARK_VERSION_V1)
+    current_records = records if records is not None else robust_candidate_records()
+    return watermark_robust.detect_aligned_authenticated_watermark(
+        image,
+        candidate_limit,
+        budget_seconds,
+        records=current_records,
+        generated_trace_ids=list(getattr(app.state, "generated_trace_ids", [])),
+        rank_candidates=rank_aligned_candidates,
+        align_query=align_query_to_record,
+        decode_v1=decode_aligned_robust_trace,
+        decode_v2=decode_aligned_robust_trace_v2,
+        decode_v3=decode_aligned_robust_trace_v3,
+        normalize_version=normalize_robust_watermark_version,
+        with_evidence_fields=with_evidence_fields,
+        now_text=now_text,
+        version_v1=ROBUST_WATERMARK_VERSION_V1,
+        version_v2=ROBUST_WATERMARK_VERSION_V2,
+        version_v3=ROBUST_WATERMARK_VERSION_V3,
+        codec_v2=ROBUST_WATERMARK_CODEC_V2,
+        codec_v3=ROBUST_WATERMARK_CODEC_V3,
+        watermark_layers=WATERMARK_LAYERS,
     )
-    confidence = max(80, min(99, 99 - decoded["bit_errors"] * 6))
-    code_recovery = {
-        "visual_inliers": alignment["inliers"],
-        "visual_ratio": alignment["ratio"],
-        "aligned_coverage": alignment["coverage"],
-        "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
-    }
-    if version == ROBUST_WATERMARK_VERSION_V3:
-        code_recovery.update({
-            "method": "homography_aligned_hmac64_full_repeat_v3",
-            "codec": ROBUST_WATERMARK_CODEC_V3,
-            "bit_errors": decoded["bit_errors"],
-            "authenticated_tiles": decoded["authenticated_tiles"],
-            "phase_tile_counts": decoded["phase_tile_counts"],
-            "mean_signed_agreement": decoded["mean_signed_agreement"],
-            "mean_abs_score": decoded["mean_abs_score"],
-        })
-    elif version == ROBUST_WATERMARK_VERSION_V2:
-        code_recovery.update({
-            "method": "homography_aligned_rs_24_8_three_phase",
-            "codec": ROBUST_WATERMARK_CODEC_V2,
-            "bit_errors": decoded["bit_errors"],
-            "corrected_symbols": decoded["corrected_symbols"],
-            "erasure_count": decoded["erasure_count"],
-            "recovery_method": decoded["recovery_method"],
-            "phase_tile_counts": decoded["phase_tile_counts"],
-            "mean_abs_score": decoded["mean_abs_score"],
-        })
-    else:
-        code_recovery.update({
-            "method": "homography_aligned_robust_64",
-            "bit_errors": decoded["bit_errors"],
-            "magic_errors": decoded["magic_errors"],
-            "authenticated_tiles": decoded["authenticated_tiles"],
-            "mean_abs_score": decoded["mean_abs_score"],
-        })
-    return with_evidence_fields({
-        "id": record.get("id"),
-        "trace_id": decoded["trace_id"],
-        "user_id": record.get("user_id"),
-        "mode": (
-            "aligned_robust_hmac_v3"
-            if version == ROBUST_WATERMARK_VERSION_V3
-            else "aligned_robust_rs_v2"
-            if version == ROBUST_WATERMARK_VERSION_V2
-            else "aligned_robust_code"
-        ),
-        "mode_label": (
-            "几何对齐 HMAC 认证水印"
-            if version == ROBUST_WATERMARK_VERSION_V3
-            else "几何对齐 RS 认证水印"
-            if version == ROBUST_WATERMARK_VERSION_V2
-            else "几何对齐 64-bit 认证水印"
-        ),
-        "created_at": record.get("created_at"),
-        "confidence": confidence,
-        "phash_match": False,
-        "status": "认证水印恢复",
-        "extracted_at": now_text(),
-        "watermark_layers": record.get("watermark_layers", WATERMARK_LAYERS),
-        "code_recovery": code_recovery,
-    }, record)
 
 
 def extract_robust_code(image: Image.Image, records: list[dict[str, Any]] | None = None) -> tuple[str | None, float, int]:
-    records = records if records is not None else legacy_robust_candidate_records()
-    trace_codes = {
-        record.get("trace_id"): robust_code_from_trace(record.get("trace_id"))
-        for record in records
-        if record.get("trace_id")
-    }
-    if not trace_codes:
-        return None, 0.0, 0
-    arr = np.array(image.convert("RGB"), dtype=np.float32)
-    height, width = arr.shape[:2]
-    if width < ROBUST_TILE or height < ROBUST_TILE:
-        return None, 0.0, 0
-    candidates = []
-    for cell in (8, 7, 9):
-        tile = cell * ROBUST_GRID
-        step = max(1, cell * 2)
-        for offset_y in range(0, min(tile, height - tile + 1), step):
-            for offset_x in range(0, min(tile, width - tile + 1), step):
-                code, confidence, decided = extract_robust_from_grid(arr, cell, offset_x, offset_y)
-                if code is None or decided < ROBUST_BITS:
-                    continue
-                trace_id = next((item for item, item_code in trace_codes.items() if item_code == code), None)
-                if trace_id is not None:
-                    candidates.append((trace_id, confidence, decided))
-    if not candidates:
-        return None, 0.0, 0
-    candidates.sort(key=lambda item: item[1], reverse=True)
-    return candidates[0]
+    current_records = records if records is not None else legacy_robust_candidate_records()
+    return watermark_robust.extract_robust_code(image, records=current_records)
 
 
 def detect_robust_watermark(image: Image.Image) -> dict[str, Any] | None:
     records = legacy_robust_candidate_records()
-    if not records:
-        return None
-    trace_id, confidence, decided = extract_robust_code(image, records)
-    if not trace_id or confidence < 0.08:
-        return None
-    record = next((item for item in records if item.get("trace_id") == trace_id), None)
-    if not record:
-        return None
-    return with_evidence_fields({
-        "id": record.get("id"),
-        "trace_id": trace_id,
-        "user_id": record.get("user_id"),
-        "mode": "robust_dct",
-        "mode_label": "30% 局部鲁棒水印",
-        "created_at": record.get("created_at"),
-        "confidence": int(min(98, max(75, confidence * 100))),
-        "phash_match": True,
-        "status": "鲁棒水印命中",
-        "extracted_at": now_text(),
-        "robust_decided_bits": decided,
-        "robust_score": round(confidence, 3),
-        "watermark_layers": record.get("watermark_layers", WATERMARK_LAYERS),
-        "layer_scores": layer_scores_for_image(image, trace_id),
-    }, record)
+    return watermark_robust.detect_robust_watermark(
+        image,
+        records=records,
+        extract_code=lambda current_image, current_records: extract_robust_code(
+            current_image, current_records
+        ),
+        with_evidence_fields=with_evidence_fields,
+        now_text=now_text,
+        layer_scores_for_image=layer_scores_for_image,
+        watermark_layers=WATERMARK_LAYERS,
+    )
 
 
 def mode_label(mode: str) -> str:
@@ -1393,20 +823,13 @@ app.state.watermark_detection_budget_seconds = clamp_float(
 
 
 def should_run_frequency_fallbacks(image: Image.Image) -> bool:
-    width, height = image.size
-    pixels = width * height
-    if pixels <= 3_000_000:
-        return True
-    aspect = max(width, height) / max(1, min(width, height))
-    return pixels <= 5_000_000 and aspect >= 2.2
+    return watermark_detection.should_run_frequency_fallbacks(image)
 
 
 def should_run_visual_match_fallback(image: Image.Image) -> bool:
-    records = read_records()
-    if not any(record.get("robust_watermark") for record in records):
-        return False
-    width, height = image.size
-    return width * height >= 40_000
+    return watermark_detection.should_run_visual_match_fallback(
+        image, records=read_records()
+    )
 
 
 def detect_visible_copyright(image: Image.Image) -> dict[str, Any] | None:
@@ -2029,92 +1452,40 @@ async def embed_watermark(
 
 def extract_watermark_from_image(image: Image.Image) -> dict[str, Any]:
     v4_candidates = v4_candidate_records()
-    if v4_candidates:
-        if is_registered_original_image(image):
-            record_detection_result(False)
-            raise HTTPException(status_code=404, detail="未检测到可识别的隐式水印")
-        v4_match = detect_v4_watermark(image, v4_candidates)
-        if v4_match:
-            record_detection_result(True)
-            return v4_match
-        record_detection_result(False)
-        raise HTTPException(status_code=404, detail="未检测到可识别的隐式水印")
-
-    payload = extract_full_lsb(image)
-    if not payload:
-        if is_registered_original_image(image):
-            record_detection_result(False)
-            raise HTTPException(status_code=404, detail="未检测到可识别的隐式水印")
-        if should_run_frequency_fallbacks(image):
-            dot_matrix_match = detect_dot_matrix_trace(image)
-            if dot_matrix_match:
-                record_detection_result(True)
-                return dot_matrix_match
-            if app.state.aligned_authenticated_detection_enabled:
-                aligned_match = detect_aligned_authenticated_watermark(
-                    image,
-                    candidate_limit=app.state.aligned_candidate_limit,
-                    budget_seconds=app.state.watermark_detection_budget_seconds,
-                )
-                if aligned_match:
-                    record_detection_result(True)
-                    return aligned_match
-            if app.state.dense_watermark_fallback_enabled:
-                if should_run_visual_match_fallback(image):
-                    visual_match = detect_by_visual_match(image)
-                    if visual_match:
-                        record_detection_result(True)
-                        return visual_match
-                small_crop_match = detect_small_crop_trace(image)
-                if small_crop_match:
-                    record_detection_result(True)
-                    return small_crop_match
-                code_match = detect_watermark_code(image)
-                if code_match:
-                    record_detection_result(True)
-                    return code_match
-                robust_match = detect_robust_watermark(image)
-                if robust_match:
-                    record_detection_result(True)
-                    return robust_match
-        if app.state.visual_match_fallback_enabled:
-            visual_match = detect_by_visual_match(image)
-            if visual_match:
-                record_detection_result(True)
-                return visual_match
-        residual_match = detect_by_residual_match(image)
-        if residual_match:
-            record_detection_result(True)
-            return residual_match
-        if app.state.visible_watermark_detection_enabled:
-            fallback = detect_visible_copyright(image)
-            if fallback:
-                record_detection_result(True)
-                return fallback
-        payload = extract_block_lsb(image)
-    if not payload:
-        record_detection_result(False)
-        raise HTTPException(status_code=404, detail="未检测到可识别的隐式水印")
-    records = read_records()
-    matched = next((item for item in records if item.get("trace_id") == payload.get("trace_id")), None)
-    record_detection_result(True)
-    return with_evidence_fields({
-        "id": payload.get("id"),
-        "trace_id": payload.get("trace_id"),
-        "evidence_uuid": payload.get("evidence_uuid"),
-        "evidence_uuid_head": payload.get("evidence_uuid_head"),
-        "evidence_uuid_tail": payload.get("evidence_uuid_tail"),
-        "user_id": payload.get("user_id"),
-        "mode": payload.get("mode"),
-        "mode_label": payload.get("mode_label", mode_label(payload.get("mode", "dct"))),
-        "created_at": payload.get("created_at"),
-        "confidence": 98 if matched else 92,
-        "phash_match": bool(matched),
-        "status": "匹配" if matched else "检测到水印",
-        "extracted_at": now_text(),
-        "watermark_layers": matched.get("watermark_layers", WATERMARK_LAYERS) if matched else WATERMARK_LAYERS,
-        "layer_scores": layer_scores_for_image(image, payload.get("trace_id")) if payload.get("trace_id") else {},
-    }, matched)
+    return watermark_detection.extract_watermark_from_image(
+        image,
+        records=read_records,
+        v4_candidates=v4_candidates,
+        detect_v4_watermark=detect_v4_watermark,
+        extract_full_lsb=extract_full_lsb,
+        extract_block_lsb=extract_block_lsb,
+        is_registered_original_image=is_registered_original_image,
+        should_run_frequency_fallbacks=should_run_frequency_fallbacks,
+        should_run_visual_match_fallback=should_run_visual_match_fallback,
+        detect_dot_matrix_trace=detect_dot_matrix_trace,
+        detect_aligned_authenticated_watermark=detect_aligned_authenticated_watermark,
+        detect_by_visual_match=detect_by_visual_match,
+        detect_small_crop_trace=detect_small_crop_trace,
+        detect_watermark_code=detect_watermark_code,
+        detect_robust_watermark=detect_robust_watermark,
+        detect_by_residual_match=detect_by_residual_match,
+        detect_visible_copyright=detect_visible_copyright,
+        record_detection_result=record_detection_result,
+        with_evidence_fields=with_evidence_fields,
+        now_text=now_text,
+        mode_label=mode_label,
+        layer_scores_for_image=layer_scores_for_image,
+        not_found_error=lambda: HTTPException(
+            status_code=404, detail="未检测到可识别的隐式水印"
+        ),
+        watermark_layers=WATERMARK_LAYERS,
+        aligned_authenticated_detection_enabled=app.state.aligned_authenticated_detection_enabled,
+        aligned_candidate_limit=app.state.aligned_candidate_limit,
+        watermark_detection_budget_seconds=app.state.watermark_detection_budget_seconds,
+        dense_watermark_fallback_enabled=app.state.dense_watermark_fallback_enabled,
+        visual_match_fallback_enabled=app.state.visual_match_fallback_enabled,
+        visible_watermark_detection_enabled=app.state.visible_watermark_detection_enabled,
+    )
 
 
 @app.post("/api/watermark/extract")

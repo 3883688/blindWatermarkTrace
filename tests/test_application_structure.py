@@ -1,4 +1,5 @@
 import ast
+import importlib
 import os
 import subprocess
 import sys
@@ -47,6 +48,36 @@ EXPECTED_ROUTES = {
 
 def test_lsb_byte_bits_round_trip() -> None:
     assert bytes_from_bits(bits_from_bytes(b"trace")) == b"trace"
+
+
+def test_detection_pipeline_calls_detectors_in_order() -> None:
+    detection = importlib.import_module("trace_app.watermark.detection")
+    calls: list[str] = []
+
+    pipeline = detection.DetectionPipeline(
+        (
+            lambda image: calls.append("first"),
+            lambda image: calls.append("second") or {"trace_id": "matched"},
+        )
+    )
+
+    assert pipeline(Image.new("RGB", (1, 1))) == {"trace_id": "matched"}
+    assert calls == ["first", "second"]
+
+
+def test_detection_pipeline_stops_after_first_match() -> None:
+    detection = importlib.import_module("trace_app.watermark.detection")
+    calls: list[str] = []
+
+    pipeline = detection.DetectionPipeline(
+        (
+            lambda image: calls.append("first") or {"trace_id": "matched"},
+            lambda image: calls.append("second") or {"trace_id": "late"},
+        )
+    )
+
+    assert pipeline(Image.new("RGB", (1, 1))) == {"trace_id": "matched"}
+    assert calls == ["first"]
 
 
 def test_small_trace_short_code_is_deterministic() -> None:
