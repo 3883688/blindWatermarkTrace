@@ -50,6 +50,8 @@ def test_main_exposes_expected_routes() -> None:
 
 def test_main_exposes_required_python_api() -> None:
     required = {
+        "ADMIN_PASS",
+        "ADMIN_USER",
         "app",
         "ensure_dirs",
         "embed_robust_watermark",
@@ -203,6 +205,16 @@ def test_disabled_database_initialization_preserves_existing_state(
 def test_failed_database_initialization_synchronizes_compatibility_state(
     tmp_path: Path, monkeypatch
 ) -> None:
+    original_runtime = main.runtime
+    original_repository = main.repository
+    original_db_engine = main.db_engine
+    original_db_store = main.db_store
+    original_db_error = main.db_error
+    monkeypatch.setattr(main, "runtime", original_runtime)
+    monkeypatch.setattr(main, "repository", original_repository)
+    monkeypatch.setattr(main, "db_engine", original_db_engine)
+    monkeypatch.setattr(main, "db_store", original_db_store)
+    monkeypatch.setattr(main, "db_error", original_db_error)
     unavailable_path = tmp_path / "missing" / "runtime.sqlite3"
     failing_settings = Settings.from_values(
         base_dir=tmp_path,
@@ -222,6 +234,14 @@ def test_failed_database_initialization_synchronizes_compatibility_state(
     assert main.runtime.store is None
     assert main.db_store is None
     assert main.db_error == "OperationalError"
+
+    monkeypatch.undo()
+
+    assert main.runtime is original_runtime
+    assert main.repository is original_repository
+    assert main.db_engine is original_db_engine
+    assert main.db_store is original_db_store
+    assert main.db_error == original_db_error
 
 
 def test_repository_ensures_directories_before_writing_stats() -> None:

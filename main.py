@@ -48,6 +48,8 @@ from watermark_v4.features import (
 from watermark_v4.detector import V4Candidate, detect_v4
 
 from trace_app.config import (
+    ADMIN_PASS,
+    ADMIN_USER,
     BASE_DIR,
     BLOCK_SIZE,
     BLOCK_STRIDE,
