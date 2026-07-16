@@ -41,7 +41,7 @@ from watermark_v4.features import (
 from watermark_v4.detector import V4Candidate, detect_v4
 
 from trace_app.auth.service import AuthService
-from trace_app.application import create_app, running_pytest
+from trace_app.application import create_app, dispose_runtime, running_pytest
 from trace_app.config import (
     ADMIN_PASS,
     ADMIN_USER,
@@ -225,6 +225,7 @@ def initialize_database() -> None:
     global db_engine, db_error, db_store, repository, runtime
     if not DB_ENABLED:
         return
+    previous_runtime = runtime
     try:
         runtime = create_runtime(settings)
     except RuntimeError as exc:
@@ -236,12 +237,16 @@ def initialize_database() -> None:
             db_store = runtime.store
             db_error = runtime.db_error
             _sync_application_state()
+            if previous_runtime is not runtime:
+                dispose_runtime(previous_runtime)
         raise
     repository = Repository(runtime.store, ensure_dirs=ensure_dirs)
     db_engine = runtime.engine
     db_store = runtime.store
     db_error = runtime.db_error
     _sync_application_state()
+    if previous_runtime is not runtime:
+        dispose_runtime(previous_runtime)
 
 
 def db_clear_all() -> None:

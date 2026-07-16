@@ -3,7 +3,9 @@ from __future__ import annotations
 import mimetypes
 import os
 import sys
+from contextlib import asynccontextmanager
 from collections.abc import Callable
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -30,6 +32,23 @@ def ensure_directories(settings: Settings) -> None:
     settings.watermarked_dir.mkdir(parents=True, exist_ok=True)
     settings.thumbnail_dir.mkdir(parents=True, exist_ok=True)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+
+
+def dispose_engine(engine: Any | None) -> None:
+    if engine is not None:
+        engine.dispose()
+
+
+def dispose_runtime(runtime: Runtime) -> None:
+    dispose_engine(runtime.engine)
+
+
+@asynccontextmanager
+async def application_lifespan(app: FastAPI):
+    try:
+        yield
+    finally:
+        dispose_runtime(app.state.runtime)
 
 
 def _parse_bool(raw: str | bool | None) -> bool:
@@ -129,7 +148,7 @@ def create_app(
         runtime.store, ensure_dirs=lambda: ensure_directories(settings)
     )
 
-    app = FastAPI(title=settings.app_name)
+    app = FastAPI(title=settings.app_name, lifespan=application_lifespan)
     app.state.settings = settings
     app.state.runtime = runtime
     app.state.repository = repository
@@ -162,8 +181,6 @@ def create_app(
         app.state.management_service_factory = management_service_factory
     _initialize_detection_state(app)
     register_static_routes(app, settings)
-    # This FastAPI version stores included routers as opaque lazy entries. Keeping
-    # the concrete APIRoutes makes route inventory and duplicate detection stable.
     for api_router in (
         auth.router,
         users.router,
@@ -171,5 +188,5 @@ def create_app(
         images.router,
         dashboard.router,
     ):
-        app.router.routes.extend(api_router.routes)
+        app.include_router(api_router)
     return app

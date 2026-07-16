@@ -384,6 +384,15 @@ def _factory_settings(tmp_path: Path) -> Settings:
     )
 
 
+def _application_routes(factory_app):
+    for route in factory_app.routes:
+        included_router = getattr(route, "original_router", None)
+        if included_router is not None:
+            yield from included_router.routes
+        else:
+            yield route
+
+
 def test_application_factory_registers_each_route_once_without_database(
     tmp_path: Path,
 ) -> None:
@@ -392,7 +401,7 @@ def test_application_factory_registers_each_route_once_without_database(
     )
     actual_routes = Counter(
         (method, route.path)
-        for route in factory_app.routes
+        for route in _application_routes(factory_app)
         for method in getattr(route, "methods", set())
     )
 
@@ -403,6 +412,21 @@ def test_application_factory_registers_each_route_once_without_database(
     assert (
         factory_app.state.generated_trace_ids
         is factory_app.state.runtime.generated_trace_ids
+    )
+
+
+def test_application_factory_does_not_share_route_objects_between_apps(
+    tmp_path: Path,
+) -> None:
+    first = create_app(
+        settings=_factory_settings(tmp_path / "first"), initialize_database=False
+    )
+    second = create_app(
+        settings=_factory_settings(tmp_path / "second"), initialize_database=False
+    )
+
+    assert {id(route) for route in first.routes}.isdisjoint(
+        {id(route) for route in second.routes}
     )
 
 
@@ -449,7 +473,9 @@ def test_application_dependencies_call_current_factories_per_request(
     ]
 
 
-def test_application_dependency_overrides_replace_state_service(tmp_path: Path) -> None:
+def test_application_async_dependency_override_replaces_state_service(
+    tmp_path: Path,
+) -> None:
     class AuthOverride:
         def login(self, username: str, password: str) -> dict[str, str]:
             return {"username": username, "source": "override"}
@@ -457,13 +483,63 @@ def test_application_dependency_overrides_replace_state_service(tmp_path: Path) 
     factory_app = create_app(
         settings=_factory_settings(tmp_path), initialize_database=False
     )
-    factory_app.dependency_overrides[get_auth_service] = lambda: AuthOverride()
+    async def override_auth_service() -> AuthOverride:
+        return AuthOverride()
+
+    factory_app.dependency_overrides[get_auth_service] = override_auth_service
 
     response = TestClient(factory_app).post(
         "/auth/login", data={"username": "alice", "password": "secret"}
     )
 
     assert response.json() == {"username": "alice", "source": "override"}
+
+
+def test_application_yield_dependency_override_runs_cleanup(tmp_path: Path) -> None:
+    cleaned_up: list[bool] = []
+
+    class AuthOverride:
+        def login(self, username: str, password: str) -> dict[str, str]:
+            return {"source": "yield-override"}
+
+    async def override_auth_service():
+        try:
+            yield AuthOverride()
+        finally:
+            cleaned_up.append(True)
+
+    factory_app = create_app(
+        settings=_factory_settings(tmp_path), initialize_database=False
+    )
+    factory_app.dependency_overrides[get_auth_service] = override_auth_service
+
+    with TestClient(factory_app) as client:
+        response = client.post(
+            "/auth/login", data={"username": "alice", "password": "secret"}
+        )
+
+    assert response.json() == {"source": "yield-override"}
+    assert cleaned_up == [True]
+
+
+def test_application_lifespan_disposes_sqlite_engine(tmp_path: Path) -> None:
+    database_path = tmp_path / "runtime.sqlite3"
+    test_settings = Settings.from_values(
+        base_dir=Path(__file__).resolve().parents[1],
+        upload_dir=tmp_path / "uploads",
+        data_dir=tmp_path / "data",
+        db_url=f"sqlite+pysqlite:///{database_path}",
+        admin_user="admin",
+        admin_pass="secret",
+    )
+    factory_app = create_app(settings=test_settings, initialize_database=True)
+
+    with TestClient(factory_app) as client:
+        assert client.get("/api/roles").status_code == 200
+    client.close()
+    database_path.unlink()
+
+    assert not database_path.exists()
 
 
 def test_auth_service_filters_unknown_menu_keys() -> None:
@@ -949,7 +1025,7 @@ def test_main_candidate_ranking_wrapper_passes_current_feature_constants(
 def test_main_exposes_expected_routes() -> None:
     actual_routes = Counter(
         (method, route.path)
-        for route in main.app.routes
+        for route in _application_routes(main.app)
         for method in getattr(route, "methods", set())
     )
 
@@ -1133,6 +1209,57 @@ def test_disabled_database_initialization_preserves_existing_state(
     assert main.runtime is existing_runtime
     assert main.repository is existing_repository
     assert main.db_store is store
+
+
+class _DisposeSpy:
+    def __init__(self) -> None:
+        self.dispose_calls = 0
+
+    def dispose(self) -> None:
+        self.dispose_calls += 1
+
+
+def test_database_reinitialization_disposes_replaced_engine(monkeypatch) -> None:
+    previous_engine = _DisposeSpy()
+    current_engine = _DisposeSpy()
+    previous_runtime = Runtime(engine=previous_engine)
+    current_runtime = Runtime(engine=current_engine)
+    monkeypatch.setattr(main, "DB_ENABLED", True)
+    monkeypatch.setattr(main, "runtime", previous_runtime)
+    monkeypatch.setattr(main, "create_runtime", lambda settings: current_runtime)
+    monkeypatch.setattr(main, "_sync_application_state", lambda: None)
+
+    main.initialize_database()
+
+    assert main.runtime is current_runtime
+    assert previous_engine.dispose_calls == 1
+    assert current_engine.dispose_calls == 0
+
+
+def test_failed_database_reinitialization_disposes_replaced_engine(
+    monkeypatch,
+) -> None:
+    previous_engine = _DisposeSpy()
+    failed_engine = _DisposeSpy()
+    previous_runtime = Runtime(engine=previous_engine)
+    failed_runtime = Runtime(engine=failed_engine, db_error="OperationalError")
+    failure = RuntimeError("Database initialization failed")
+    setattr(failure, "runtime", failed_runtime)
+
+    def fail_create_runtime(settings):
+        raise failure
+
+    monkeypatch.setattr(main, "DB_ENABLED", True)
+    monkeypatch.setattr(main, "runtime", previous_runtime)
+    monkeypatch.setattr(main, "create_runtime", fail_create_runtime)
+    monkeypatch.setattr(main, "_sync_application_state", lambda: None)
+
+    with pytest.raises(RuntimeError, match="Database initialization failed"):
+        main.initialize_database()
+
+    assert main.runtime is failed_runtime
+    assert previous_engine.dispose_calls == 1
+    assert failed_engine.dispose_calls == 0
 
 
 def test_failed_database_initialization_synchronizes_compatibility_state(
