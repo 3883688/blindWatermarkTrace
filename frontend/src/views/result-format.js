@@ -6,5 +6,10 @@ export function syncConfidence(value) {
 
 export function safeImageUrl(value) {
   const url = String(value || '');
-  return /^(https?:\/\/|\/)/i.test(url) ? url : '';
+  return /^(https?:\/\/|\/(?!\/))/i.test(url) ? url : '';
+}
+
+export function createAsyncGuard() {
+  let active = true;
+  return { isActive: () => active, dispose: () => { active = false; } };
 }

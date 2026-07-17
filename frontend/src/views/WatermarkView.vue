@@ -5,19 +5,20 @@ import ResultDialog from '../components/ResultDialog.vue';
 import Range from '../components/RangeControl.vue';
 import { dashboardStats, embedWatermark, listImages } from '../api/trace.js';
 import { createWatermarkForm, watermarkFormData } from '../forms/watermark.js';
-import { safeImageUrl } from './result-format.js';
+import { createAsyncGuard, safeImageUrl } from './result-format.js';
 
 const props = defineProps({ currentUser: Object });
 const form = ref(createWatermarkForm(props.currentUser?.username || ''));
 const file = ref(null); const result = ref(null); const dialogOpen = ref(false); const busy = ref(false);
 const todayWatermarkCount = ref(0); const detectionSuccessRate = ref('0.0%'); let closeTimer;
+const asyncGuard = createAsyncGuard();
 watch(() => props.currentUser?.username, userId => { form.value.userId = userId || ''; });
 const range = key => computed(() => Number(form.value[key]).toFixed(2));
 function isV4(r) { return Number.parseInt(r.robust_watermark_version, 10) === 4 || String(r.code_recovery?.codec || r.robust_watermark_codec || '').endsWith('_v4'); }
 const resultRows = computed(() => { if (!result.value) return []; const r = result.value; const scores = r.layer_scores || {}; return [['用户标识', r.user_id], ['Trace ID', r.trace_id], ['证据 UUID 前段', r.evidence_uuid_head || '-'], ['证据 UUID 后段', r.evidence_uuid_tail || '-'], ['水印模式', r.mode_label || r.mode], ['水印版本', `V${[1,2,3,4].includes(Number(r.robust_watermark_version)) ? Number(r.robust_watermark_version) : 1}`], ['生成时间', r.created_at], ['置信度', `${Number(r.confidence || 0)}%`], [isV4(r) ? 'V4 认证载荷' : '频域评分', isV4(r) ? '认证 DCT · FFT 同步' : `DCT ${Number(scores.dct || 0).toFixed(2)} · DWT ${Number(scores.dwt || 0).toFixed(2)} · FFT ${Number(scores.fft || 0).toFixed(2)}`]]; });
-async function refreshDashboard() { try { const stats = await dashboardStats(); todayWatermarkCount.value = stats.today ?? 0; detectionSuccessRate.value = `${Number(stats.detection_success_rate || 0).toFixed(1)}%`; } catch (_) {} }
-async function embed() { if (!file.value) { alert('请选择要生成水印的图片'); return; } busy.value = true; try { result.value = await embedWatermark(watermarkFormData(file.value, form.value)); await Promise.all([listImages(), refreshDashboard()]); dialogOpen.value = true; clearTimeout(closeTimer); closeTimer = setTimeout(() => { dialogOpen.value = false; }, 3000); } catch (error) { alert(error.message); } finally { busy.value = false; } }
-onMounted(refreshDashboard); onBeforeUnmount(() => clearTimeout(closeTimer));
+async function refreshDashboard() { try { const stats = await dashboardStats(); if (!asyncGuard.isActive()) return; todayWatermarkCount.value = stats.today ?? 0; detectionSuccessRate.value = `${Number(stats.detection_success_rate || 0).toFixed(1)}%`; } catch (_) {} }
+async function embed() { if (!file.value) { alert('请选择要生成水印的图片'); return; } busy.value = true; try { const response = await embedWatermark(watermarkFormData(file.value, form.value)); if (!asyncGuard.isActive()) return; result.value = response; await Promise.all([listImages(), refreshDashboard()]); if (!asyncGuard.isActive()) return; dialogOpen.value = true; clearTimeout(closeTimer); closeTimer = setTimeout(() => { if (asyncGuard.isActive()) dialogOpen.value = false; }, 3000); } catch (error) { if (asyncGuard.isActive()) alert(error.message); } finally { if (asyncGuard.isActive()) busy.value = false; } }
+onMounted(refreshDashboard); onBeforeUnmount(() => { asyncGuard.dispose(); clearTimeout(closeTimer); });
 </script>
 <template>
 <section class="page-content"><div class="page-header"><div class="page-title">生成水印</div><div class="page-subtitle">为图片嵌入多层隐式水印，支持截图追踪与版权保护</div><div class="tag-row"><span class="tag tag-blue"><i class="ti ti-cpu"></i> DCT 频域水印</span><span class="tag tag-teal"><i class="ti ti-maximize"></i> 扩频空间域</span><span class="tag tag-purple"><i class="ti ti-fingerprint"></i> pHash 指纹</span><span class="tag tag-amber"><i class="ti ti-lock"></i> EXIF 加密</span></div></div>
