@@ -42,3 +42,18 @@
 [data-theme="light"] .icon-btn.danger{background:rgba(220,38,38,0.08);border-color:rgba(220,38,38,0.32);color:#b91c1c}
 [data-theme="light"] .divider,[data-theme="light"] .or-divider:before,[data-theme="light"] .or-divider:after,[data-theme="light"] .progress-bar,[data-theme="light"] .confidence-bar{background:rgba(15,23,42,0.1)}
 [data-theme="light"] .result-dialog,[data-theme="light"] .image-preview-dialog,[data-theme="light"] .login-box{background:#fff;color:#1f2937;border-color:rgba(15,23,42,0.12);box-shadow:0 24px 80px rgba(15,23,42,0.18)}
+
+/* Copied from the pre-migration index.html watermark and dialog rules. */
+.dialog-title{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500;color:#5eead4}
+.embed-result{flex:0 0 100%;margin-top:8px}
+.login-subtitle{font-size:13px;color:rgba(255,255,255,0.42);margin-bottom:22px}
+.method-list{display:flex;flex-direction:column;gap:8px}
+.method-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06)}
+.method-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.method-name{font-size:13px;color:rgba(255,255,255,0.7)}
+.method-tag{margin-left:auto;font-size:11px;padding:2px 8px;border-radius:100px}
+.preview-size{font-size:11px;color:rgba(255,255,255,0.35)}
+.progress-wrap{margin-top:8px}
+.role-save-btn{min-height:34px;white-space:nowrap;flex-shrink:0;align-self:center}
+.img-name{font-size:13px;font-weight:500;color:rgba(255,255,255,0.85)}
+[data-theme="light"] .current-user-name,[data-theme="light"] .btn-logout,[data-theme="light"] .page-subtitle,[data-theme="light"] .card-label,[data-theme="light"] .field-group label,[data-theme="light"] .advanced-desc,[data-theme="light"] .dz-text,[data-theme="light"] .dz-hint,[data-theme="light"] .method-name,[data-theme="light"] .section-title,[data-theme="light"] .result-key,[data-theme="light"] .img-meta,[data-theme="light"] .page-info,[data-theme="light"] .stat-lbl,[data-theme="light"] .stats-card .s-lbl,[data-theme="light"] .preview-size,[data-theme="light"] .login-subtitle,[data-theme="light"] .role-key,[data-theme="light"] .mini-field label{color:#64748b}
