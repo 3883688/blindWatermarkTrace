@@ -25,7 +25,10 @@ test_output/
 uploads/
 backups/
 data/detection_stats.json
+data/feature_index/
+data/feature_index_v4/
 data/images.json
+data/mark-dev.db
 data/roles.json
 data/users.json
 data/watermark_stats.json
