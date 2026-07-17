@@ -3,6 +3,8 @@ import { watch } from 'vue';
 import AppNavigation from './components/AppNavigation.vue';
 import LoginOverlay from './components/LoginOverlay.vue';
 import { createAppState } from './state/app.js';
+import WatermarkView from './views/WatermarkView.vue';
+import TraceView from './views/TraceView.vue';
 
 const state = createAppState();
 
@@ -23,7 +25,9 @@ watch(() => state.theme, theme => {
       @logout="state.clearUser"
     />
     <main class="page active" :id="`page-${state.activePage}`">
-      <h1 class="sr-only">WatermarkSystem</h1>
+      <WatermarkView v-if="state.activePage === 'watermark'" :current-user="state.currentUser" />
+      <TraceView v-else-if="state.activePage === 'trace'" />
+      <h1 v-else class="sr-only">WatermarkSystem</h1>
     </main>
     <LoginOverlay v-if="!state.currentUser" @authenticated="state.setUser" />
   </div>
