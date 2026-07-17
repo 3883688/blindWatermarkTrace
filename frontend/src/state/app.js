@@ -2,6 +2,7 @@ import { reactive } from 'vue';
 
 const USER_KEY = 'currentUser';
 const THEME_KEY = 'siteTheme';
+const DEFAULT_MENUS = ['watermark', 'trace', 'manage'];
 
 function readUser() {
   try {
@@ -13,7 +14,7 @@ function readUser() {
 }
 
 function readTheme() {
-  return localStorage.getItem(THEME_KEY) || 'dark';
+  return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
 }
 
 export function createAppState() {
@@ -22,19 +23,33 @@ export function createAppState() {
     theme: readTheme(),
     activePage: 'watermark',
     get visibleMenus() {
-      return this.currentUser?.menus || [];
+      const menus = this.currentUser?.menus || DEFAULT_MENUS;
+      if (this.currentUser?.role === 'admin') {
+        return [...new Set([...menus, 'role'])];
+      }
+      return menus.filter(menu => menu !== 'role');
     },
     setUser(user) {
       this.currentUser = user;
       localStorage.setItem(USER_KEY, JSON.stringify(user));
+      this.ensureActivePage();
     },
     clearUser() {
       this.currentUser = null;
       localStorage.removeItem(USER_KEY);
+      this.ensureActivePage();
     },
     setTheme(theme) {
-      this.theme = theme;
-      localStorage.setItem(THEME_KEY, theme);
+      this.theme = theme === 'light' ? 'light' : 'dark';
+      localStorage.setItem(THEME_KEY, this.theme);
+    },
+    selectPage(page) {
+      if (this.visibleMenus.includes(page)) this.activePage = page;
+    },
+    ensureActivePage() {
+      if (!this.visibleMenus.includes(this.activePage)) {
+        this.activePage = this.visibleMenus[0] || 'trace';
+      }
     },
   });
 }
