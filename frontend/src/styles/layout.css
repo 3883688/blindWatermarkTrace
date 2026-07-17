@@ -32,7 +32,6 @@
 .btn-primary { display: inline-flex; align-items: center; gap: 8px; padding: 12px 28px; background: linear-gradient(135deg,#6366f1,#8b5cf6); border: none; border-radius: 10px; font-size: 14px; font-weight: 500; color: #fff; cursor: pointer; transition: all .2s; }
 .btn-primary:hover { opacity: .9; transform: translateY(-1px); }
 .btn-primary:disabled { cursor: wait; opacity: .7; transform: none; }
-.login-error { color: #fca5a5; font-size: 13px; margin: -8px 0 14px; }
 
 [data-theme="light"] body { background: #f8fafc; color: #1f2937; }
 [data-theme="light"] .app { background: linear-gradient(135deg,#ffffff 0%,#eef2ff 100%); }
