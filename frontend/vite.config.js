@@ -33,5 +33,6 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    exclude: ['**/node_modules/**', 'frontend/tests/ui/**'],
   },
 });

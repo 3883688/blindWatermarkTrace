@@ -11,6 +11,7 @@ __pycache__/
 
 # JavaScript dependencies
 node_modules/
+frontend/test-results/
 
 # Local Git worktrees
 .worktrees/

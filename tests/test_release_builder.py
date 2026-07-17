@@ -78,6 +78,10 @@ def test_release_source_filter_allows_runtime_sources(relative: str) -> None:
     assert is_release_source(Path(relative))
 
 
+def test_release_source_filter_allows_compiled_frontend_javascript() -> None:
+    assert is_release_source(Path("assets/app/app.js"))
+
+
 def test_root_password_security_module_remains_explicitly_allowed() -> None:
     assert "password_security.py" in ROOT_FILES
 

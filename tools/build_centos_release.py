@@ -37,7 +37,7 @@ ROOT_FILES = (
 )
 RECURSIVE_TREES = ("assets", "trace_app", "watermark_v4")
 RECURSIVE_SUFFIX_ALLOWLIST = {
-    "assets": {".css", ".ttf", ".woff", ".woff2"},
+    "assets": {".css", ".js", ".ttf", ".woff", ".woff2"},
     "trace_app": {".py"},
     "watermark_v4": {".py"},
 }

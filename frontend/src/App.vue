@@ -29,9 +29,9 @@ watch(() => state.theme, theme => {
       :current-user="state.currentUser"
       :menus="state.visibleMenus"
       :theme="state.theme"
-      @select-page="state.selectPage"
-      @update:theme="state.setTheme"
-      @logout="state.clearUser"
+      @select-page="state.selectPage($event)"
+      @update:theme="state.setTheme($event)"
+      @logout="state.clearUser()"
     />
     <main class="page active" :id="`page-${state.activePage}`">
       <WatermarkView v-if="state.activePage === 'watermark'" :current-user="state.currentUser" />
@@ -49,6 +49,6 @@ watch(() => state.theme, theme => {
       </template>
       <h1 v-else class="sr-only">WatermarkSystem</h1>
     </main>
-    <LoginOverlay v-if="!state.currentUser" @authenticated="state.setUser" />
+    <LoginOverlay v-if="!state.currentUser" @authenticated="state.setUser($event)" />
   </div>
 </template>
