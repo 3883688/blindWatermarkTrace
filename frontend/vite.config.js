@@ -1,9 +1,17 @@
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
+import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
   base: '/assets/app/',
   plugins: [vue()],
+  resolve: {
+    // Vitest is deliberately rooted at the repository so test paths match CI.
+    // Keep Vue resolution anchored to this frontend package.
+    alias: {
+      vue: fileURLToPath(new URL('./node_modules/vue/dist/vue.runtime.esm-bundler.js', import.meta.url)),
+    },
+  },
   build: {
     outDir: '../assets/app',
     emptyOutDir: true,
