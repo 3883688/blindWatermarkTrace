@@ -41,6 +41,27 @@ test('image state matches the original search, status, mode, and date filters', 
   expect(state.filteredRows.value.map(row => row.id)).toEqual(['new', 'mid']);
 });
 
+test('image state searches each original searchable field and excludes unrelated fields', () => {
+  const searchableFields = [
+    'name',
+    'user_id',
+    'trace_id',
+    'mode_label',
+    'mode',
+    'status',
+  ];
+
+  for (const field of searchableFields) {
+    const state = createImageState([{ id: field, [field]: `match-${field}` }]);
+    state.search = `MATCH-${field}`;
+    expect(state.filteredRows.value.map(row => row.id)).toEqual([field]);
+  }
+
+  const state = createImageState([{ id: 'hidden', name: 'visible', hidden_note: 'not-searchable' }]);
+  state.search = 'not-searchable';
+  expect(state.filteredRows.value).toEqual([]);
+});
+
 test('image state preserves original created and confidence sort options', () => {
   const state = createImageState(rows, 10);
 
@@ -56,6 +77,14 @@ test('image state preserves original created and confidence sort options', () =>
 test('all filter and sort changes reset pagination and paged rows clamp the state page', () => {
   const state = createImageState(rows, 1);
 
+  state.currentPage = 3;
+  state.activeFilter = '保护中';
+  expect(state.currentPage).toBe(1);
+  state.activeFilter = '全部';
+  state.currentPage = 3;
+  state.search = 'trace-a';
+  expect(state.currentPage).toBe(1);
+  state.search = '';
   state.currentPage = 3;
   state.mode = 'dct';
   expect(state.currentPage).toBe(1);
