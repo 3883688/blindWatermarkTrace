@@ -1,13 +1,12 @@
 <script setup>
-import { onBeforeUnmount, ref } from 'vue';
+import { onBeforeUnmount, ref, watch } from 'vue';
 
 const props = defineProps({
   label: { type: String, required: true }, hint: { type: String, required: true },
   icon: { type: String, default: 'ti-cloud-upload' }, compact: Boolean,
 });
-const emit = defineEmits(['update:file']);
 const input = ref();
-const file = ref(null);
+const file = defineModel('file', { default: null });
 const objectUrl = ref('');
 const progress = ref(0);
 
@@ -15,12 +14,16 @@ function revoke() { if (objectUrl.value) URL.revokeObjectURL(objectUrl.value); o
 function select(selected) {
   if (!selected) return;
   revoke(); file.value = selected; objectUrl.value = URL.createObjectURL(selected); progress.value = 100;
-  emit('update:file', selected);
+  // Clearing allows selecting the same file again to produce a change event.
+  if (input.value) input.value.value = '';
 }
-function clear() { revoke(); file.value = null; progress.value = 0; if (input.value) input.value.value = ''; emit('update:file', null); }
+function clear() { file.value = null; }
 function drop(event) { event.preventDefault(); select(event.dataTransfer.files[0]); }
 function openPreview() { if (objectUrl.value) window.open(objectUrl.value, '_blank'); }
 onBeforeUnmount(revoke);
+watch(file, value => {
+  if (!value) { revoke(); progress.value = 0; if (input.value) input.value.value = ''; }
+});
 </script>
 
 <template>
