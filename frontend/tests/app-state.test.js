@@ -18,8 +18,8 @@ describe('application shell state', () => {
     expect(state.activePage).toBe('trace');
   });
 
-  test('adds role management only for the configured administrator and persists normalized themes', () => {
-    const state = createAppState({ adminUser: 'system-owner' });
+  test('adds role management for the admin role returned by the existing login API and persists normalized themes', () => {
+    const state = createAppState();
 
     state.setUser({ username: 'system-owner', role: 'admin', menus: ['watermark'] });
     expect(state.visibleMenus).toEqual(['watermark', 'role']);
@@ -29,9 +29,9 @@ describe('application shell state', () => {
     expect(localStorage.getItem('siteTheme')).toBe('dark');
   });
 
-  test('does not grant role management from a forged admin role', () => {
-    const state = createAppState({ adminUser: 'system-owner' });
-    state.setUser({ username: 'untrusted-user', role: 'admin', menus: ['watermark', 'role'] });
+  test('does not grant role management to a non-admin login response', () => {
+    const state = createAppState();
+    state.setUser({ username: 'operator', role: 'operator', menus: ['watermark', 'role'] });
 
     expect(state.visibleMenus).toEqual(['watermark']);
     state.selectPage('role');
