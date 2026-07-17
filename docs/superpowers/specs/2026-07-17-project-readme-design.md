@@ -25,7 +25,7 @@ Create a root `README.md` that introduces Trace System to open-source readers wh
 
 - `README.md` is written in Chinese, matching the existing deployment guide and project-facing interface.
 - The README links to `README_DEPLOY.md`; it does not copy deployment steps that would become a second source of truth.
-- The README references the existing `demo/1.jpg`; it does not generate, transform, rename, or embed a new image asset.
+- The README references the existing `demo/1.jpg`; the existing asset is committed unchanged with the README. No new or transformed image asset is created.
 - The change is documentation-only. It does not alter application behavior, APIs, dependencies, release artifacts, or tests.
 
 ## Validation
@@ -33,4 +33,4 @@ Create a root `README.md` that introduces Trace System to open-source readers wh
 - Confirm every referenced local path exists.
 - Check Markdown headings, fenced commands, and image path syntax.
 - Confirm `git diff --check` succeeds.
-- Commit only `README.md` and this design/plan documentation; leave untracked runtime data and user images untouched.
+- Commit `README.md`, `demo/1.jpg`, and this design/plan documentation; leave runtime data and unrelated user images untouched.
