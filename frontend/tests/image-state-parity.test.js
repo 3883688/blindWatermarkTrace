@@ -99,3 +99,14 @@ test('all filter and sort changes reset pagination and paged rows clamp the stat
   expect(state.pagedRows.value.map(row => row.id)).toEqual(['new']);
   expect(state.currentPage).toBe(2);
 });
+
+test('image state keeps retained selections when records refresh', () => {
+  const state = createImageState([{ id: 'kept' }, { id: 'removed' }]);
+  state.selectedIds.value.add('kept');
+  state.selectedIds.value.add('removed');
+
+  state.setRecords([{ id: 'kept' }, { id: 'new' }]);
+
+  expect(state.selectedIds.value).toBeInstanceOf(Set);
+  expect([...state.selectedIds.value]).toEqual(['kept']);
+});

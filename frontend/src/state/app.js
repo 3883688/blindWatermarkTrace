@@ -3,6 +3,7 @@ import { reactive } from 'vue';
 const USER_KEY = 'currentUser';
 const THEME_KEY = 'siteTheme';
 const DEFAULT_MENUS = ['watermark', 'trace', 'manage'];
+const CONFIGURED_ADMIN_USER = String(import.meta.env.VITE_ADMIN_USER || '').trim();
 
 function readUser() {
   try {
@@ -17,14 +18,15 @@ function readTheme() {
   return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
 }
 
-export function createAppState() {
+export function createAppState({ adminUser = CONFIGURED_ADMIN_USER } = {}) {
+  const isConfiguredAdmin = user => Boolean(adminUser) && user?.username === adminUser;
   return reactive({
     currentUser: readUser(),
     theme: readTheme(),
     activePage: 'watermark',
     get visibleMenus() {
       const menus = this.currentUser?.menus || DEFAULT_MENUS;
-      if (this.currentUser?.role === 'admin') {
+      if (isConfiguredAdmin(this.currentUser)) {
         return [...new Set([...menus, 'role'])];
       }
       return menus.filter(menu => menu !== 'role');

@@ -13,6 +13,7 @@ describe('watermark and trace result contracts', () => {
     expect(safeImageUrl('/uploads/image.png')).toBe('/uploads/image.png');
     expect(safeImageUrl('//evil.example/image.png')).toBe('');
     expect(safeImageUrl('javascript:alert(1)')).toBe('');
+    expect(safeImageUrl('data:image/svg+xml,<svg/>')).toBe('');
   });
 
   test('stops asynchronous view continuations after unmount', () => {

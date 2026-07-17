@@ -27,7 +27,7 @@ export function createImageState(initialRecords = [], pageSize = 10) {
   const date = ref('');
   const sort = ref('created_desc');
   const currentPage = ref(1);
-  const selectedIds = ref([]);
+  const selectedIds = ref(new Set());
   const normalizedSearch = computed(() => search.value.trim().toLocaleLowerCase());
   const filteredRows = computed(() => sortRows(records.value.filter(record => {
     const haystack = [
@@ -73,7 +73,8 @@ export function createImageState(initialRecords = [], pageSize = 10) {
     totalPages,
     setRecords(nextRecords) {
       records.value = nextRecords;
-      selectedIds.value = [];
+      const recordIds = new Set(nextRecords.map(record => record.id));
+      selectedIds.value = new Set([...selectedIds.value].filter(id => recordIds.has(id)));
       currentPage.value = 1;
     },
   };

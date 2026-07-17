@@ -18,14 +18,23 @@ describe('application shell state', () => {
     expect(state.activePage).toBe('trace');
   });
 
-  test('adds role management only for administrators and persists normalized themes', () => {
-    const state = createAppState();
+  test('adds role management only for the configured administrator and persists normalized themes', () => {
+    const state = createAppState({ adminUser: 'system-owner' });
 
-    state.setUser({ username: 'admin', role: 'admin', menus: ['watermark'] });
+    state.setUser({ username: 'system-owner', role: 'admin', menus: ['watermark'] });
     expect(state.visibleMenus).toEqual(['watermark', 'role']);
 
     state.setTheme('unexpected');
     expect(state.theme).toBe('dark');
     expect(localStorage.getItem('siteTheme')).toBe('dark');
+  });
+
+  test('does not grant role management from a forged admin role', () => {
+    const state = createAppState({ adminUser: 'system-owner' });
+    state.setUser({ username: 'untrusted-user', role: 'admin', menus: ['watermark', 'role'] });
+
+    expect(state.visibleMenus).toEqual(['watermark']);
+    state.selectPage('role');
+    expect(state.activePage).toBe('watermark');
   });
 });
