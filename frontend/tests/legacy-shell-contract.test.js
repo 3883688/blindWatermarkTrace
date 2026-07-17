@@ -15,7 +15,7 @@ test('role management uses the legacy strict admin gate', () => {
 });
 
 test('shell controls retain the original selector contracts and dialog backdrops', async () => {
-  const css = await readFile('src/styles/index.css', 'utf8');
+  const css = await readFile('src/styles/legacy.css', 'utf8');
 
   expect(css).toContain('.btn-outline{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;background:transparent;border:1px solid rgba(255,255,255,0.15);border-radius:8px;font-size:13px;color:rgba(255,255,255,0.65);cursor:pointer;transition:all .2s}');
   expect(css).toContain('.icon-btn{width:34px;height:34px;border-radius:7px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);color:#e2e8f0;cursor:pointer;font-size:17px;transition:all .2s}');

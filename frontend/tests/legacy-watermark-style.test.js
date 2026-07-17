@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 
 test('watermark view retains the legacy method marker markup and style selectors', async () => {
   const [css, view] = await Promise.all([
-    readFile('src/styles/index.css', 'utf8'),
+    readFile('src/styles/legacy.css', 'utf8'),
     readFile('src/views/WatermarkView.vue', 'utf8'),
   ]);
 
