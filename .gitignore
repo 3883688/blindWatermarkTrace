@@ -9,8 +9,8 @@ __pycache__/
 # Local browser automation state
 .playwright-cli/
 
-# Frontend dependencies
-frontend/node_modules/
+# JavaScript dependencies
+node_modules/
 
 # Local Git worktrees
 .worktrees/
