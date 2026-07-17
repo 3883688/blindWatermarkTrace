@@ -2,8 +2,10 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from 'vitest';
 
 test('watermark view retains the legacy method marker markup and style selectors', async () => {
-  const [css, view] = await Promise.all([
+  const [css, index, tokens, view] = await Promise.all([
     readFile('src/styles/legacy.css', 'utf8'),
+    readFile('src/styles/index.css', 'utf8'),
+    readFile('src/styles/tokens.css', 'utf8'),
     readFile('src/views/WatermarkView.vue', 'utf8'),
   ]);
 
@@ -18,4 +20,11 @@ test('watermark view retains the legacy method marker markup and style selectors
   expect(css).toContain('.img-name{font-size:13px;font-weight:500;color:rgba(255,255,255,0.85)}');
   expect(view).toContain('<div class="method-dot" style="background:#818cf8"></div><span class="method-name">DCT 频域</span>');
   expect(view).toContain('<div class="method-dot" style="background:#f472b6"></div><span class="method-name">FFT 傅里叶</span>');
+  expect([...view.matchAll(/class="card" style="margin-bottom:24px"/g)]).toHaveLength(2);
+  expect([...view.matchAll(/class="advanced-section-head"/g)]).toHaveLength(3);
+  expect(view).toContain('<div class="cb-content"><div class="cb-title">启用块级水印（抗裁剪）</div><div class="cb-desc">');
+  expect(tokens).not.toContain('button, input, select { font: inherit; }');
+  expect(tokens).not.toContain('--font-sans');
+  expect(index).toContain('.field-range{display:block}');
+  expect(index).toContain('.dz-icon{line-height:1}');
 });

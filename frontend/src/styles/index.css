@@ -1,5 +1,52 @@
 @import './legacy.css';
-@import './tokens.css';
 
 /* Vue mount-only accessibility helper. */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* Preserve the legacy inline-HTML geometry after Vue removes whitespace nodes. */
+.field-range{display:block}
+.dz-icon{line-height:1}
+
+/* Restore legacy inline styles that were lost when pages became components. */
+.dropzone.compact{padding:32px}
+.dropzone.compact .dz-icon{font-size:28px}
+.trace-button{margin-top:20px;width:100%;justify-content:center}
+.url-btn{line-height:1}
+.trace-result-card{margin-bottom:16px}
+.trace-result-card>.result-title{font-size:14px;margin-bottom:18px}
+.trace-result-card>.result-title i{font-size:18px}
+.result-time{margin-left:auto;font-size:12px;color:rgba(255,255,255,0.35)}
+.result-val.owner{color:#818cf8}
+.trace-help{font-size:13px;color:rgba(255,255,255,0.45);line-height:1.8}
+[data-theme="light"] .trace-help{color:#64748b}
+[data-theme="light"] .badge-green{background:rgba(22,163,74,0.10);color:#15803d;border-color:rgba(21,128,61,0.25)}
+.trace-help>div{display:flex;gap:8px}
+.trace-help>div:first-child{margin-bottom:8px}
+.trace-help i{flex-shrink:0;margin-top:2px}
+.trace-help .ti-info-circle{color:#818cf8}
+.trace-help .ti-alert-triangle{color:#fcd34d}
+.s-icon.indigo{background:rgba(99,102,241,0.15);color:#818cf8}
+.s-icon.teal{background:rgba(20,184,166,0.15);color:#5eead4}
+.s-icon.amber{background:rgba(245,158,11,0.15);color:#fcd34d}
+.s-icon.red{background:rgba(239,68,68,0.15);color:#fca5a5}
+.img-table td.small-cell{font-size:12px}
+.img-table td.date-cell{color:rgba(255,255,255,0.45);font-size:12px}
+.confidence{display:flex;align-items:center;gap:8px}
+.confidence .confidence-bar{width:60px}
+.confidence span{font-size:12px}
+.empty-table{text-align:center;color:rgba(255,255,255,0.35)}
+.page-info strong{color:#e2e8f0}
+.img-table input[type="checkbox"]{position:relative;top:1.5px}
+.img-table .status-badge{position:relative;top:-1px}
+.user-actions{display:flex;gap:8px;align-items:center}
+.user-actions .field-select{width:140px}
+
+/* Element Plus popup surfaces inherit the application's restrained theme. */
+.el-overlay{backdrop-filter:blur(4px)}
+.el-dialog,.el-message-box{border:1px solid var(--el-border-color);border-radius:8px}
+.element-dialog-title{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500}
+.element-dialog-title.success{color:var(--el-color-success)}
+.element-dialog-copy{color:var(--el-text-color-regular);line-height:1.7}
+.element-image-dialog .el-dialog__body{padding-top:8px}
+.element-image-preview{background:var(--el-fill-color-light);padding:12px;border-radius:6px}
+.element-image-preview img{display:block;width:100%;max-height:calc(100vh - 180px);object-fit:contain;border-radius:6px}

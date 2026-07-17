@@ -15,14 +15,13 @@ const menuItems = [
   { key: 'role', label: '角色管理', icon: 'ti-users' },
 ];
 
-const initial = name => name?.slice(0, 2).toUpperCase() || 'BX';
 </script>
 
 <template>
   <nav class="navbar">
     <div class="nav-brand">
       <div class="logo-icon"><img :src="'/site-logo.png'" alt=""></div>
-      图片溯源系统
+      图片溯源系统（Watermark System）
     </div>
     <div class="nav-links">
       <button
@@ -41,7 +40,7 @@ const initial = name => name?.slice(0, 2).toUpperCase() || 'BX';
         <option value="light">Light</option>
       </select>
       <div class="user-pill">
-        <div class="user-avatar">{{ initial(currentUser?.username) }}</div>
+        <div class="user-avatar">BX</div>
         <span class="current-user-name">{{ currentUser?.username || '未登录' }}</span>
       </div>
       <button class="btn-logout" @click="emit('logout')"><i class="ti ti-logout" aria-hidden="true" style="font-size:14px"></i> 退出登录</button>

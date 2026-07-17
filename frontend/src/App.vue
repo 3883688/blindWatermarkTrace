@@ -19,6 +19,7 @@ function showTraceRecord(record) {
 
 watch(() => state.theme, theme => {
   document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.toggle('dark', theme === 'dark');
 }, { immediate: true });
 </script>
 
