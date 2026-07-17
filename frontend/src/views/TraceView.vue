@@ -1,10 +1,20 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import FileDropzone from '../components/FileDropzone.vue';
 import { dashboardStats, extractUpload, extractUrl, listImages } from '../api/trace.js';
 import { syncConfidence } from './result-format.js';
 
 const file = ref(null), url = ref(''), source = ref(''), result = ref(null), busy = ref(false);
+const props = defineProps({ record: { type: Object, default: null } });
+watch(() => props.record, record => {
+  if (!record) return;
+  result.value = {
+    user_id: record.user_id, trace_id: record.trace_id, evidence_uuid: record.evidence_uuid,
+    evidence_uuid_head: record.evidence_uuid_head, evidence_uuid_tail: record.evidence_uuid_tail,
+    mode_label: record.mode_label, created_at: record.created_at, confidence: record.confidence || 98,
+    phash_match: true, status: record.status, extracted_at: new Date().toLocaleString(),
+  };
+}, { immediate: true });
 function empty(value) { return value ?? '-'; }
 function isV4(r) { return Number.parseInt(r.robust_watermark_version, 10) === 4 || String(r.code_recovery?.codec || r.robust_watermark_codec || '').endsWith('_v4'); }
 function number(value, digits = 0, suffix = '') { return Number.isFinite(Number(value)) ? `${Number(value).toFixed(digits)}${suffix}` : '-'; }
