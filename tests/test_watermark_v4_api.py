@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from PIL import Image
+from PIL import Image, JpegImagePlugin
 from sqlalchemy import create_engine, select
 
 import main
@@ -23,13 +23,13 @@ def _png_bytes() -> bytes:
     return buffer.getvalue()
 
 
-def _jpeg_bytes() -> bytes:
+def _jpeg_bytes(subsampling: int = 0) -> bytes:
     buffer = BytesIO()
     _feature_image((512, 384), seed=808).save(
         buffer,
         format="JPEG",
         quality=95,
-        subsampling=0,
+        subsampling=subsampling,
     )
     return buffer.getvalue()
 
@@ -73,10 +73,16 @@ def _embed_v4(client: TestClient):
     )
 
 
-def _embed_v4_jpeg(client: TestClient):
+def _embed_v4_jpeg(client: TestClient, subsampling: int = 0):
     return client.post(
         "/api/watermark/embed",
-        files={"file": ("v4-source.jpg", _jpeg_bytes(), "image/jpeg")},
+        files={
+            "file": (
+                "v4-source.jpg",
+                _jpeg_bytes(subsampling),
+                "image/jpeg",
+            )
+        },
         data={
             "user_id": "pytest-v4-jpeg",
             "robust_watermark_version": "4",
@@ -207,6 +213,18 @@ def test_v4_jpeg_output_uses_jpeg_and_persisted_image_hash() -> None:
             persisted
         )
     assert watermarked_path.stat().st_size <= len(uploaded) * 1.25
+
+
+@pytest.mark.parametrize("subsampling", (0, 1, 2))
+def test_v4_jpeg_output_preserves_source_chroma_sampling(
+    subsampling: int,
+) -> None:
+    response = _embed_v4_jpeg(TestClient(main.app), subsampling)
+
+    assert response.status_code == 200, response.text
+    with Image.open(_watermarked_path(response.json())) as persisted:
+        persisted.load()
+        assert JpegImagePlugin.get_sampling(persisted) == subsampling
 
 
 def test_v4_jpeg_eligibility_uses_decoded_format_not_upload_metadata() -> None:

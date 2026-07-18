@@ -1,6 +1,7 @@
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from PIL import Image, JpegImagePlugin
 
 from trace_app.imaging.output import (
@@ -8,12 +9,36 @@ from trace_app.imaging.output import (
     WatermarkedOutput,
     encode_adaptive_jpeg,
     encode_jpeg,
+    jpeg_subsampling,
     save_watermarked_output,
 )
 
 
 def _image() -> Image.Image:
     return Image.effect_noise((320, 240), 32).convert("RGB")
+
+
+def _jpeg_source(subsampling: int) -> Image.Image:
+    buffer = BytesIO()
+    _image().save(
+        buffer,
+        format="JPEG",
+        quality=90,
+        subsampling=subsampling,
+    )
+    buffer.seek(0)
+    source = Image.open(buffer)
+    source.load()
+    return source
+
+
+@pytest.mark.parametrize("subsampling", (0, 1, 2))
+def test_jpeg_subsampling_returns_supported_source_value(subsampling: int) -> None:
+    assert jpeg_subsampling(_jpeg_source(subsampling)) == subsampling
+
+
+def test_jpeg_subsampling_falls_back_for_non_jpeg() -> None:
+    assert jpeg_subsampling(Image.new("RGB", (16, 16))) == 0
 
 
 def test_adaptive_jpeg_selects_highest_quality_within_target() -> None:
@@ -54,7 +79,7 @@ def test_encode_jpeg_produces_real_jpeg(monkeypatch) -> None:
 
     monkeypatch.setattr(Image.Image, "save", recording_save)
     source = _image().convert("RGBA")
-    content = encode_jpeg(source, 92)
+    content = encode_jpeg(source, 92, subsampling=2)
 
     assert source.mode == "RGBA"
     assert content.startswith(b"\xff\xd8")
@@ -65,7 +90,7 @@ def test_encode_jpeg_produces_real_jpeg(monkeypatch) -> None:
             "quality": 92,
             "optimize": True,
             "progressive": True,
-            "subsampling": 0,
+            "subsampling": 2,
         }
     ]
     with Image.open(BytesIO(content)) as loaded:
@@ -73,7 +98,7 @@ def test_encode_jpeg_produces_real_jpeg(monkeypatch) -> None:
         assert loaded.format == "JPEG"
         assert loaded.mode == "RGB"
         assert loaded.info.get("progressive") or loaded.info.get("progression")
-        assert JpegImagePlugin.get_sampling(loaded) == 0
+        assert JpegImagePlugin.get_sampling(loaded) == 2
 
 
 def test_save_watermarked_output_returns_persisted_jpeg(tmp_path: Path) -> None:
@@ -100,6 +125,20 @@ def test_save_watermarked_output_returns_persisted_jpeg(tmp_path: Path) -> None:
     assert result.image.getpixel((0, 0)) == persisted_pixel
     assert result.image.tobytes() == persisted_bytes
     assert result.image.tobytes() != source.tobytes()
+
+
+def test_save_watermarked_output_preserves_jpeg_subsampling(tmp_path: Path) -> None:
+    result = save_watermarked_output(
+        _image(),
+        tmp_path / "watermarked",
+        jpeg_output=True,
+        source_size=1,
+        jpeg_subsampling=2,
+    )
+
+    with Image.open(result.path) as loaded:
+        loaded.load()
+        assert JpegImagePlugin.get_sampling(loaded) == 2
 
 
 def test_save_watermarked_output_keeps_png_path_lossless(tmp_path: Path) -> None:

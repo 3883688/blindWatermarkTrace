@@ -45,6 +45,7 @@ class WatermarkOperations:
     apply_small_crop_trace_layer: Callable[..., Image.Image]
     apply_dot_matrix_trace_layer: Callable[..., Image.Image]
     embed_lsb: Callable[[Image.Image, dict[str, Any]], Image.Image]
+    jpeg_subsampling: Callable[[Image.Image], int]
     save_watermarked_output: Callable[..., WatermarkedOutput]
     save_thumbnail: Callable[[Image.Image, Path], None]
     save_record_feature_index: Callable[[Image.Image, str], str]
@@ -165,6 +166,9 @@ class WatermarkService:
         uploaded_size = getattr(file, "size", None)
         image = await op.load_upload_image(file)
         source_format = str(image.format or "").upper()
+        source_subsampling = (
+            op.jpeg_subsampling(image) if source_format == "JPEG" else 0
+        )
         image.save(original_path)
         source_size = (
             uploaded_size
@@ -282,6 +286,7 @@ class WatermarkService:
                 and robust_version == op.robust_version_v4
             ),
             source_size=source_size,
+            jpeg_subsampling=source_subsampling,
         )
         output_path = saved_output.path
         watermarked = saved_output.image

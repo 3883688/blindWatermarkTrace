@@ -5,12 +5,13 @@ from io import BytesIO
 from pathlib import Path
 from typing import Callable
 
-from PIL import Image
+from PIL import Image, JpegImagePlugin
 
 
 JPEG_MIN_QUALITY = 90
 JPEG_MAX_QUALITY = 95
 JPEG_TARGET_RATIO = 1.25
+JPEG_SUBSAMPLING_VALUES = (0, 1, 2)
 JpegEncoder = Callable[[Image.Image, int], bytes]
 
 
@@ -21,7 +22,17 @@ class WatermarkedOutput:
     quality: int | None
 
 
-def encode_jpeg(image: Image.Image, quality: int) -> bytes:
+def jpeg_subsampling(image: Image.Image) -> int:
+    sampling = JpegImagePlugin.get_sampling(image)
+    return sampling if sampling in JPEG_SUBSAMPLING_VALUES else 0
+
+
+def encode_jpeg(
+    image: Image.Image,
+    quality: int,
+    *,
+    subsampling: int = 0,
+) -> bytes:
     buffer = BytesIO()
     image.convert("RGB").save(
         buffer,
@@ -29,7 +40,7 @@ def encode_jpeg(image: Image.Image, quality: int) -> bytes:
         quality=quality,
         optimize=True,
         progressive=True,
-        subsampling=0,
+        subsampling=subsampling,
     )
     return buffer.getvalue()
 
@@ -38,12 +49,21 @@ def encode_adaptive_jpeg(
     image: Image.Image,
     source_size: int,
     *,
-    encoder: JpegEncoder = encode_jpeg,
+    subsampling: int = 0,
+    encoder: JpegEncoder | None = None,
 ) -> tuple[bytes, int]:
+    if encoder is None:
+        def default_encoder(image: Image.Image, quality: int) -> bytes:
+            return encode_jpeg(image, quality, subsampling=subsampling)
+
+        effective_encoder = default_encoder
+    else:
+        effective_encoder = encoder
+
     target_size = max(1, int(source_size * JPEG_TARGET_RATIO))
     minimum_content: bytes | None = None
     for quality in range(JPEG_MAX_QUALITY, JPEG_MIN_QUALITY - 1, -1):
-        content = encoder(image, quality)
+        content = effective_encoder(image, quality)
         if quality == JPEG_MIN_QUALITY:
             minimum_content = content
         if len(content) <= target_size:
@@ -59,11 +79,16 @@ def save_watermarked_output(
     *,
     jpeg_output: bool,
     source_size: int,
+    jpeg_subsampling: int = 0,
 ) -> WatermarkedOutput:
     quality = None
     if jpeg_output:
         path = output_base.with_suffix(".jpg")
-        content, quality = encode_adaptive_jpeg(image, source_size)
+        content, quality = encode_adaptive_jpeg(
+            image,
+            source_size,
+            subsampling=jpeg_subsampling,
+        )
         path.write_bytes(content)
     else:
         path = output_base.with_suffix(".png")

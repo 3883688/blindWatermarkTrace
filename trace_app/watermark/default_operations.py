@@ -256,6 +256,7 @@ def build_default_operations(
             watermark_payload_from_trace_fn=robust.watermark_payload_from_trace,
         ),
         embed_lsb=lsb.embed_lsb,
+        jpeg_subsampling=output.jpeg_subsampling,
         save_watermarked_output=output.save_watermarked_output,
         save_thumbnail=io.save_thumbnail,
         save_record_feature_index=save_feature,
