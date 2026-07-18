@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from PIL import Image
+from PIL import Image, JpegImagePlugin
 from sqlalchemy import create_engine, select
 
 import main
@@ -20,6 +20,27 @@ AUTH_KEY = "api-v4-test-key-material-at-least-32-bytes"
 def _png_bytes() -> bytes:
     buffer = BytesIO()
     _feature_image((512, 384), seed=808).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _jpeg_bytes(subsampling: int = 0) -> bytes:
+    buffer = BytesIO()
+    _feature_image((512, 384), seed=808).save(
+        buffer,
+        format="JPEG",
+        quality=95,
+        subsampling=subsampling,
+    )
+    return buffer.getvalue()
+
+
+def _jpeg_bytes_with_mode(mode: str) -> bytes:
+    buffer = BytesIO()
+    _feature_image((512, 384), seed=808).convert(mode).save(
+        buffer,
+        format="JPEG",
+        quality=95,
+    )
     return buffer.getvalue()
 
 
@@ -59,6 +80,44 @@ def _embed_v4(client: TestClient):
             "small_crop_trace_enabled": "true",
             "dot_matrix_trace_enabled": "true",
         },
+    )
+
+
+def _embed_v4_jpeg(client: TestClient, subsampling: int = 0):
+    return client.post(
+        "/api/watermark/embed",
+        files={
+            "file": (
+                "v4-source.jpg",
+                _jpeg_bytes(subsampling),
+                "image/jpeg",
+            )
+        },
+        data={
+            "user_id": "pytest-v4-jpeg",
+            "robust_watermark_version": "4",
+            "copyright_enabled": "false",
+            "small_crop_trace_enabled": "true",
+            "dot_matrix_trace_enabled": "true",
+        },
+    )
+
+
+def _extract_bytes(
+    client: TestClient,
+    content: bytes,
+    name: str = "query.png",
+    content_type: str = "image/png",
+):
+    return client.post(
+        "/api/watermark/extract",
+        files={"file": (name, content, content_type)},
+    )
+
+
+def _watermarked_path(record: dict[str, object]) -> Path:
+    return main.UPLOAD_DIR / str(record["download_url"]).replace(
+        "/uploads/", ""
     )
 
 
@@ -149,11 +208,162 @@ def test_v4_generation_does_not_call_legacy_watermark_layers(
     assert response.status_code == 200, response.text
 
 
-def _extract_bytes(client: TestClient, content: bytes, name: str = "query.png"):
-    return client.post(
-        "/api/watermark/extract",
-        files={"file": (name, content, "image/png")},
+def test_v4_jpeg_output_uses_jpeg_and_persisted_image_hash() -> None:
+    uploaded = _jpeg_bytes()
+    response = _embed_v4_jpeg(TestClient(main.app))
+
+    assert response.status_code == 200, response.text
+    record = response.json()
+    assert record["download_url"].endswith("-watermarked.jpg")
+    watermarked_path = _watermarked_path(record)
+    with Image.open(watermarked_path) as persisted:
+        assert persisted.format == "JPEG"
+        persisted.load()
+        assert record["watermarked_image_sha256"] == main.image_content_sha256(
+            persisted
+        )
+    assert watermarked_path.stat().st_size <= len(uploaded) * 1.25
+
+
+@pytest.mark.parametrize("subsampling", (0, 1, 2))
+def test_v4_jpeg_output_preserves_source_chroma_sampling(
+    subsampling: int,
+) -> None:
+    response = _embed_v4_jpeg(TestClient(main.app), subsampling)
+
+    assert response.status_code == 200, response.text
+    with Image.open(_watermarked_path(response.json())) as persisted:
+        persisted.load()
+        assert JpegImagePlugin.get_sampling(persisted) == subsampling
+
+
+@pytest.mark.parametrize("mode", ("L", "CMYK"))
+def test_v4_jpeg_output_supports_unknown_source_chroma_layout(mode: str) -> None:
+    response = TestClient(main.app).post(
+        "/api/watermark/embed",
+        files={
+            "file": (
+                f"v4-{mode.lower()}-source.jpg",
+                _jpeg_bytes_with_mode(mode),
+                "image/jpeg",
+            )
+        },
+        data={
+            "user_id": f"pytest-v4-{mode.lower()}",
+            "robust_watermark_version": "4",
+            "copyright_enabled": "false",
+        },
     )
+
+    assert response.status_code == 200, response.text
+    record = response.json()
+    assert record["robust_watermark_version"] == 4
+    assert record["download_url"].endswith("-watermarked.jpg")
+    with Image.open(_watermarked_path(record)) as persisted:
+        persisted.load()
+        assert persisted.mode == "RGB"
+        assert JpegImagePlugin.get_sampling(persisted) == 0
+
+
+def test_v4_jpeg_eligibility_uses_decoded_format_not_upload_metadata() -> None:
+    response = TestClient(main.app).post(
+        "/api/watermark/embed",
+        files={"file": ("misleading.png", _jpeg_bytes(), "image/png")},
+        data={
+            "user_id": "pytest-v4-jpeg",
+            "robust_watermark_version": "4",
+            "copyright_enabled": "false",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["download_url"].endswith("-watermarked.jpg")
+
+
+def test_v4_jpeg_reencode_is_detected_by_codec() -> None:
+    client = TestClient(main.app)
+    embed_response = _embed_v4_jpeg(client)
+    assert embed_response.status_code == 200, embed_response.text
+    record = embed_response.json()
+    watermarked_path = _watermarked_path(record)
+    buffer = BytesIO()
+    with Image.open(watermarked_path) as persisted:
+        persisted.convert("RGB").save(
+            buffer,
+            format="JPEG",
+            quality=90,
+            subsampling=0,
+        )
+    transformed = buffer.getvalue()
+    assert main.file_md5(transformed) != record["watermarked_file_md5"]
+    assert main.file_sha256(transformed) != record["watermarked_file_sha256"]
+
+    response = _extract_bytes(
+        client,
+        transformed,
+        "reencoded.jpg",
+        "image/jpeg",
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["trace_id"] == record["trace_id"]
+    assert result["code_recovery"]["codec"] == V4Config().codec
+
+
+def test_v4_png_output_remains_png() -> None:
+    response = _embed_v4(TestClient(main.app))
+
+    assert response.status_code == 200, response.text
+    record = response.json()
+    assert record["download_url"].endswith("-watermarked.png")
+    with Image.open(_watermarked_path(record)) as persisted:
+        assert persisted.format == "PNG"
+
+
+def test_legacy_v1_jpeg_input_remains_lossless_png_with_lsb() -> None:
+    response = TestClient(main.app).post(
+        "/api/watermark/embed",
+        files={"file": ("legacy-source.jpg", _jpeg_bytes(), "image/jpeg")},
+        data={
+            "user_id": "pytest-v1-jpeg",
+            "robust_watermark_version": "1",
+            "copyright_enabled": "false",
+            "small_crop_trace_enabled": "false",
+            "dot_matrix_trace_enabled": "false",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    record = response.json()
+    assert record["download_url"].endswith("-watermarked.png")
+    with Image.open(_watermarked_path(record)) as persisted:
+        assert persisted.format == "PNG"
+        payload = main.extract_block_lsb(persisted)
+    assert payload is not None
+    assert payload["trace_id"] == record["trace_id"]
+
+
+def test_v4_jpeg_exact_reupload_matches_watermarked_fingerprint() -> None:
+    client = TestClient(main.app)
+    embed_response = _embed_v4_jpeg(client)
+    assert embed_response.status_code == 200, embed_response.text
+    record = embed_response.json()
+    watermarked_path = _watermarked_path(record)
+    assert watermarked_path.suffix == ".jpg"
+
+    response = _extract_bytes(
+        client,
+        watermarked_path.read_bytes(),
+        "exact.jpg",
+        "image/jpeg",
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["trace_id"] == record["trace_id"]
+    assert result["matched_file_type"] == "watermarked"
+    assert result["matched_hash_type"] == "file_md5_sha256"
 
 
 def test_v4_exact_file_fingerprints_succeed_without_image_decode(
