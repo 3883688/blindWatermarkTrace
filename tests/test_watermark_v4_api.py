@@ -34,6 +34,16 @@ def _jpeg_bytes(subsampling: int = 0) -> bytes:
     return buffer.getvalue()
 
 
+def _jpeg_bytes_with_mode(mode: str) -> bytes:
+    buffer = BytesIO()
+    _feature_image((512, 384), seed=808).convert(mode).save(
+        buffer,
+        format="JPEG",
+        quality=95,
+    )
+    return buffer.getvalue()
+
+
 @pytest.fixture(autouse=True)
 def isolated_v4_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     upload_dir = tmp_path / "uploads"
@@ -225,6 +235,34 @@ def test_v4_jpeg_output_preserves_source_chroma_sampling(
     with Image.open(_watermarked_path(response.json())) as persisted:
         persisted.load()
         assert JpegImagePlugin.get_sampling(persisted) == subsampling
+
+
+@pytest.mark.parametrize("mode", ("L", "CMYK"))
+def test_v4_jpeg_output_supports_unknown_source_chroma_layout(mode: str) -> None:
+    response = TestClient(main.app).post(
+        "/api/watermark/embed",
+        files={
+            "file": (
+                f"v4-{mode.lower()}-source.jpg",
+                _jpeg_bytes_with_mode(mode),
+                "image/jpeg",
+            )
+        },
+        data={
+            "user_id": f"pytest-v4-{mode.lower()}",
+            "robust_watermark_version": "4",
+            "copyright_enabled": "false",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    record = response.json()
+    assert record["robust_watermark_version"] == 4
+    assert record["download_url"].endswith("-watermarked.jpg")
+    with Image.open(_watermarked_path(record)) as persisted:
+        persisted.load()
+        assert persisted.mode == "RGB"
+        assert JpegImagePlugin.get_sampling(persisted) == 0
 
 
 def test_v4_jpeg_eligibility_uses_decoded_format_not_upload_metadata() -> None:

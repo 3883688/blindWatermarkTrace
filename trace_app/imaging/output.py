@@ -41,7 +41,8 @@ def encode_jpeg(
     subsampling: int = 0,
 ) -> bytes:
     buffer = BytesIO()
-    image.convert("RGB").save(
+    rgb_image = image if image.mode == "RGB" else image.convert("RGB")
+    rgb_image.save(
         buffer,
         format="JPEG",
         quality=quality,
@@ -60,17 +61,20 @@ def encode_adaptive_jpeg(
     encoder: JpegEncoder | None = None,
 ) -> tuple[bytes, int]:
     if encoder is None:
+        effective_image = image if image.mode == "RGB" else image.convert("RGB")
+
         def default_encoder(image: Image.Image, quality: int) -> bytes:
             return encode_jpeg(image, quality, subsampling=subsampling)
 
         effective_encoder = default_encoder
     else:
+        effective_image = image
         effective_encoder = encoder
 
     target_size = max(1, int(source_size * JPEG_TARGET_RATIO))
     minimum_content: bytes | None = None
     for quality in range(JPEG_MAX_QUALITY, JPEG_MIN_QUALITY - 1, -1):
-        content = effective_encoder(image, quality)
+        content = effective_encoder(effective_image, quality)
         if quality == JPEG_MIN_QUALITY:
             minimum_content = content
         if len(content) <= target_size:

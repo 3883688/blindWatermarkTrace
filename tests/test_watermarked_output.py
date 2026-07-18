@@ -83,6 +83,26 @@ def test_adaptive_jpeg_never_drops_below_quality_90() -> None:
     assert len(content) == 900
 
 
+def test_adaptive_jpeg_converts_to_rgb_once_for_all_quality_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _image().convert("RGBA")
+    original_convert = Image.Image.convert
+    rgb_conversions: list[str] = []
+
+    def recording_convert(image, mode=None, *args, **kwargs):
+        if mode == "RGB":
+            rgb_conversions.append(image.mode)
+        return original_convert(image, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Image.Image, "convert", recording_convert)
+
+    _, quality = encode_adaptive_jpeg(source, source_size=1)
+
+    assert quality == JPEG_MIN_QUALITY == 90
+    assert rgb_conversions == ["RGBA"]
+
+
 def test_encode_jpeg_produces_real_jpeg(monkeypatch) -> None:
     original_save = Image.Image.save
     save_calls: list[dict[str, object]] = []
