@@ -49,16 +49,19 @@ def test_encode_jpeg_produces_real_jpeg(monkeypatch) -> None:
     save_calls: list[dict[str, object]] = []
 
     def recording_save(image, fp, format=None, **params):
-        save_calls.append({"format": format, **params})
+        save_calls.append({"format": format, "mode": image.mode, **params})
         return original_save(image, fp, format=format, **params)
 
     monkeypatch.setattr(Image.Image, "save", recording_save)
-    content = encode_jpeg(_image(), 92)
+    source = _image().convert("RGBA")
+    content = encode_jpeg(source, 92)
 
+    assert source.mode == "RGBA"
     assert content.startswith(b"\xff\xd8")
     assert save_calls == [
         {
             "format": "JPEG",
+            "mode": "RGB",
             "quality": 92,
             "optimize": True,
             "progressive": True,
