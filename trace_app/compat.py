@@ -119,6 +119,7 @@ from trace_app import utilities as _utilities
 from trace_app.imaging import feature_matching as imaging_feature_matching
 from trace_app.imaging import fingerprints as imaging_fingerprints
 from trace_app.imaging import io as imaging_io
+from trace_app.imaging import output as imaging_output
 from trace_app.imaging import visible_mark as imaging_visible_mark
 from trace_app.watermark import dot_matrix as watermark_dot_matrix
 from trace_app.watermark import detection as watermark_detection
@@ -415,6 +416,7 @@ def get_watermark_service() -> WatermarkService:
             apply_small_crop_trace_layer=apply_small_crop_trace_layer,
             apply_dot_matrix_trace_layer=apply_dot_matrix_trace_layer,
             embed_lsb=embed_lsb,
+            save_watermarked_output=_save_watermarked_output,
             save_thumbnail=save_thumbnail,
             save_record_feature_index=save_record_feature_index,
             save_record_feature_index_v4=save_record_feature_index_v4,
@@ -1407,6 +1409,21 @@ def matched_file_fingerprint(
         file_sha256_fn=file_sha256,
         image_content_sha256_fn=image_content_sha256,
         load_image_from_bytes_fn=load_image_from_bytes,
+    )
+
+
+def _save_watermarked_output(
+    image: Image.Image,
+    output_base: Path,
+    *,
+    jpeg_output: bool,
+    source_size: int,
+) -> imaging_output.WatermarkedOutput:
+    return imaging_output.save_watermarked_output(
+        image,
+        output_base,
+        jpeg_output=jpeg_output,
+        source_size=source_size,
     )
 
 

@@ -23,6 +23,17 @@ def _png_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def _jpeg_bytes() -> bytes:
+    buffer = BytesIO()
+    _feature_image((512, 384), seed=808).save(
+        buffer,
+        format="JPEG",
+        quality=95,
+        subsampling=0,
+    )
+    return buffer.getvalue()
+
+
 @pytest.fixture(autouse=True)
 def isolated_v4_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     upload_dir = tmp_path / "uploads"
@@ -59,6 +70,38 @@ def _embed_v4(client: TestClient):
             "small_crop_trace_enabled": "true",
             "dot_matrix_trace_enabled": "true",
         },
+    )
+
+
+def _embed_v4_jpeg(client: TestClient):
+    return client.post(
+        "/api/watermark/embed",
+        files={"file": ("v4-source.jpg", _jpeg_bytes(), "image/jpeg")},
+        data={
+            "user_id": "pytest-v4-jpeg",
+            "robust_watermark_version": "4",
+            "copyright_enabled": "false",
+            "small_crop_trace_enabled": "true",
+            "dot_matrix_trace_enabled": "true",
+        },
+    )
+
+
+def _extract_bytes(
+    client: TestClient,
+    content: bytes,
+    name: str = "query.png",
+    content_type: str = "image/png",
+):
+    return client.post(
+        "/api/watermark/extract",
+        files={"file": (name, content, content_type)},
+    )
+
+
+def _watermarked_path(record: dict[str, object]) -> Path:
+    return main.UPLOAD_DIR / str(record["download_url"]).replace(
+        "/uploads/", ""
     )
 
 
@@ -149,11 +192,122 @@ def test_v4_generation_does_not_call_legacy_watermark_layers(
     assert response.status_code == 200, response.text
 
 
-def _extract_bytes(client: TestClient, content: bytes, name: str = "query.png"):
-    return client.post(
-        "/api/watermark/extract",
-        files={"file": (name, content, "image/png")},
+def test_v4_jpeg_output_uses_jpeg_and_persisted_image_hash() -> None:
+    uploaded = _jpeg_bytes()
+    response = _embed_v4_jpeg(TestClient(main.app))
+
+    assert response.status_code == 200, response.text
+    record = response.json()
+    assert record["download_url"].endswith("-watermarked.jpg")
+    watermarked_path = _watermarked_path(record)
+    with Image.open(watermarked_path) as persisted:
+        assert persisted.format == "JPEG"
+        persisted.load()
+        assert record["watermarked_image_sha256"] == main.image_content_sha256(
+            persisted
+        )
+    assert watermarked_path.stat().st_size <= len(uploaded) * 1.25
+
+
+def test_v4_jpeg_eligibility_uses_decoded_format_not_upload_metadata() -> None:
+    response = TestClient(main.app).post(
+        "/api/watermark/embed",
+        files={"file": ("misleading.png", _jpeg_bytes(), "image/png")},
+        data={
+            "user_id": "pytest-v4-jpeg",
+            "robust_watermark_version": "4",
+            "copyright_enabled": "false",
+        },
     )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["download_url"].endswith("-watermarked.jpg")
+
+
+def test_v4_jpeg_reencode_is_detected_by_codec() -> None:
+    client = TestClient(main.app)
+    embed_response = _embed_v4_jpeg(client)
+    assert embed_response.status_code == 200, embed_response.text
+    record = embed_response.json()
+    watermarked_path = _watermarked_path(record)
+    buffer = BytesIO()
+    with Image.open(watermarked_path) as persisted:
+        persisted.convert("RGB").save(
+            buffer,
+            format="JPEG",
+            quality=90,
+            subsampling=0,
+        )
+    transformed = buffer.getvalue()
+    assert main.file_md5(transformed) != record["watermarked_file_md5"]
+    assert main.file_sha256(transformed) != record["watermarked_file_sha256"]
+
+    response = _extract_bytes(
+        client,
+        transformed,
+        "reencoded.jpg",
+        "image/jpeg",
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["trace_id"] == record["trace_id"]
+    assert result["code_recovery"]["codec"] == V4Config().codec
+
+
+def test_v4_png_output_remains_png() -> None:
+    response = _embed_v4(TestClient(main.app))
+
+    assert response.status_code == 200, response.text
+    record = response.json()
+    assert record["download_url"].endswith("-watermarked.png")
+    with Image.open(_watermarked_path(record)) as persisted:
+        assert persisted.format == "PNG"
+
+
+def test_legacy_v1_jpeg_input_remains_lossless_png_with_lsb() -> None:
+    response = TestClient(main.app).post(
+        "/api/watermark/embed",
+        files={"file": ("legacy-source.jpg", _jpeg_bytes(), "image/jpeg")},
+        data={
+            "user_id": "pytest-v1-jpeg",
+            "robust_watermark_version": "1",
+            "copyright_enabled": "false",
+            "small_crop_trace_enabled": "false",
+            "dot_matrix_trace_enabled": "false",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    record = response.json()
+    assert record["download_url"].endswith("-watermarked.png")
+    with Image.open(_watermarked_path(record)) as persisted:
+        assert persisted.format == "PNG"
+        payload = main.extract_block_lsb(persisted)
+    assert payload is not None
+    assert payload["trace_id"] == record["trace_id"]
+
+
+def test_v4_jpeg_exact_reupload_matches_watermarked_fingerprint() -> None:
+    client = TestClient(main.app)
+    embed_response = _embed_v4_jpeg(client)
+    assert embed_response.status_code == 200, embed_response.text
+    record = embed_response.json()
+    watermarked_path = _watermarked_path(record)
+    assert watermarked_path.suffix == ".jpg"
+
+    response = _extract_bytes(
+        client,
+        watermarked_path.read_bytes(),
+        "exact.jpg",
+        "image/jpeg",
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["trace_id"] == record["trace_id"]
+    assert result["matched_file_type"] == "watermarked"
+    assert result["matched_hash_type"] == "file_md5_sha256"
 
 
 def test_v4_exact_file_fingerprints_succeed_without_image_decode(

@@ -10,6 +10,7 @@ from PIL import Image
 
 from trace_app.config import Settings
 from trace_app.database.repositories import Repository
+from trace_app.imaging.output import WatermarkedOutput
 from trace_app.runtime import Runtime
 
 
@@ -44,6 +45,7 @@ class WatermarkOperations:
     apply_small_crop_trace_layer: Callable[..., Image.Image]
     apply_dot_matrix_trace_layer: Callable[..., Image.Image]
     embed_lsb: Callable[[Image.Image, dict[str, Any]], Image.Image]
+    save_watermarked_output: Callable[..., WatermarkedOutput]
     save_thumbnail: Callable[[Image.Image, Path], None]
     save_record_feature_index: Callable[[Image.Image, str], str]
     save_record_feature_index_v4: Callable[[Image.Image, str], str]
@@ -157,11 +159,18 @@ class WatermarkService:
         evidence_fields = op.evidence_uuid_fields(evidence_uuid)
         safe_name = Path(file.filename or "image.png").name
         original_path = self.settings.original_dir / f"{image_id}-{safe_name}"
-        output_path = self.settings.watermarked_dir / f"{image_id}-watermarked.png"
+        output_base = self.settings.watermarked_dir / f"{image_id}-watermarked"
         thumbnail_path = self.settings.thumbnail_dir / f"{image_id}-thumb.png"
 
+        uploaded_size = getattr(file, "size", None)
         image = await op.load_upload_image(file)
+        source_format = str(image.format or "").upper()
         image.save(original_path)
+        source_size = (
+            uploaded_size
+            if isinstance(uploaded_size, int) and uploaded_size > 0
+            else original_path.stat().st_size
+        )
         normalized_mode = op.normalize_mode(mode)
         visible = op.apply_visible_copyright(
             image,
@@ -265,7 +274,17 @@ class WatermarkService:
                 else small_crop_marked
             )
             watermarked = op.embed_lsb(dot_matrix_marked, payload)
-        watermarked.save(output_path, format="PNG")
+        saved_output = op.save_watermarked_output(
+            watermarked,
+            output_base,
+            jpeg_output=(
+                source_format == "JPEG"
+                and robust_version == op.robust_version_v4
+            ),
+            source_size=source_size,
+        )
+        output_path = saved_output.path
+        watermarked = saved_output.image
         op.save_thumbnail(watermarked, thumbnail_path)
         feature_index_path = (
             op.save_record_feature_index_v4(watermarked, image_id)

@@ -40,7 +40,13 @@ from trace_app.config import (
     Settings,
 )
 from trace_app.database.repositories import Repository
-from trace_app.imaging import feature_matching, fingerprints, io, visible_mark
+from trace_app.imaging import (
+    feature_matching,
+    fingerprints,
+    io,
+    output,
+    visible_mark,
+)
 from trace_app.runtime import Runtime
 from trace_app.watermark import detection, dot_matrix, frequency, lsb, robust, small_crop
 from trace_app.watermark.service import WatermarkOperations
@@ -250,6 +256,7 @@ def build_default_operations(
             watermark_payload_from_trace_fn=robust.watermark_payload_from_trace,
         ),
         embed_lsb=lsb.embed_lsb,
+        save_watermarked_output=output.save_watermarked_output,
         save_thumbnail=io.save_thumbnail,
         save_record_feature_index=save_feature,
         save_record_feature_index_v4=save_feature_v4,
