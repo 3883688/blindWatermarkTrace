@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Save JPEG-source V4 watermarks as quality 90-95 JPEG files, targeting at most 1.25 times the uploaded size when possible, while preserving existing lossless behavior for every other path.
+**Goal:** Save JPEG-source V4 watermarks as quality 90-95 JPEG files with the source JPEG's chroma sampling, targeting at most 1.25 times the uploaded size when possible, while preserving existing lossless behavior for every other path.
 
-**Architecture:** Add a focused imaging output module that owns JPEG encoding, adaptive quality selection, final file naming, and persisted-image reload. `WatermarkService` decides whether the current request is the eligible JPEG+V4 case, then uses the persisted result for thumbnails, feature indexes, hashes, and record URLs. Compatibility operation builders inject the helper in the same way as existing image I/O functions.
+**Architecture:** A focused imaging output module owns source-sampling normalization, JPEG encoding, adaptive quality selection, final file naming, and persisted-image reload. `WatermarkService` decides whether the current request is the eligible JPEG+V4 case, captures the source sampling before transforms, then uses the persisted result for thumbnails, feature indexes, hashes, and record URLs. Compatibility operation builders inject the helpers in the same way as existing image I/O functions.
 
 **Tech Stack:** Python 3, Pillow, FastAPI `UploadFile`, pytest, existing V4 watermark detector and repository contracts.
 
@@ -12,12 +12,12 @@
 
 ## File Map
 
-- Create `trace_app/imaging/output.py`: encode quality 90-95 JPEG candidates, select the highest fitting quality, save `.jpg` or `.png`, and return the persisted image.
-- Create `tests/test_watermarked_output.py`: unit coverage for quality selection, quality floor, real JPEG output, and PNG fallback.
-- Modify `trace_app/watermark/service.py`: select JPEG only for true JPEG input with V4, use the actual uploaded byte size, and derive downstream artifacts from the persisted output.
-- Modify `trace_app/watermark/default_operations.py`: inject the new output helper into the default service operations.
-- Modify `trace_app/compat.py`: inject the helper into the compatibility service factory without extending the strict legacy `__all__` contract.
-- Modify `tests/test_watermark_v4_api.py`: verify JPEG+V4 routing, size behavior, fingerprints, lossy-resave V4 detection, PNG V4 behavior, and legacy lossless behavior.
+- Create `trace_app/imaging/output.py`: normalize source JPEG sampling, encode quality 90-95 candidates with that sampling, select the highest fitting quality, save `.jpg` or `.png`, and return the persisted image.
+- Create `tests/test_watermarked_output.py`: unit coverage for sampling normalization, quality selection, quality floor, real JPEG output, and PNG fallback.
+- Modify `trace_app/watermark/service.py`: select JPEG only for true JPEG input with V4, capture source sampling and uploaded byte size, and derive downstream artifacts from the persisted output.
+- Modify `trace_app/watermark/default_operations.py`: inject the output and source-sampling helpers into the default service operations.
+- Modify `trace_app/compat.py`: inject private helpers into the compatibility service factory without extending the strict legacy `__all__` contract.
+- Modify `tests/test_watermark_v4_api.py`: verify source-sampling preservation, JPEG+V4 routing, size behavior, fingerprints, lossy-resave V4 detection, PNG V4 behavior, and legacy lossless behavior.
 
 ### Task 1: Adaptive JPEG Output Unit
 
@@ -548,7 +548,7 @@ Run:
 python -m pytest tests -q
 ```
 
-Expected: all tests pass. Benchmark scripts that require external commercial datasets remain outside this command's normal pytest collection behavior.
+Expected: the command currently stops on the repository's known missing untracked `img/` fixtures. Record that baseline failure, then use Task 6's explicit module selection for the broadest runnable suite; do not fabricate fixtures or call the collection failure green.
 
 - [ ] **Step 3: Verify source formatting and scope**
 
@@ -596,3 +596,300 @@ git log -4 --oneline
 ```
 
 Expected: the design commit and the focused implementation/test commits are present; no additional commit is needed when verification makes no changes.
+
+### Task 5: Preserve Source JPEG Chroma Sampling
+
+**Files:**
+- Modify: `trace_app/imaging/output.py`
+- Modify: `tests/test_watermarked_output.py`
+- Modify: `trace_app/watermark/service.py`
+- Modify: `trace_app/watermark/default_operations.py`
+- Modify: `trace_app/compat.py`
+- Modify: `tests/test_watermark_v4_api.py`
+
+- [ ] **Step 1: Write failing source-sampling unit tests**
+
+Extend `tests/test_watermarked_output.py` so the real encoder accepts a sampling value, the source sampling reader normalizes supported values, and adaptive persistence keeps that value:
+
+```python
+import pytest
+
+from trace_app.imaging.output import jpeg_subsampling
+
+
+def _jpeg_source(subsampling: int) -> Image.Image:
+    buffer = BytesIO()
+    _image().save(
+        buffer,
+        format="JPEG",
+        quality=90,
+        subsampling=subsampling,
+    )
+    buffer.seek(0)
+    image = Image.open(buffer)
+    image.load()
+    return image
+
+
+@pytest.mark.parametrize("subsampling", (0, 1, 2))
+def test_jpeg_subsampling_preserves_supported_source_value(
+    subsampling: int,
+) -> None:
+    source = _jpeg_source(subsampling)
+
+    assert jpeg_subsampling(source) == subsampling
+
+
+def test_jpeg_subsampling_uses_444_for_unknown_source() -> None:
+    assert jpeg_subsampling(Image.new("RGB", (32, 32))) == 0
+```
+
+Update the real JPEG test to call `encode_jpeg(source, 92, subsampling=2)` and expect `"subsampling": 2` plus `JpegImagePlugin.get_sampling(loaded) == 2`.
+
+Add a persistence test:
+
+```python
+def test_save_watermarked_output_keeps_requested_jpeg_subsampling(
+    tmp_path: Path,
+) -> None:
+    result = save_watermarked_output(
+        _image(),
+        tmp_path / "watermarked",
+        jpeg_output=True,
+        source_size=1,
+        jpeg_subsampling=2,
+    )
+
+    with Image.open(result.path) as loaded:
+        assert JpegImagePlugin.get_sampling(loaded) == 2
+```
+
+- [ ] **Step 2: Write the failing API routing test**
+
+Make `_jpeg_bytes` in `tests/test_watermark_v4_api.py` accept a `subsampling: int = 0` parameter and add:
+
+```python
+@pytest.mark.parametrize("subsampling", (0, 1, 2))
+def test_v4_jpeg_output_preserves_source_subsampling(
+    subsampling: int,
+) -> None:
+    client = TestClient(main.app)
+    content = _jpeg_bytes(subsampling=subsampling)
+    response = client.post(
+        "/api/watermark/embed",
+        files={"file": ("sampling.jpg", content, "image/jpeg")},
+        data={
+            "user_id": f"pytest-sampling-{subsampling}",
+            "robust_watermark_version": "4",
+            "copyright_enabled": "false",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    record = response.json()
+    output_path = main.UPLOAD_DIR / record["download_url"].replace(
+        "/uploads/", ""
+    )
+    with Image.open(output_path) as loaded:
+        assert JpegImagePlugin.get_sampling(loaded) == subsampling
+```
+
+- [ ] **Step 3: Run the tests and verify RED**
+
+Run:
+
+```powershell
+python -m pytest tests/test_watermarked_output.py tests/test_watermark_v4_api.py -k "subsampling or encode_jpeg" -q
+```
+
+Expected: tests fail because `jpeg_subsampling` and the sampling keyword do not exist, while the API still forces sampling `0`.
+
+- [ ] **Step 4: Implement sampling-aware encoding**
+
+Update `trace_app/imaging/output.py`:
+
+```python
+from PIL import Image, JpegImagePlugin
+
+
+JPEG_SUBSAMPLING_VALUES = (0, 1, 2)
+
+
+def jpeg_subsampling(image: Image.Image) -> int:
+    sampling = JpegImagePlugin.get_sampling(image)
+    return sampling if sampling in JPEG_SUBSAMPLING_VALUES else 0
+
+
+def encode_jpeg(
+    image: Image.Image,
+    quality: int,
+    *,
+    subsampling: int = 0,
+) -> bytes:
+    buffer = BytesIO()
+    image.convert("RGB").save(
+        buffer,
+        format="JPEG",
+        quality=quality,
+        optimize=True,
+        progressive=True,
+        subsampling=subsampling,
+    )
+    return buffer.getvalue()
+```
+
+Keep deterministic two-argument test encoders supported while routing real encoding through the requested sampling:
+
+```python
+def encode_adaptive_jpeg(
+    image: Image.Image,
+    source_size: int,
+    *,
+    subsampling: int = 0,
+    encoder: JpegEncoder | None = None,
+) -> tuple[bytes, int]:
+    encode = encoder or (
+        lambda current, quality: encode_jpeg(
+            current,
+            quality,
+            subsampling=subsampling,
+        )
+    )
+    target_size = max(1, int(source_size * JPEG_TARGET_RATIO))
+    minimum_content: bytes | None = None
+    for quality in range(JPEG_MAX_QUALITY, JPEG_MIN_QUALITY - 1, -1):
+        content = encode(image, quality)
+        if quality == JPEG_MIN_QUALITY:
+            minimum_content = content
+        if len(content) <= target_size:
+            return content, quality
+    if minimum_content is None:
+        raise RuntimeError("JPEG quality range is empty")
+    return minimum_content, JPEG_MIN_QUALITY
+```
+
+Add `jpeg_subsampling: int = 0` to `save_watermarked_output` and pass it as `subsampling=jpeg_subsampling` to `encode_adaptive_jpeg`.
+
+- [ ] **Step 5: Pass source sampling through service operation boundaries**
+
+In `trace_app/watermark/service.py`, add this injected operation before the saver:
+
+```python
+jpeg_subsampling: Callable[[Image.Image], int]
+save_watermarked_output: Callable[..., WatermarkedOutput]
+```
+
+Capture the value immediately after the source format and before `image.save`:
+
+```python
+source_format = str(image.format or "").upper()
+source_subsampling = (
+    op.jpeg_subsampling(image) if source_format == "JPEG" else 0
+)
+```
+
+Pass it to persistence:
+
+```python
+saved_output = op.save_watermarked_output(
+    watermarked,
+    output_base,
+    jpeg_output=(
+        source_format == "JPEG"
+        and robust_version == op.robust_version_v4
+    ),
+    source_size=source_size,
+    jpeg_subsampling=source_subsampling,
+)
+```
+
+In `trace_app/watermark/default_operations.py`, inject:
+
+```python
+jpeg_subsampling=output.jpeg_subsampling,
+save_watermarked_output=output.save_watermarked_output,
+```
+
+In `trace_app/compat.py`, add a private delegator and inject it without changing `__all__`:
+
+```python
+def _jpeg_subsampling(image: Image.Image) -> int:
+    return imaging_output.jpeg_subsampling(image)
+
+
+jpeg_subsampling=_jpeg_subsampling,
+save_watermarked_output=_save_watermarked_output,
+```
+
+Extend `_save_watermarked_output` with `jpeg_subsampling: int = 0` and pass the keyword to the focused output helper.
+
+- [ ] **Step 6: Run focused and compatibility tests**
+
+Run:
+
+```powershell
+python -m pytest tests/test_watermarked_output.py tests/test_watermark_v4_api.py -q
+python -m pytest tests/test_application_structure.py::test_watermark_service_factory_synchronizes_current_generated_trace_list tests/test_application_structure.py::test_compat_all_matches_legacy_public_api_and_import_star -q
+```
+
+Expected: all tests pass; the output helper tests include all three supported sampling values and the API tests prove persisted JPEG sampling matches the decoded source.
+
+- [ ] **Step 7: Commit the sampling change**
+
+```powershell
+git add -- trace_app/imaging/output.py tests/test_watermarked_output.py trace_app/watermark/service.py trace_app/watermark/default_operations.py trace_app/compat.py tests/test_watermark_v4_api.py
+git commit -m "feat: preserve source JPEG chroma sampling"
+```
+
+### Task 6: Sampling-Aware Final Verification
+
+**Files:**
+- Verify only; do not modify tracked files.
+
+- [ ] **Step 1: Run related backend and frontend tests**
+
+Run:
+
+```powershell
+python -m pytest tests/test_watermarked_output.py tests/test_watermark_v4_api.py tests/test_application_structure.py tests/test_aligned_authenticated_detection.py -q
+Set-Location frontend
+npm test -- --run
+Set-Location ..
+```
+
+Expected: all related backend and all frontend tests pass; existing deprecation warnings are recorded separately from failures.
+
+- [ ] **Step 2: Run the broadest backend suite without missing-image modules**
+
+Use PowerShell to pass every tracked top-level `tests/test_*.py` file except `test_watermark_v4_sync.py`, `test_watermark_v4_dct.py`, `test_watermark_v4_detector.py`, and the newly confirmed `test_false_positive_gate.py` missing-image dependency.
+
+Expected: report every failure. Known unchanged baseline failures from stale legacy inline-frontend contracts and stale release parity are not called green. Any failure in the new output, V4 API, application structure, or aligned detection modules blocks completion.
+
+- [ ] **Step 3: Run the real V4 `3.jpg` sampling probe**
+
+Embed the V4 pilot and authenticated codeword into `3.jpg`, read its source sampling with `jpeg_subsampling`, and call:
+
+```python
+content, quality = encode_adaptive_jpeg(
+    marked,
+    source.stat().st_size,
+    subsampling=jpeg_subsampling(source_image),
+)
+```
+
+Decode the result and verify JPEG/RGB, source sampling `2`, output sampling `2`, quality 90-95, and either ratio no more than 1.25 or quality exactly 90. Force authenticated V4 decoding from the persisted pixels and repeat after one more quality-90/sampling-2 JPEG encoding.
+
+Expected for the tracked sample: approximately 2.15 times the source size at quality 90, at least 12% smaller than the prior 4:4:4 output, with authenticated V4 detection succeeding in both cases.
+
+- [ ] **Step 4: Verify final repository scope**
+
+Run:
+
+```powershell
+git diff --check 88cc3cb..HEAD
+git status --short
+git diff --stat 88cc3cb..HEAD
+git log -10 --oneline
+```
+
+Expected: clean diff/status; only design, plan, focused imaging/service/compat code, and tests are included. No release archives, deployment changes, frontend build output, secrets, or user dirty files are present.
