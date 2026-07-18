@@ -513,14 +513,14 @@ Run:
 python -m pytest tests/test_watermark_v4_api.py -q
 ```
 
-Expected: the complete module passes with no warnings or errors.
+Expected: the complete module passes with no failures or errors. The already-known Starlette and Pillow deprecation warnings are allowed.
 
 - [ ] **Step 2: Confirm persisted JPEG detection evidence**
 
 Run:
 
 ```powershell
-python -m pytest tests/test_watermark_v4_api.py::test_v4_jpeg_output_survives_lossy_resave_detection tests/test_watermark_v4_api.py::test_v4_jpeg_exact_file_fingerprint_still_matches -q
+python -m pytest tests/test_watermark_v4_api.py::test_v4_jpeg_reencode_is_detected_by_codec tests/test_watermark_v4_api.py::test_v4_jpeg_exact_reupload_matches_watermarked_fingerprint -q
 ```
 
 Expected: both the decoded V4 path and the exact file-fingerprint path pass.
