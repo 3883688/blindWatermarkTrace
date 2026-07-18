@@ -22,9 +22,16 @@ class WatermarkedOutput:
     quality: int | None
 
 
+def _normalize_jpeg_subsampling(value: object) -> int:
+    return (
+        value
+        if type(value) is int and value in JPEG_SUBSAMPLING_VALUES
+        else 0
+    )
+
+
 def jpeg_subsampling(image: Image.Image) -> int:
-    sampling = JpegImagePlugin.get_sampling(image)
-    return sampling if sampling in JPEG_SUBSAMPLING_VALUES else 0
+    return _normalize_jpeg_subsampling(JpegImagePlugin.get_sampling(image))
 
 
 def encode_jpeg(
@@ -40,7 +47,7 @@ def encode_jpeg(
         quality=quality,
         optimize=True,
         progressive=True,
-        subsampling=subsampling,
+        subsampling=_normalize_jpeg_subsampling(subsampling),
     )
     return buffer.getvalue()
 
