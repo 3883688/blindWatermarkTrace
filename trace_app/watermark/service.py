@@ -135,6 +135,7 @@ class WatermarkService:
         self,
         *,
         file: UploadFile,
+        owner_user_id: int | None,
         user_id: str,
         mode: str,
         copyright_enabled: str,
@@ -375,7 +376,10 @@ class WatermarkService:
                 else op.layer_scores_for_image(watermarked, trace_id)
             ),
         }
-        self.repository.add_record(record)
+        if owner_user_id is None:
+            admin = self.repository.get_user_by_username(self.settings.admin_user)
+            owner_user_id = None if admin is None else int(admin["id"])
+        self.repository.add_record(record, owner_user_id=owner_user_id)
         self.repository.record_watermark_generation()
         self._remember_generated_trace(trace_id)
         return record

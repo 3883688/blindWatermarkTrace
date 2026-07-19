@@ -11,7 +11,7 @@ export function login(username, password) {
   const body = new FormData();
   body.append('username', username);
   body.append('password', password);
-  return request('/auth/login', { method: 'POST', body });
+  return request('/auth/login', { method: 'POST', body, authenticated: false });
 }
 
 export const embedWatermark = body => request('/api/watermark/embed', { method: 'POST', body });

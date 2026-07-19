@@ -144,7 +144,10 @@ def create_app(
     app.state.runtime = runtime
     app.state.repository = repository
     app.state.generated_trace_ids = runtime.generated_trace_ids
-    app.state.auth_service = AuthService(repository)
+    app.state.auth_service = AuthService(
+        repository,
+        sessions=runtime.auth_sessions,
+    )
     app.state.watermark_service = WatermarkService(
         settings=settings,
         repository=repository,

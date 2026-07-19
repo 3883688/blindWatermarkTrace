@@ -1,5 +1,6 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { AUTH_INVALID_EVENT } from './auth-session.js';
 import AppNavigation from './components/AppNavigation.vue';
 import LoginOverlay from './components/LoginOverlay.vue';
 import { createAppState } from './state/app.js';
@@ -11,6 +12,13 @@ import UserView from './views/UserView.vue';
 
 const state = createAppState();
 const traceRecord = ref(null);
+
+function clearInvalidSession() {
+  state.clearUser();
+}
+
+onMounted(() => window.addEventListener(AUTH_INVALID_EVENT, clearInvalidSession));
+onBeforeUnmount(() => window.removeEventListener(AUTH_INVALID_EVENT, clearInvalidSession));
 
 function showTraceRecord(record) {
   traceRecord.value = record;

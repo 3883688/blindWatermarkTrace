@@ -36,6 +36,38 @@ test('login posts the existing form endpoint and fields', async () => {
   expect([...body.entries()]).toEqual([['username', 'admin'], ['password', 'secret']]);
 });
 
+test('authenticated requests send the cached login token', async () => {
+  localStorage.setItem('currentUser', JSON.stringify({ token: 'local-session' }));
+  const fetchMock = vi.fn().mockResolvedValue(okJson({ items: [] }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  await listImages();
+
+  expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer local-session');
+});
+
+test('login does not send a stale cached token', async () => {
+  localStorage.setItem('currentUser', JSON.stringify({ token: 'stale' }));
+  const fetchMock = vi.fn().mockResolvedValue(okJson({ token: 'fresh' }));
+  vi.stubGlobal('fetch', fetchMock);
+
+  await login('admin', 'secret');
+
+  expect(fetchMock.mock.calls[0][1].headers.Authorization).toBeUndefined();
+});
+
+test('authenticated 401 responses clear cached login state', async () => {
+  localStorage.setItem('currentUser', JSON.stringify({ token: 'expired' }));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+    JSON.stringify({ detail: '登录已失效，请重新登录' }),
+    { status: 401 },
+  )));
+
+  await expect(listImages()).rejects.toThrow('登录已失效，请重新登录');
+
+  expect(localStorage.getItem('currentUser')).toBeNull();
+});
+
 test('watermark requests retain the existing endpoint paths and payloads', async () => {
   const fetchMock = vi.fn().mockImplementation(() => okJson({}));
   vi.stubGlobal('fetch', fetchMock);

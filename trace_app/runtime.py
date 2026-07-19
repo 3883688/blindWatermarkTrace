@@ -15,6 +15,7 @@ class Runtime:
     store: DatabaseStore | None = None
     db_error: str = ""
     generated_trace_ids: list[str] = field(default_factory=list)
+    auth_sessions: dict[str, int] = field(default_factory=dict)
 
 
 def dispose_engine(engine: Any | None) -> None:

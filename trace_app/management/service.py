@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from fastapi import HTTPException
 
+from trace_app.auth.schemas import AuthenticatedUser
 from trace_app.config import Settings
 from trace_app.database.connection import seed_database_defaults
 from trace_app.database.repositories import Repository
@@ -70,8 +71,9 @@ class ManagementService:
             "detection_success_rate": success_rate,
         }
 
-    def list_images(self) -> dict[str, Any]:
-        records = self._read_records()
+    def list_images(self, current_user: AuthenticatedUser) -> dict[str, Any]:
+        owner_user_id = None if current_user.role == "admin" else current_user.id
+        records = self.repository.read_records(owner_user_id=owner_user_id)
         protected = sum(1 for item in records if item.get("status") == "保护中")
         leaks = sum(1 for item in records if item.get("status") == "泄露预警")
         hits = sum(1 for item in records if item.get("status") == "溯源命中")
@@ -97,13 +99,16 @@ class ManagementService:
             "db_url": self._masked_db_url(),
         }
 
-    def delete_image(self, image_id: str) -> dict[str, bool]:
-        records = self._read_records()
-        target = next((item for item in records if item.get("id") == image_id), None)
+    def delete_image(
+        self, image_id: str, current_user: AuthenticatedUser
+    ) -> dict[str, bool]:
+        owner_user_id = None if current_user.role == "admin" else current_user.id
+        target = self.repository.delete_record(
+            image_id,
+            owner_user_id=owner_user_id,
+        )
         if not target:
             raise HTTPException(status_code=404, detail="图片不存在")
-        kept = [item for item in records if item.get("id") != image_id]
-        self._write_records(kept)
         for key in ("original_url", "download_url", "thumbnail_url"):
             value = target.get(key)
             if value and value.startswith("/uploads/"):

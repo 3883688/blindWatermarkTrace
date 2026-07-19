@@ -225,7 +225,10 @@ def _sync_application_state() -> None:
     current_app.state.runtime = runtime
     current_app.state.repository = repository
     current_app.state.generated_trace_ids = runtime.generated_trace_ids
-    current_app.state.auth_service = AuthService(repository)
+    current_app.state.auth_service = AuthService(
+        repository,
+        sessions=runtime.auth_sessions,
+    )
     current_app.state.watermark_service = get_watermark_service()
     current_app.state.management_service = get_management_service()
 
@@ -315,7 +318,7 @@ def read_users() -> dict[str, Any]:
 
 
 def get_auth_service() -> AuthService:
-    return AuthService(repository)
+    return AuthService(repository, sessions=runtime.auth_sessions)
 
 
 def _records_call_mode(callback) -> str:

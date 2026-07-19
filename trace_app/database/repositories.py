@@ -24,8 +24,10 @@ class Repository:
     def db_clear_all(self) -> None:
         self.store.clear_all()
 
-    def read_records(self) -> list[dict[str, Any]]:
-        return self.store.read_records()
+    def read_records(
+        self, *, owner_user_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        return self.store.read_records(owner_user_id=owner_user_id)
 
     def write_records(self, records: list[dict[str, Any]]) -> None:
         self.replace_records(records)
@@ -33,10 +35,18 @@ class Repository:
     def replace_records(self, records: list[dict[str, Any]]) -> None:
         self.store.replace_records(records)
 
-    def add_record(self, record: dict[str, Any]) -> None:
-        records = self.read_records()
-        records.insert(0, record)
-        self.write_records(records)
+    def add_record(
+        self,
+        record: dict[str, Any],
+        *,
+        owner_user_id: int | None = None,
+    ) -> None:
+        self.store.insert_record(record, owner_user_id=owner_user_id)
+
+    def delete_record(
+        self, image_id: str, *, owner_user_id: int | None = None
+    ) -> dict[str, Any] | None:
+        return self.store.delete_record(image_id, owner_user_id=owner_user_id)
 
     def read_detection_stats(self) -> dict[str, int]:
         stats = self.store.get_stats("detection_stats", {})
@@ -106,6 +116,17 @@ class Repository:
 
     def delete_user(self, username: str) -> bool:
         return self.store.delete_user(username)
+
+    def authenticate_user(
+        self, username: str, password: str
+    ) -> dict[str, Any] | None:
+        return self.store.authenticate_user(username, password)
+
+    def get_user_by_id(self, user_id: int) -> dict[str, Any] | None:
+        return self.store.get_user_by_id(user_id)
+
+    def get_user_by_username(self, username: str) -> dict[str, Any] | None:
+        return self.store.get_user_by_username(username)
 
     def authenticate(self, username: str, password: str) -> str | None:
         return self.store.authenticate(username, password)

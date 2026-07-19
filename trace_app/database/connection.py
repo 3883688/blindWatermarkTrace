@@ -44,7 +44,11 @@ def create_runtime(settings: Settings, *, enabled: bool = True) -> Runtime:
         runtime.store = DatabaseStore(runtime.engine)
         runtime.store.create_schema()
         seed_database_defaults(runtime.store, settings)
-    except SQLAlchemyError as exc:
+        admin = runtime.store.get_user_by_username(settings.admin_user)
+        if admin is None:
+            raise RuntimeError("Configured administrator is unavailable")
+        runtime.store.backfill_image_owners(int(admin["id"]))
+    except (SQLAlchemyError, RuntimeError) as exc:
         runtime.db_error = type(exc).__name__
         runtime.store = None
         dispose_engine(runtime.engine)

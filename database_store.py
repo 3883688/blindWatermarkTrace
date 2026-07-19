@@ -32,6 +32,7 @@ class DatabaseStore:
             "image_records",
             self.metadata,
             Column("id", String(64), primary_key=True),
+            Column("user_id", Integer, ForeignKey("users.id"), nullable=True),
             Column("position_index", Integer, nullable=False),
             Column("data", Text, nullable=False),
             Column("created_at", String(32)),
@@ -65,7 +66,8 @@ class DatabaseStore:
         self.users = Table(
             "users",
             self.metadata,
-            Column("username", String(128), primary_key=True),
+            Column("id", Integer, primary_key=True, autoincrement=True),
+            Column("username", String(128), nullable=False, unique=True),
             Column("password_hash", String(512), nullable=False),
             Column(
                 "role_key",
@@ -118,6 +120,8 @@ class DatabaseStore:
         self,
         records: list[dict[str, Any]],
         connection: Connection | None = None,
+        *,
+        owner_user_id: int | None = None,
     ) -> None:
         with self._transaction(connection) as conn:
             conn.execute(delete(self.image_records))
@@ -129,6 +133,7 @@ class DatabaseStore:
                 rows.append(
                     {
                         "id": record_id,
+                        "user_id": owner_user_id,
                         "position_index": index,
                         "data": json.dumps(record, ensure_ascii=False),
                         "created_at": str(record.get("created_at") or ""),
@@ -138,15 +143,76 @@ class DatabaseStore:
                 conn.execute(insert(self.image_records), rows)
 
     def read_records(
-        self, connection: Connection | None = None
+        self,
+        connection: Connection | None = None,
+        *,
+        owner_user_id: int | None = None,
     ) -> list[dict[str, Any]]:
+        query = select(self.image_records.c.data).order_by(
+            self.image_records.c.position_index
+        )
+        if owner_user_id is not None:
+            query = query.where(self.image_records.c.user_id == owner_user_id)
         with self._transaction(connection) as conn:
-            rows = conn.execute(
-                select(self.image_records.c.data).order_by(
-                    self.image_records.c.position_index
-                )
-            ).scalars()
+            rows = conn.execute(query).scalars()
             return [json.loads(data) for data in rows]
+
+    def backfill_image_owners(self, owner_user_id: int) -> int:
+        with self.engine.begin() as connection:
+            result = connection.execute(
+                update(self.image_records)
+                .where(self.image_records.c.user_id.is_(None))
+                .values(user_id=owner_user_id)
+            )
+            return int(result.rowcount or 0)
+
+    def insert_record(
+        self,
+        record: dict[str, Any],
+        *,
+        owner_user_id: int | None = None,
+    ) -> None:
+        source = dict(record)
+        record_id = str(source.get("id") or uuid.uuid4().hex)
+        source["id"] = record_id
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(self.image_records).values(
+                    position_index=self.image_records.c.position_index + 1
+                )
+            )
+            connection.execute(
+                insert(self.image_records).values(
+                    id=record_id,
+                    user_id=owner_user_id,
+                    position_index=0,
+                    data=json.dumps(source, ensure_ascii=False),
+                    created_at=str(source.get("created_at") or ""),
+                )
+            )
+
+    def delete_record(
+        self, image_id: str, *, owner_user_id: int | None = None
+    ) -> dict[str, Any] | None:
+        condition = self.image_records.c.id == image_id
+        if owner_user_id is not None:
+            condition = condition & (self.image_records.c.user_id == owner_user_id)
+        with self.engine.begin() as connection:
+            row = connection.execute(
+                select(
+                    self.image_records.c.data,
+                    self.image_records.c.position_index,
+                ).where(condition)
+            ).mappings().first()
+            if row is None:
+                return None
+            connection.execute(delete(self.image_records).where(condition))
+            connection.execute(
+                update(self.image_records)
+                .where(self.image_records.c.position_index > row["position_index"])
+                .values(position_index=self.image_records.c.position_index - 1)
+            )
+        return json.loads(row["data"])
 
     def replace_roles(
         self,
@@ -294,20 +360,63 @@ class DatabaseStore:
             )
             return bool(result.rowcount)
 
-    def authenticate(self, username: str, password: str) -> str | None:
+    @staticmethod
+    def _user_identity(row: Any) -> dict[str, Any]:
+        return {
+            "id": int(row["id"]),
+            "username": str(row["username"]),
+            "role": str(row["role_key"]),
+        }
+
+    def get_user_by_id(
+        self, user_id: int, connection: Connection | None = None
+    ) -> dict[str, Any] | None:
+        with self._transaction(connection) as conn:
+            row = conn.execute(
+                select(
+                    self.users.c.id,
+                    self.users.c.username,
+                    self.users.c.role_key,
+                ).where(self.users.c.id == user_id)
+            ).mappings().first()
+        return None if row is None else self._user_identity(row)
+
+    def get_user_by_username(
+        self, username: str, connection: Connection | None = None
+    ) -> dict[str, Any] | None:
+        with self._transaction(connection) as conn:
+            row = conn.execute(
+                select(
+                    self.users.c.id,
+                    self.users.c.username,
+                    self.users.c.role_key,
+                ).where(self.users.c.username == username)
+            ).mappings().first()
+        return None if row is None else self._user_identity(row)
+
+    def authenticate_user(
+        self, username: str, password: str
+    ) -> dict[str, Any] | None:
         with self.engine.connect() as connection:
             row = connection.execute(
-                select(self.users.c.password_hash, self.users.c.role_key).where(
-                    self.users.c.username == username
-                )
+                select(
+                    self.users.c.id,
+                    self.users.c.username,
+                    self.users.c.password_hash,
+                    self.users.c.role_key,
+                ).where(self.users.c.username == username)
             ).mappings().first()
         if not row or not verify_password(password, row["password_hash"]):
             return None
-        return str(row["role_key"])
+        return self._user_identity(row)
+
+    def authenticate(self, username: str, password: str) -> str | None:
+        identity = self.authenticate_user(username, password)
+        return None if identity is None else str(identity["role"])
 
     def clear_all(self, connection: Connection | None = None) -> None:
         with self._transaction(connection) as conn:
+            conn.execute(delete(self.image_records))
             conn.execute(delete(self.users))
             conn.execute(delete(self.roles))
-            conn.execute(delete(self.image_records))
             conn.execute(delete(self.stats))
