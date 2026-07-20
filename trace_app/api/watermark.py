@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 
 from trace_app.auth.schemas import AuthenticatedUser
 from trace_app.config import (
@@ -8,13 +8,23 @@ from trace_app.config import (
     DEFAULT_ROBUST_WATERMARK_VERSION,
 )
 from trace_app.dependencies import get_optional_current_user, get_watermark_service
+from trace_app.media import with_media_access_urls
 from trace_app.watermark.service import WatermarkService
 
 router = APIRouter(prefix="/api/watermark", tags=["watermark"])
 
 
+def _with_media_access(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
+    return with_media_access_urls(
+        payload,
+        key=request.app.state.media_signing_key,
+        ttl_seconds=request.app.state.media_url_ttl_seconds,
+    )
+
+
 @router.post("/embed")
 async def embed_watermark(
+    request: Request,
     file: UploadFile = File(...),
     user_id: str = Form(...),
     mode: str = Form("dct"),
@@ -35,7 +45,7 @@ async def embed_watermark(
     current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
     service: WatermarkService = Depends(get_watermark_service),
 ) -> dict[str, Any]:
-    return await service.embed(
+    result = await service.embed(
         file=file,
         owner_user_id=None if current_user is None else current_user.id,
         user_id=user_id,
@@ -55,19 +65,22 @@ async def embed_watermark(
         dot_matrix_trace_enabled=dot_matrix_trace_enabled,
         dot_matrix_trace_strength=dot_matrix_trace_strength,
     )
+    return _with_media_access(request, result)
 
 
 @router.post("/extract")
 async def extract_watermark(
+    request: Request,
     file: UploadFile = File(...),
     service: WatermarkService = Depends(get_watermark_service),
 ) -> dict[str, Any]:
-    return await service.extract_upload(file)
+    return _with_media_access(request, await service.extract_upload(file))
 
 
 @router.post("/extract-url")
 def extract_watermark_url(
+    request: Request,
     url: str = Form(...),
     service: WatermarkService = Depends(get_watermark_service),
 ) -> dict[str, Any]:
-    return service.extract_url(url)
+    return _with_media_access(request, service.extract_url(url))

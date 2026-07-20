@@ -6,16 +6,28 @@ import sys
 from contextlib import asynccontextmanager
 from collections.abc import Callable
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from trace_app.api import auth, dashboard, images, users, watermark
+from trace_app.auth.schemas import AuthenticatedUser
 from trace_app.auth.service import AuthService
-from trace_app.config import Settings, settings as default_settings
+from trace_app.config import (
+    DEFAULT_WATERMARK_AUTH_KEY,
+    Settings,
+    settings as default_settings,
+)
 from trace_app.database.connection import create_runtime
 from trace_app.database.repositories import Repository
+from trace_app.dependencies import get_optional_current_user, get_repository
 from trace_app.management.service import ManagementService
+from trace_app.media import (
+    derive_media_signing_key,
+    resolve_media_path,
+    user_can_access_media,
+    verify_media_signature,
+)
 from trace_app.runtime import dispose_engine, dispose_runtime
 from trace_app.watermark.service import WatermarkService
 from trace_app.watermark.default_operations import build_default_operations
@@ -103,9 +115,36 @@ def register_static_routes(app: FastAPI, settings: Settings) -> None:
         StaticFiles(directory=str(settings.base_dir / "assets"), check_dir=False),
         name="assets",
     )
-    app.mount(
-        "/uploads", StaticFiles(directory=str(settings.upload_dir)), name="uploads"
-    )
+
+    @app.get("/uploads/{media_path:path}", name="uploads")
+    def upload_file(
+        media_path: str,
+        expires: str | None = None,
+        signature: str | None = None,
+        current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
+        repository: Repository = Depends(get_repository),
+    ) -> FileResponse:
+        media_url = f"/uploads/{media_path}"
+        path = resolve_media_path(settings.upload_dir, media_path)
+        has_signature = expires is not None or signature is not None
+        if has_signature:
+            if not verify_media_signature(
+                media_url,
+                expires=expires,
+                signature=signature,
+                key=app.state.media_signing_key,
+            ):
+                raise HTTPException(status_code=403, detail="图片访问链接无效或已过期")
+        elif current_user is None:
+            raise HTTPException(status_code=401, detail="请先登录")
+        elif not user_can_access_media(repository, current_user, media_url):
+            raise HTTPException(status_code=404, detail="图片不存在")
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="图片不存在")
+        return FileResponse(
+            path,
+            headers={"Cache-Control": "private, no-store"},
+        )
 
     @app.get("/")
     def index() -> FileResponse:
@@ -143,6 +182,17 @@ def create_app(
     app.state.settings = settings
     app.state.runtime = runtime
     app.state.repository = repository
+    app.state.media_signing_key = derive_media_signing_key(
+        DEFAULT_WATERMARK_AUTH_KEY,
+        runtime.media_signing_key,
+    )
+    try:
+        app.state.media_url_ttl_seconds = max(
+            30,
+            min(3600, int(os.getenv("MEDIA_URL_TTL_SECONDS", "300"))),
+        )
+    except ValueError:
+        app.state.media_url_ttl_seconds = 300
     app.state.generated_trace_ids = runtime.generated_trace_ids
     app.state.auth_service = AuthService(
         repository,
