@@ -5,16 +5,43 @@ import os
 import shutil
 import stat
 import zipfile
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_NAME = "trace-v4-centos-20260717"
+RELEASE_PREFIX = "trace-v4-centos"
 RELEASE_PARENT = ROOT / "release"
-RELEASE_ROOT = RELEASE_PARENT / RELEASE_NAME
-RELEASE_ARCHIVE = RELEASE_PARENT / f"{RELEASE_NAME}.zip"
-RELEASE_CHECKSUM = RELEASE_ARCHIVE.with_suffix(".zip.sha256")
-ZIP_TIMESTAMP = (2026, 7, 17, 0, 0, 0)
+
+
+@dataclass(frozen=True)
+class ReleaseTargets:
+    name: str
+    root: Path
+    archive: Path
+    checksum: Path
+    zip_timestamp: tuple[int, int, int, int, int, int]
+
+
+def release_targets(build_time: datetime | None = None) -> ReleaseTargets:
+    build_time = datetime.now() if build_time is None else build_time
+    name = f"{RELEASE_PREFIX}-{build_time:%Y%m%d-%H%M%S}"
+    archive = RELEASE_PARENT / f"{name}.zip"
+    return ReleaseTargets(
+        name=name,
+        root=RELEASE_PARENT / name,
+        archive=archive,
+        checksum=archive.with_suffix(".zip.sha256"),
+        zip_timestamp=(
+            build_time.year,
+            build_time.month,
+            build_time.day,
+            build_time.hour,
+            build_time.minute,
+            build_time.second,
+        ),
+    )
 
 ROOT_FILES = (
     ".env.example",
@@ -158,7 +185,7 @@ def release_files(root: Path | None = None) -> tuple[Path, ...]:
     return tuple(sorted(paths, key=lambda path: path.as_posix()))
 
 
-def _validate_release_targets() -> None:
+def _validate_release_targets(targets: ReleaseTargets) -> None:
     if _is_link_or_junction(ROOT):
         raise ValueError(f"Release root link or junction is forbidden: {ROOT}")
     real_root = ROOT.resolve(strict=True)
@@ -173,22 +200,22 @@ def _validate_release_targets() -> None:
     if real_parent == real_root:
         raise ValueError(f"Release parent must be inside source root: {RELEASE_PARENT}")
 
-    expected_root = RELEASE_PARENT / RELEASE_NAME
-    if Path(os.path.abspath(RELEASE_ROOT)) != Path(os.path.abspath(expected_root)):
-        raise ValueError(f"Invalid release directory: {RELEASE_ROOT}")
-    if _is_link_or_junction(RELEASE_ROOT):
+    expected_root = RELEASE_PARENT / targets.name
+    if Path(os.path.abspath(targets.root)) != Path(os.path.abspath(expected_root)):
+        raise ValueError(f"Invalid release directory: {targets.root}")
+    if _is_link_or_junction(targets.root):
         raise ValueError(
-            f"Release target link or junction is forbidden: {RELEASE_ROOT}"
+            f"Release target link or junction is forbidden: {targets.root}"
         )
-    resolved_root = _resolve_inside(RELEASE_ROOT, real_parent, strict=False)
-    if resolved_root != real_parent / RELEASE_NAME or resolved_root == real_parent:
-        raise ValueError(f"Invalid release directory: {RELEASE_ROOT}")
+    resolved_root = _resolve_inside(targets.root, real_parent, strict=False)
+    if resolved_root != real_parent / targets.name or resolved_root == real_parent:
+        raise ValueError(f"Invalid release directory: {targets.root}")
 
-    expected_archive = RELEASE_PARENT / f"{RELEASE_NAME}.zip"
+    expected_archive = RELEASE_PARENT / f"{targets.name}.zip"
     expected_checksum = expected_archive.with_suffix(".zip.sha256")
     for actual, expected in (
-        (RELEASE_ARCHIVE, expected_archive),
-        (RELEASE_CHECKSUM, expected_checksum),
+        (targets.archive, expected_archive),
+        (targets.checksum, expected_checksum),
     ):
         if Path(os.path.abspath(actual)) != Path(os.path.abspath(expected)):
             raise ValueError(f"Invalid release artifact path: {actual}")
@@ -198,35 +225,42 @@ def _validate_release_targets() -> None:
             raise ValueError(f"Invalid release artifact path: {actual}")
 
 
-def build_release() -> str:
-    _validate_release_targets()
+def build_release(
+    build_time: datetime | None = None,
+    *,
+    targets: ReleaseTargets | None = None,
+) -> str:
+    if build_time is not None and targets is not None:
+        raise ValueError("Specify either build_time or targets, not both")
+    targets = release_targets(build_time) if targets is None else targets
+    _validate_release_targets(targets)
     files = release_files(ROOT)
-    if RELEASE_ROOT.exists():
-        shutil.rmtree(RELEASE_ROOT)
-    RELEASE_ROOT.mkdir(parents=True)
+    if targets.root.exists():
+        shutil.rmtree(targets.root)
+    targets.root.mkdir(parents=True)
 
     for relative in files:
-        destination = RELEASE_ROOT / relative
+        destination = targets.root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / relative, destination)
 
     with zipfile.ZipFile(
-        RELEASE_ARCHIVE,
+        targets.archive,
         "w",
         compression=zipfile.ZIP_DEFLATED,
         compresslevel=9,
     ) as package:
         for relative in files:
-            info = zipfile.ZipInfo(relative.as_posix(), ZIP_TIMESTAMP)
+            info = zipfile.ZipInfo(relative.as_posix(), targets.zip_timestamp)
             info.create_system = 3
             info.compress_type = zipfile.ZIP_DEFLATED
             permissions = 0o755 if relative.as_posix() == "deploy.sh" else 0o644
             info.external_attr = (stat.S_IFREG | permissions) << 16
             package.writestr(info, (ROOT / relative).read_bytes(), compresslevel=9)
 
-    digest = hashlib.sha256(RELEASE_ARCHIVE.read_bytes()).hexdigest()
-    RELEASE_CHECKSUM.write_text(
-        f"{digest}  {RELEASE_ARCHIVE.name}\n",
+    digest = hashlib.sha256(targets.archive.read_bytes()).hexdigest()
+    targets.checksum.write_text(
+        f"{digest}  {targets.archive.name}\n",
         encoding="ascii",
         newline="\n",
     )
@@ -234,4 +268,7 @@ def build_release() -> str:
 
 
 if __name__ == "__main__":
-    print(build_release())
+    current_time = datetime.now()
+    current_targets = release_targets(current_time)
+    print(current_targets.archive)
+    print(build_release(targets=current_targets))

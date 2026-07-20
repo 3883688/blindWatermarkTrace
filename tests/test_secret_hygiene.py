@@ -6,6 +6,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+RELEASE_ROOT = max(
+    path
+    for path in (ROOT / "release").glob("trace-v4-centos-????????-??????")
+    if path.is_dir()
+)
+RELEASE_ARCHIVE = RELEASE_ROOT.with_suffix(".zip")
 TEXT_SUFFIXES = {
     ".cmd",
     ".example",
@@ -103,7 +109,6 @@ def test_runtime_json_paths_are_ignored_and_untracked() -> None:
 
 
 def test_release_source_matches_sanitized_root() -> None:
-    release = ROOT / "release" / "trace-v4-centos-20260717"
     root_sources = (
         ".env.example",
         "README_DEPLOY.md",
@@ -134,20 +139,18 @@ def test_release_source_matches_sanitized_root() -> None:
         if path.is_file()
     )
     for relative in (*root_sources, *package_sources, *asset_sources):
-        assert (release / relative).read_bytes() == (ROOT / relative).read_bytes()
+        assert (RELEASE_ROOT / relative).read_bytes() == (ROOT / relative).read_bytes()
 
 
 def test_release_archive_matches_directory_and_checksum() -> None:
-    release = ROOT / "release" / "trace-v4-centos-20260717"
-    archive = ROOT / "release" / "trace-v4-centos-20260717.zip"
-    checksum = archive.with_suffix(archive.suffix + ".sha256")
+    checksum = RELEASE_ARCHIVE.with_suffix(RELEASE_ARCHIVE.suffix + ".sha256")
     release_files = {
-        path.relative_to(release).as_posix(): path.read_bytes()
-        for path in release.rglob("*")
+        path.relative_to(RELEASE_ROOT).as_posix(): path.read_bytes()
+        for path in RELEASE_ROOT.rglob("*")
         if path.is_file()
     }
 
-    with zipfile.ZipFile(archive) as package:
+    with zipfile.ZipFile(RELEASE_ARCHIVE) as package:
         archive_files = {
             _normalized_archive_name(entry.filename): package.read(entry)
             for entry in package.infolist()
@@ -156,13 +159,15 @@ def test_release_archive_matches_directory_and_checksum() -> None:
 
     assert archive_files == release_files
     expected_digest, expected_name = checksum.read_text(encoding="ascii").split()
-    assert expected_name == archive.name
-    assert hashlib.sha256(archive.read_bytes()).hexdigest() == expected_digest
+    assert expected_name == RELEASE_ARCHIVE.name
+    assert hashlib.sha256(RELEASE_ARCHIVE.read_bytes()).hexdigest() == expected_digest
 
 
 def test_release_contains_no_private_or_development_files() -> None:
-    release = ROOT / "release" / "trace-v4-centos-20260717"
-    names = {path.relative_to(release).as_posix() for path in release.rglob("*")}
+    names = {
+        path.relative_to(RELEASE_ROOT).as_posix()
+        for path in RELEASE_ROOT.rglob("*")
+    }
 
     assert ".env" not in names
     assert not any("__pycache__" in Path(name).parts for name in names)
@@ -171,11 +176,10 @@ def test_release_contains_no_private_or_development_files() -> None:
 
 
 def test_release_archive_excludes_private_runtime_files_when_present() -> None:
-    archive = ROOT / "release" / "trace-v4-centos-20260717.zip"
-    if not archive.exists():
+    if not RELEASE_ARCHIVE.exists():
         return
     leaked_entries = []
-    with zipfile.ZipFile(archive) as package:
+    with zipfile.ZipFile(RELEASE_ARCHIVE) as package:
         names = {_normalized_archive_name(name) for name in package.namelist()}
         for entry in package.infolist():
             suffix = Path(entry.filename).suffix.lower()

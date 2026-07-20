@@ -17,7 +17,7 @@
 
 ```bash
 mkdir -p /opt/trace
-unzip -o trace-v4-centos-20260717.zip -d /opt/trace
+unzip -o trace-v4-centos-YYYYMMDD-HHMMSS.zip -d /opt/trace
 cd /opt/trace
 chmod +x deploy.sh
 cp .env.example .env

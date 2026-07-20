@@ -5,12 +5,16 @@ from packaging.requirements import Requirement
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+RELEASE_ROOT = max(
+    path
+    for path in (REPOSITORY_ROOT / "release").glob(
+        "trace-v4-centos-????????-??????"
+    )
+    if path.is_dir()
+)
 REQUIREMENTS_PATHS = (
     REPOSITORY_ROOT / "requirements.txt",
-    REPOSITORY_ROOT
-    / "release"
-    / "trace-v4-centos-20260717"
-    / "requirements.txt",
+    RELEASE_ROOT / "requirements.txt",
 )
 
 

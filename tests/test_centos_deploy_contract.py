@@ -7,8 +7,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = (ROOT / "deploy.sh").read_text(encoding="utf-8")
 ENV_EXAMPLE = (ROOT / ".env.example").read_text(encoding="utf-8")
 README = (ROOT / "README_DEPLOY.md").read_text(encoding="utf-8")
-RELEASE_ROOT = ROOT / "release" / "trace-v4-centos-20260717"
-RELEASE_ARCHIVE = ROOT / "release" / "trace-v4-centos-20260717.zip"
+RELEASE_ROOT = max(
+    path
+    for path in (ROOT / "release").glob("trace-v4-centos-????????-??????")
+    if path.is_dir()
+)
+RELEASE_ARCHIVE = RELEASE_ROOT.with_suffix(".zip")
 
 
 def _install_body() -> str:
@@ -129,3 +133,8 @@ def test_readme_documents_preserving_v4_one_click_deployment() -> None:
     ):
         assert expected in README
     assert "MYSQL_ROOT_PASS" not in README
+
+
+def test_readme_uses_the_timestamped_release_filename() -> None:
+    assert "trace-v4-centos-YYYYMMDD-HHMMSS.zip" in README
+    assert "trace-v4-centos-20260717.zip" not in README
