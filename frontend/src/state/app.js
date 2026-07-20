@@ -37,7 +37,6 @@ export function createAppState() {
     clearUser() {
       this.currentUser = null;
       localStorage.removeItem(USER_KEY);
-      this.ensureActivePage();
     },
     setTheme(theme) {
       this.theme = theme === 'light' ? 'light' : 'dark';

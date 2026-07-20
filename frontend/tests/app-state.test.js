@@ -37,4 +37,16 @@ describe('application shell state', () => {
     state.selectPage('role');
     expect(state.activePage).toBe('watermark');
   });
+
+  test('preserves the active page during logout and validates it for the next user', () => {
+    const state = createAppState();
+    state.setUser({ username: 'admin', role: 'admin', menus: ['watermark'] });
+    state.selectPage('role');
+
+    state.clearUser();
+
+    expect(state.activePage).toBe('role');
+    state.setUser({ username: 'operator', role: 'operator', menus: ['trace'] });
+    expect(state.activePage).toBe('trace');
+  });
 });

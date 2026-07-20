@@ -13,12 +13,13 @@ import UserView from './views/UserView.vue';
 const state = createAppState();
 const traceRecord = ref(null);
 
-function clearInvalidSession() {
+function clearSession() {
+  traceRecord.value = null;
   state.clearUser();
 }
 
-onMounted(() => window.addEventListener(AUTH_INVALID_EVENT, clearInvalidSession));
-onBeforeUnmount(() => window.removeEventListener(AUTH_INVALID_EVENT, clearInvalidSession));
+onMounted(() => window.addEventListener(AUTH_INVALID_EVENT, clearSession));
+onBeforeUnmount(() => window.removeEventListener(AUTH_INVALID_EVENT, clearSession));
 
 function showTraceRecord(record) {
   traceRecord.value = record;
@@ -40,9 +41,9 @@ watch(() => state.theme, theme => {
       :theme="state.theme"
       @select-page="state.selectPage($event)"
       @update:theme="state.setTheme($event)"
-      @logout="state.clearUser()"
+      @logout="clearSession"
     />
-    <main class="page active" :id="`page-${state.activePage}`">
+    <main v-if="state.currentUser" class="page active" :id="`page-${state.activePage}`">
       <WatermarkView v-if="state.activePage === 'watermark'" :current-user="state.currentUser" />
       <TraceView v-else-if="state.activePage === 'trace'" :record="traceRecord" />
       <ManageView v-else-if="state.activePage === 'manage'" @trace="showTraceRecord" />
