@@ -9,7 +9,7 @@ REQUIREMENTS_PATHS = (
     REPOSITORY_ROOT / "requirements.txt",
     REPOSITORY_ROOT
     / "release"
-    / "trace-v4-centos-20260715"
+    / "trace-v4-centos-20260717"
     / "requirements.txt",
 )
 

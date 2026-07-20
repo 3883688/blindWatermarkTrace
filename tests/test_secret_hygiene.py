@@ -103,7 +103,7 @@ def test_runtime_json_paths_are_ignored_and_untracked() -> None:
 
 
 def test_release_source_matches_sanitized_root() -> None:
-    release = ROOT / "release" / "trace-v4-centos-20260715"
+    release = ROOT / "release" / "trace-v4-centos-20260717"
     root_sources = (
         ".env.example",
         "README_DEPLOY.md",
@@ -138,8 +138,8 @@ def test_release_source_matches_sanitized_root() -> None:
 
 
 def test_release_archive_matches_directory_and_checksum() -> None:
-    release = ROOT / "release" / "trace-v4-centos-20260715"
-    archive = ROOT / "release" / "trace-v4-centos-20260715.zip"
+    release = ROOT / "release" / "trace-v4-centos-20260717"
+    archive = ROOT / "release" / "trace-v4-centos-20260717.zip"
     checksum = archive.with_suffix(archive.suffix + ".sha256")
     release_files = {
         path.relative_to(release).as_posix(): path.read_bytes()
@@ -161,7 +161,7 @@ def test_release_archive_matches_directory_and_checksum() -> None:
 
 
 def test_release_contains_no_private_or_development_files() -> None:
-    release = ROOT / "release" / "trace-v4-centos-20260715"
+    release = ROOT / "release" / "trace-v4-centos-20260717"
     names = {path.relative_to(release).as_posix() for path in release.rglob("*")}
 
     assert ".env" not in names
@@ -171,7 +171,7 @@ def test_release_contains_no_private_or_development_files() -> None:
 
 
 def test_release_archive_excludes_private_runtime_files_when_present() -> None:
-    archive = ROOT / "release" / "trace-v4-centos-20260715.zip"
+    archive = ROOT / "release" / "trace-v4-centos-20260717.zip"
     if not archive.exists():
         return
     leaked_entries = []

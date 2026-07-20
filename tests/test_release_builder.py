@@ -8,6 +8,11 @@ import tools.build_centos_release as builder
 from tools.build_centos_release import ROOT_FILES, is_release_source, release_files
 
 
+def test_release_name_uses_current_package_date() -> None:
+    assert builder.RELEASE_NAME == "trace-v4-centos-20260717"
+    assert builder.ZIP_TIMESTAMP == (2026, 7, 17, 0, 0, 0)
+
+
 def _write_required_root_files(root: Path, *, missing: str | None = None) -> None:
     for relative in ROOT_FILES:
         if relative == missing:

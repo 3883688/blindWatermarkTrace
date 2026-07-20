@@ -14,7 +14,11 @@ test('all application popups use Element Plus instead of native browser dialogs'
 
   expect(component).toContain('<el-dialog');
   expect(manage).toContain('<el-dialog');
-  expect(main).toContain("import { ElButton, ElDialog } from 'element-plus'");
+  const elementPlusImports = main
+    .match(/import \{([^}]+)\} from 'element-plus'/)?.[1]
+    .split(',')
+    .map(name => name.trim()) || [];
+  expect(elementPlusImports).toEqual(expect.arrayContaining(['ElButton', 'ElDialog']));
   expect(main).not.toContain("import ElementPlus from 'element-plus'");
   expect(main).toContain("import 'element-plus/theme-chalk/el-message-box.css'");
   expect(JSON.parse(packageJson).dependencies).toHaveProperty('element-plus');

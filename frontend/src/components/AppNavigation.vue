@@ -35,10 +35,17 @@ const menuItems = [
       ><i :class="`ti ${item.icon}`" aria-hidden="true"></i> {{ item.label }}</button>
     </div>
     <div class="nav-right">
-      <select class="field-select theme-select" aria-label="主题" :value="theme" @change="emit('update:theme', $event.target.value)">
-        <option value="dark">Dark</option>
-        <option value="light">Light</option>
-      </select>
+      <el-select
+        class="app-select theme-select"
+        aria-label="主题"
+        size="small"
+        popper-class="app-select-dropdown"
+        :model-value="theme"
+        @update:model-value="emit('update:theme', $event)"
+      >
+        <el-option label="Dark" value="dark" />
+        <el-option label="Light" value="light" />
+      </el-select>
       <div class="user-pill">
         <div class="user-avatar">BX</div>
         <span class="current-user-name">{{ currentUser?.username || '未登录' }}</span>

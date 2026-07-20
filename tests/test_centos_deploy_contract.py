@@ -7,8 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = (ROOT / "deploy.sh").read_text(encoding="utf-8")
 ENV_EXAMPLE = (ROOT / ".env.example").read_text(encoding="utf-8")
 README = (ROOT / "README_DEPLOY.md").read_text(encoding="utf-8")
-RELEASE_ROOT = ROOT / "release" / "trace-v4-centos-20260715"
-RELEASE_ARCHIVE = ROOT / "release" / "trace-v4-centos-20260715.zip"
+RELEASE_ROOT = ROOT / "release" / "trace-v4-centos-20260717"
+RELEASE_ARCHIVE = ROOT / "release" / "trace-v4-centos-20260717.zip"
 
 
 def _install_body() -> str:

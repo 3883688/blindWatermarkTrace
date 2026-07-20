@@ -9,12 +9,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RELEASE_NAME = "trace-v4-centos-20260715"
+RELEASE_NAME = "trace-v4-centos-20260717"
 RELEASE_PARENT = ROOT / "release"
 RELEASE_ROOT = RELEASE_PARENT / RELEASE_NAME
 RELEASE_ARCHIVE = RELEASE_PARENT / f"{RELEASE_NAME}.zip"
 RELEASE_CHECKSUM = RELEASE_ARCHIVE.with_suffix(".zip.sha256")
-ZIP_TIMESTAMP = (2026, 7, 15, 0, 0, 0)
+ZIP_TIMESTAMP = (2026, 7, 17, 0, 0, 0)
 
 ROOT_FILES = (
     ".env.example",
