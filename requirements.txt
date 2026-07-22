@@ -5,6 +5,7 @@ pillow
 python-dotenv
 sqlalchemy
 pymysql
+psycopg[binary]
 pytest
 httpx
 opencv-python-headless==4.13.0.92
