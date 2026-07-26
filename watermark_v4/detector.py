@@ -291,13 +291,7 @@ def detect_v4(
         evidence = None
         matches = [] if feature_match is None else [feature_match]
         if feature_match is not None:
-            rounded_translation = feature_match.query_to_target.copy()
-            rounded_translation[0, 2] = round(float(rounded_translation[0, 2]))
-            rounded_translation[1, 2] = round(float(rounded_translation[1, 2]))
-            matrices = [feature_match.query_to_target]
-            if not np.array_equal(rounded_translation, feature_match.query_to_target):
-                matrices.append(rounded_translation)
-            for matrix in matrices:
+            for matrix in _translation_refinements(feature_match.query_to_target):
                 _check_deadline(effective_deadline)
                 evidence = decode_aligned_candidate(
                     image,
@@ -352,6 +346,30 @@ def detect_v4(
         sync_confidence=None if sync is None else sync.confidence,
         elapsed_seconds=float(monotonic() - started),
     )
+
+
+def _translation_refinements(matrix: np.ndarray) -> tuple[np.ndarray, ...]:
+    refinements = [matrix]
+    rounded = matrix.copy()
+    rounded[0, 2] = round(float(rounded[0, 2]))
+    rounded[1, 2] = round(float(rounded[1, 2]))
+    if not np.array_equal(rounded, matrix):
+        refinements.append(rounded)
+    for offset_x, offset_y in (
+        (-1, 0),
+        (1, 0),
+        (0, -1),
+        (0, 1),
+        (-1, -1),
+        (-1, 1),
+        (1, -1),
+        (1, 1),
+    ):
+        refined = matrix.copy()
+        refined[0, 2] += offset_x
+        refined[1, 2] += offset_y
+        refinements.append(refined)
+    return tuple(refinements)
 
 
 def _scores_to_bytes(scores: np.ndarray) -> bytes:

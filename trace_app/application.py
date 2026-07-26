@@ -6,12 +6,11 @@ import sys
 from contextlib import asynccontextmanager
 from collections.abc import Callable
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from trace_app.api import auth, dashboard, images, users, watermark
-from trace_app.auth.schemas import AuthenticatedUser
 from trace_app.auth.service import AuthService
 from trace_app.config import (
     DEFAULT_WATERMARK_AUTH_KEY,
@@ -20,12 +19,10 @@ from trace_app.config import (
 )
 from trace_app.database.connection import create_runtime
 from trace_app.database.repositories import Repository
-from trace_app.dependencies import get_optional_current_user, get_repository
 from trace_app.management.service import ManagementService
 from trace_app.media import (
     derive_media_signing_key,
     resolve_media_path,
-    user_can_access_media,
     verify_media_signature,
 )
 from trace_app.runtime import dispose_engine, dispose_runtime
@@ -119,26 +116,18 @@ def register_static_routes(app: FastAPI, settings: Settings) -> None:
     @app.get("/uploads/{media_path:path}", name="uploads")
     def upload_file(
         media_path: str,
-        expires: str | None = None,
+        expire_time: str | None = None,
         signature: str | None = None,
-        current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
-        repository: Repository = Depends(get_repository),
     ) -> FileResponse:
         media_url = f"/uploads/{media_path}"
         path = resolve_media_path(settings.upload_dir, media_path)
-        has_signature = expires is not None or signature is not None
-        if has_signature:
-            if not verify_media_signature(
-                media_url,
-                expires=expires,
-                signature=signature,
-                key=app.state.media_signing_key,
-            ):
-                raise HTTPException(status_code=403, detail="图片访问链接无效或已过期")
-        elif current_user is None:
-            raise HTTPException(status_code=401, detail="请先登录")
-        elif not user_can_access_media(repository, current_user, media_url):
-            raise HTTPException(status_code=404, detail="图片不存在")
+        if not verify_media_signature(
+            media_url,
+            expires=expire_time,
+            signature=signature,
+            key=app.state.media_signing_key,
+        ):
+            raise HTTPException(status_code=403, detail="图片访问链接无效或已过期")
         if not path.is_file():
             raise HTTPException(status_code=404, detail="图片不存在")
         return FileResponse(

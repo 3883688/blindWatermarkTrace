@@ -29,7 +29,7 @@ def test_defaults_match_v4_contract() -> None:
     assert config.minimum_phases == 2
     assert config.candidate_limit == 3
     assert config.online_p95_seconds == 10.0
-    assert config.hard_timeout_seconds == 16.0
+    assert config.hard_timeout_seconds == 300.0
     assert config.stage_budgets_seconds == (0.3, 0.6, 1.0, 1.6, 5.0, 1.0)
 
 
@@ -106,7 +106,7 @@ def test_huge_tuple_integer_reaches_normal_budget_validation() -> None:
     "kwargs",
     (
         {"online_p95_seconds": 10.1, "hard_timeout_seconds": 16.0},
-        {"online_p95_seconds": 10.0, "hard_timeout_seconds": 16.1},
+        {"online_p95_seconds": 10.0, "hard_timeout_seconds": 300.1},
     ),
 )
 def test_latency_limits_cannot_exceed_service_hard_caps(

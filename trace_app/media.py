@@ -65,6 +65,26 @@ def _signature_payload(media_url: str, expires: int) -> bytes:
     return f"v1\n{expires}\n{media_url}".encode("utf-8")
 
 
+def sign_expiring_url(
+    access_path: str,
+    key: bytes,
+    *,
+    ttl_seconds: int,
+    now: int | float | None = None,
+) -> str:
+    parsed = urlsplit(str(access_path or ""))
+    if parsed.scheme or parsed.netloc or parsed.query or not parsed.path.startswith("/"):
+        raise HTTPException(status_code=400, detail="图片链接路径无效")
+    current_time = time.time() if now is None else now
+    expire_time = int(current_time) + max(1, int(ttl_seconds))
+    signature = hmac.new(
+        key,
+        _signature_payload(parsed.path, expire_time),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{parsed.path}?{urlencode({'expire_time': expire_time, 'signature': signature})}"
+
+
 def sign_media_url(
     media_url: str,
     key: bytes,
@@ -74,14 +94,12 @@ def sign_media_url(
 ) -> str:
     media_path = media_path_from_url(media_url)
     canonical_url = f"/uploads/{media_path}"
-    current_time = time.time() if now is None else now
-    expires = int(current_time) + max(1, int(ttl_seconds))
-    signature = hmac.new(
+    return sign_expiring_url(
+        canonical_url,
         key,
-        _signature_payload(canonical_url, expires),
-        hashlib.sha256,
-    ).hexdigest()
-    return f"{canonical_url}?{urlencode({'expires': expires, 'signature': signature})}"
+        ttl_seconds=ttl_seconds,
+        now=now,
+    )
 
 
 def verify_media_signature(

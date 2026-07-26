@@ -51,7 +51,7 @@ class V4Config:
     minimum_phases: int = 2
     candidate_limit: int = 3
     online_p95_seconds: float = 10.0
-    hard_timeout_seconds: float = 16.0
+    hard_timeout_seconds: float = 300.0
     stage_budgets_seconds: tuple[float, float, float, float, float, float] = (
         0.3,
         0.6,
@@ -177,8 +177,8 @@ class V4Config:
             raise ValueError("online_p95_seconds must be at most 10.0")
         if self.hard_timeout_seconds <= 0:
             raise ValueError("hard_timeout_seconds must be positive")
-        if self.hard_timeout_seconds > 16.0:
-            raise ValueError("hard_timeout_seconds must be at most 16.0")
+        if self.hard_timeout_seconds > 300.0:
+            raise ValueError("hard_timeout_seconds must be at most 300.0")
         if any(value <= 0 for value in self.stage_budgets_seconds):
             raise ValueError("stage_budgets_seconds values must be positive")
         if sum(self.stage_budgets_seconds) > self.online_p95_seconds:

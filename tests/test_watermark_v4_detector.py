@@ -1,4 +1,5 @@
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 from time import monotonic
 
 import numpy as np
@@ -15,12 +16,33 @@ from watermark_v4.detector import (
     decode_aligned_candidate,
     detect_v4,
 )
-from watermark_v4.features import extract_feature_index
+from watermark_v4.features import extract_feature_index, load_feature_index
 from watermark_v4.payload import authentication_tag, encode_codeword
 from watermark_v4.sync import embed_pilot
 
 
 AUTH_KEY = "detector-test-key-material-32-bytes-minimum"
+
+
+def test_detect_v4_recovers_reported_downscaled_screenshot() -> None:
+    feature_index = load_feature_index(
+        Path("data/feature_index_v4/bd903a5f9e7f4beda45a4938b31a8433.npz")
+    )
+    assert feature_index is not None
+    candidate = V4Candidate(
+        record_id="bd903a5f9e7f4beda45a4938b31a8433",
+        trace_id="TR-2CEDF635874D490D",
+        auth_tag=bytes.fromhex("d9244202"),
+        feature_index=feature_index,
+    )
+    with Image.open("demo/4.png") as loaded:
+        query = loaded.convert("RGB")
+
+    result = detect_v4(query, (candidate,), V4Config())
+
+    assert type(result) is V4Detection
+    assert result.record_id == candidate.record_id
+    assert result.trace_id == candidate.trace_id
 
 
 def _marked_candidate() -> tuple[Image.Image, V4Candidate]:

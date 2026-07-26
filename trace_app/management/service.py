@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import shutil
+from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import HTTPException
@@ -10,6 +11,7 @@ from trace_app.auth.schemas import AuthenticatedUser
 from trace_app.config import Settings
 from trace_app.database.connection import seed_database_defaults
 from trace_app.database.repositories import Repository
+from trace_app.media import media_path_from_url, resolve_media_path
 from trace_app.runtime import Runtime
 
 
@@ -116,6 +118,36 @@ class ManagementService:
                 if path.exists():
                     path.unlink()
         return {"deleted": True}
+
+    def get_image_media_path(
+        self,
+        image_id: str,
+        variant: str,
+    ) -> Path:
+        field = {
+            "download": "download_url",
+            "thumbnail": "thumbnail_url",
+        }.get(variant)
+        if field is None:
+            raise HTTPException(status_code=404, detail="图片不存在")
+        record = next(
+            (
+                item
+                for item in self.repository.read_records()
+                if str(item.get("id")) == image_id
+            ),
+            None,
+        )
+        media_url = record.get(field) if record else None
+        if not isinstance(media_url, str) or not media_url.startswith("/uploads/"):
+            raise HTTPException(status_code=404, detail="图片不存在")
+        path = resolve_media_path(
+            self.settings.upload_dir,
+            media_path_from_url(media_url),
+        )
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="图片不存在")
+        return path
 
     def reset_dev_data(self) -> dict[str, bool]:
         if self.settings.upload_dir.exists():

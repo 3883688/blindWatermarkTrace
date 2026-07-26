@@ -386,7 +386,7 @@ def _feature_match_from_geometry(
     inlier_mask = np.asarray(mask).ravel()[: len(good)].astype(bool)
     inliers = int(np.count_nonzero(inlier_mask))
     ratio = inliers / len(good)
-    if inliers < 18 or ratio < 0.32:
+    if inliers < 18 or (ratio < 0.32 and inliers < 256):
         return None
     projected = cv2.perspectiveTransform(query_points, matrix).reshape(-1, 2)
     errors = np.linalg.norm(projected - target_points.reshape(-1, 2), axis=1)
