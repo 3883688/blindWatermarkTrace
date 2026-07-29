@@ -28,6 +28,9 @@ def test_v4_schema_defines_all_relational_tables_and_constraints() -> None:
     assert "uq_source_group_owner_sha256" in {
         item.name for item in tables.source_groups.constraints
     }
+    assert "uq_source_group_id_owner" in {
+        item.name for item in tables.source_groups.constraints
+    }
     assert {"uq_v4_owner_trace", "uq_v4_group_auth_tag"} <= {
         item.name for item in tables.v4_records.constraints
     }
@@ -45,6 +48,15 @@ def test_v4_schema_defines_all_relational_tables_and_constraints() -> None:
         "ck_v4_sha256_lengths",
         "ck_auth_session_token_hash_length",
     } <= check_names
+    foreign_key_names = {
+        constraint.name
+        for table in tables.metadata.tables.values()
+        for constraint in table.foreign_key_constraints
+    }
+    assert {
+        "fk_embedding_source_group_owner",
+        "fk_v4_record_source_group_owner",
+    } <= foreign_key_names
 
 
 def test_v4_schema_has_required_lookup_and_owner_indexes() -> None:

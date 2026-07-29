@@ -12,6 +12,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
@@ -95,6 +96,9 @@ class V4Tables:
                 "original_image_sha256",
                 name="uq_source_group_owner_sha256",
             ),
+            UniqueConstraint(
+                "id", "owner_user_id", name="uq_source_group_id_owner"
+            ),
             CheckConstraint(
                 "image_width > 0 AND image_height > 0",
                 name="ck_source_group_dimensions",
@@ -114,7 +118,6 @@ class V4Tables:
             Column(
                 "source_group_id",
                 Uuid,
-                ForeignKey("source_groups.id", ondelete="CASCADE"),
                 primary_key=True,
             ),
             Column("view_index", Integer, primary_key=True),
@@ -122,6 +125,12 @@ class V4Tables:
             Column("view_kind", String(32), nullable=False),
             Column("embedding", Embedding384(), nullable=False),
             Column("model_version", String(64), nullable=False),
+            ForeignKeyConstraint(
+                ["source_group_id", "owner_user_id"],
+                ["source_groups.id", "source_groups.owner_user_id"],
+                ondelete="CASCADE",
+                name="fk_embedding_source_group_owner",
+            ),
             CheckConstraint("view_index >= 0", name="ck_embedding_view_index"),
         )
         Index(
@@ -191,7 +200,6 @@ class V4Tables:
             Column(
                 "source_group_id",
                 Uuid,
-                ForeignKey("source_groups.id", ondelete="CASCADE"),
                 nullable=False,
             ),
             Column("owner_user_id", Integer, ForeignKey("users.id"), nullable=False),
@@ -211,6 +219,12 @@ class V4Tables:
             Column("status", String(24), nullable=False),
             Column("metadata_json", json_type, nullable=False, default=dict),
             *_timestamps(),
+            ForeignKeyConstraint(
+                ["source_group_id", "owner_user_id"],
+                ["source_groups.id", "source_groups.owner_user_id"],
+                ondelete="CASCADE",
+                name="fk_v4_record_source_group_owner",
+            ),
             UniqueConstraint("owner_user_id", "trace_id", name="uq_v4_owner_trace"),
             UniqueConstraint(
                 "source_group_id", "auth_tag", name="uq_v4_group_auth_tag"

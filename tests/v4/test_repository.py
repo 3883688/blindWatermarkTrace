@@ -4,17 +4,27 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, insert
+from sqlalchemy import create_engine, event, insert
 from sqlalchemy.exc import IntegrityError
 
 from trace_app.v4.domain import OwnerScope
-from trace_app.v4.repository import SourceGroupInput, V4RecordInput, V4Repository
+from trace_app.v4.repository import (
+    EmbeddingInput,
+    SourceGroupInput,
+    V4RecordInput,
+    V4Repository,
+)
 from trace_app.v4.schema import V4Tables
 
 
 @pytest.fixture
 def repository() -> V4Repository:
     engine = create_engine("sqlite+pysqlite:///:memory:")
+
+    @event.listens_for(engine, "connect")
+    def _enable_foreign_keys(dbapi_connection, _connection_record) -> None:
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
     tables = V4Tables.build()
     tables.create_all(engine)
     with engine.begin() as connection:
@@ -111,6 +121,23 @@ def test_auth_tag_must_be_exactly_eight_bytes(repository: V4Repository) -> None:
 
     with pytest.raises(IntegrityError):
         repository.insert_record(_record(group.id, 7, "TR-BAD", b"short"))
+
+
+def test_record_and_embedding_owner_must_match_source_group(
+    repository: V4Repository,
+) -> None:
+    group = _group(repository, 7, b"a" * 32)
+
+    with pytest.raises(IntegrityError):
+        repository.insert_record(_record(group.id, 8, "TR-CROSS", b"12345678"))
+    with pytest.raises(IntegrityError):
+        repository.insert_embeddings(
+            source_group_id=group.id,
+            owner_user_id=8,
+            embeddings=(
+                EmbeddingInput(0, "full", b"vector", "dinov2-vits14"),
+            ),
+        )
 
 
 def test_delete_and_atomic_counter_respect_owner_scope(repository: V4Repository) -> None:
