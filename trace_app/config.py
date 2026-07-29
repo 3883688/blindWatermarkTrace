@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -15,10 +15,18 @@ class Settings:
     base_dir: Path
     upload_dir: Path
     data_dir: Path
-    db_url: str
+    db_url: str = field(repr=False)
     admin_user: str
-    admin_pass: str
+    admin_pass: str = field(repr=False)
     app_name: str = "WatermarkSystem"
+    environment: str = "development"
+    v4_model_manifest_path: Path = Path("models/v4-manifest.json")
+    v4_sync_worker_quota: int = 1
+    v4_deep_worker_quota: int = 1
+    media_public_base_url: str = ""
+    v4_sync_p95_seconds: int = 120
+    v4_sync_timeout_seconds: int = 300
+    v4_deep_timeout_seconds: int = 1000
 
     @property
     def original_dir(self) -> Path:
@@ -43,19 +51,37 @@ class Settings:
         admin_user: str,
         admin_pass: str,
         app_name: str | None = None,
+        environment: str = "development",
+        v4_model_manifest_path: str | Path = "models/v4-manifest.json",
+        v4_sync_worker_quota: int = 1,
+        v4_deep_worker_quota: int = 1,
+        media_public_base_url: str = "",
+        v4_sync_p95_seconds: int = 120,
+        v4_sync_timeout_seconds: int = 300,
+        v4_deep_timeout_seconds: int = 1000,
     ) -> "Settings":
-        base_path = Path(base_dir)
-        upload_path = Path(upload_dir)
-        data_path = Path(data_dir)
-        if not upload_path.is_absolute():
-            upload_path = base_path / upload_path
-        if not data_path.is_absolute():
-            data_path = base_path / data_path
+        base_path = Path(base_dir).expanduser().resolve()
+        upload_path = cls._resolve_path(base_path, upload_dir)
+        data_path = cls._resolve_path(base_path, data_dir)
+        manifest_path = cls._resolve_path(base_path, v4_model_manifest_path)
+        normalized_environment = environment.strip().lower()
+        normalized_db_url = db_url.strip()
+        if normalized_environment == "production" and not normalized_db_url.lower().startswith(
+            "postgresql"
+        ):
+            raise ValueError("Production V4 requires a PostgreSQL DB_URL")
+        cls._validate_v4_limits(
+            sync_worker_quota=v4_sync_worker_quota,
+            deep_worker_quota=v4_deep_worker_quota,
+            sync_p95_seconds=v4_sync_p95_seconds,
+            sync_timeout_seconds=v4_sync_timeout_seconds,
+            deep_timeout_seconds=v4_deep_timeout_seconds,
+        )
         return cls(
             base_dir=base_path,
             upload_dir=upload_path,
             data_dir=data_path,
-            db_url=db_url.strip(),
+            db_url=normalized_db_url,
             admin_user=admin_user.strip(),
             admin_pass=admin_pass,
             app_name=(
@@ -63,7 +89,42 @@ class Settings:
                 if app_name is None
                 else app_name
             ),
+            environment=normalized_environment,
+            v4_model_manifest_path=manifest_path,
+            v4_sync_worker_quota=v4_sync_worker_quota,
+            v4_deep_worker_quota=v4_deep_worker_quota,
+            media_public_base_url=media_public_base_url.strip().rstrip("/"),
+            v4_sync_p95_seconds=v4_sync_p95_seconds,
+            v4_sync_timeout_seconds=v4_sync_timeout_seconds,
+            v4_deep_timeout_seconds=v4_deep_timeout_seconds,
         )
+
+    @staticmethod
+    def _resolve_path(base_dir: Path, path: str | Path) -> Path:
+        candidate = Path(path).expanduser()
+        return candidate if candidate.is_absolute() else base_dir / candidate
+
+    @staticmethod
+    def _validate_v4_limits(
+        *,
+        sync_worker_quota: int,
+        deep_worker_quota: int,
+        sync_p95_seconds: int,
+        sync_timeout_seconds: int,
+        deep_timeout_seconds: int,
+    ) -> None:
+        if sync_worker_quota <= 0 or deep_worker_quota <= 0:
+            raise ValueError("V4 worker quotas must be positive")
+        if min(sync_p95_seconds, sync_timeout_seconds, deep_timeout_seconds) <= 0:
+            raise ValueError("V4 deadlines must be positive")
+        if sync_p95_seconds > 120:
+            raise ValueError("V4 synchronous P95 may not exceed 120 seconds")
+        if sync_timeout_seconds > 300:
+            raise ValueError("V4 synchronous timeout may not exceed 300 seconds")
+        if deep_timeout_seconds > 1000:
+            raise ValueError("V4 deep timeout may not exceed 1000 seconds")
+        if not sync_p95_seconds <= sync_timeout_seconds <= deep_timeout_seconds:
+            raise ValueError("V4 deadlines must satisfy p95 <= hard <= deep")
 
 
 settings = Settings.from_values(
@@ -74,6 +135,16 @@ settings = Settings.from_values(
     admin_user=os.getenv("ADMIN_USER", ""),
     admin_pass=os.getenv("ADMIN_PASS", ""),
     app_name=os.getenv("APP_NAME", "WatermarkSystem"),
+    environment=os.getenv("ENVIRONMENT", "development"),
+    v4_model_manifest_path=os.getenv(
+        "V4_MODEL_MANIFEST_PATH", "models/v4-manifest.json"
+    ),
+    v4_sync_worker_quota=int(os.getenv("V4_SYNC_WORKER_QUOTA", "1")),
+    v4_deep_worker_quota=int(os.getenv("V4_DEEP_WORKER_QUOTA", "1")),
+    media_public_base_url=os.getenv("MEDIA_PUBLIC_BASE_URL", ""),
+    v4_sync_p95_seconds=int(os.getenv("V4_SYNC_P95_SECONDS", "120")),
+    v4_sync_timeout_seconds=int(os.getenv("V4_SYNC_TIMEOUT_SECONDS", "300")),
+    v4_deep_timeout_seconds=int(os.getenv("V4_DEEP_TIMEOUT_SECONDS", "1000")),
 )
 
 UPLOAD_DIR = settings.upload_dir
