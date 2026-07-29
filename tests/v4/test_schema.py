@@ -33,6 +33,18 @@ def test_v4_schema_defines_all_relational_tables_and_constraints() -> None:
     }
     assert tables.v4_records.c.auth_tag.type.length == 8
     assert tables.v4_records.c.metadata_json.type.__class__.__name__ == "JSON"
+    check_names = {
+        constraint.name
+        for table in tables.metadata.tables.values()
+        for constraint in table.constraints
+    }
+    assert {
+        "ck_source_group_sha256_length",
+        "ck_v4_auth_tag_length",
+        "ck_v4_md5_lengths",
+        "ck_v4_sha256_lengths",
+        "ck_auth_session_token_hash_length",
+    } <= check_names
 
 
 def test_v4_schema_has_required_lookup_and_owner_indexes() -> None:

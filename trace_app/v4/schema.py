@@ -100,6 +100,10 @@ class V4Tables:
                 name="ck_source_group_dimensions",
             ),
             CheckConstraint(
+                "length(original_image_sha256) = 32",
+                name="ck_source_group_sha256_length",
+            ),
+            CheckConstraint(
                 "status IN ('staging', 'active', 'disabled')",
                 name="ck_source_group_status",
             ),
@@ -149,6 +153,10 @@ class V4Tables:
                 "feature_kind IN ('orb', 'superpoint')",
                 name="ck_source_group_feature_kind",
             ),
+            CheckConstraint(
+                "length(feature_sha256) = 32",
+                name="ck_source_group_feature_sha256_length",
+            ),
         )
 
         media_objects = Table(
@@ -168,6 +176,7 @@ class V4Tables:
                 name="ck_media_variant",
             ),
             CheckConstraint("byte_size >= 0", name="ck_media_byte_size"),
+            CheckConstraint("length(sha256) = 32", name="ck_media_sha256_length"),
             CheckConstraint(
                 "status IN ('staged', 'active', 'deleted')",
                 name="ck_media_status",
@@ -210,6 +219,19 @@ class V4Tables:
                 "status IN ('staging', 'active', 'disabled', 'deleted')",
                 name="ck_v4_record_status",
             ),
+            CheckConstraint("length(auth_tag) = 8", name="ck_v4_auth_tag_length"),
+            CheckConstraint(
+                "length(original_file_md5) = 16 AND "
+                "length(watermarked_file_md5) = 16",
+                name="ck_v4_md5_lengths",
+            ),
+            CheckConstraint(
+                "length(original_file_sha256) = 32 AND "
+                "length(watermarked_file_sha256) = 32 AND "
+                "length(original_pixel_sha256) = 32 AND "
+                "length(watermarked_pixel_sha256) = 32",
+                name="ck_v4_sha256_lengths",
+            ),
         )
         Index(
             "ix_v4_original_file_hashes",
@@ -242,6 +264,9 @@ class V4Tables:
             Column("absolute_expires_at", DateTime(timezone=True), nullable=False),
             Column("last_used_at", DateTime(timezone=True), nullable=False),
             Column("revoked_at", DateTime(timezone=True)),
+            CheckConstraint(
+                "length(token_hash) = 32", name="ck_auth_session_token_hash_length"
+            ),
         )
         Index("ix_auth_sessions_user", auth_sessions.c.user_id)
 
