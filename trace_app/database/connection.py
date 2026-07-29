@@ -4,6 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from database_store import DatabaseStore
 from trace_app.config import DEFAULT_ROLES, Settings
 from trace_app.runtime import Runtime, dispose_engine
+from trace_app.v4.startup import initialize_v4_schema
 
 
 def seed_database_defaults(store: DatabaseStore, settings: Settings) -> None:
@@ -43,6 +44,10 @@ def create_runtime(settings: Settings, *, enabled: bool = True) -> Runtime:
         )
         runtime.store = DatabaseStore(runtime.engine)
         runtime.store.create_schema()
+        initialize_v4_schema(
+            runtime.engine,
+            require_postgres=settings.environment == "production",
+        )
         seed_database_defaults(runtime.store, settings)
         admin = runtime.store.get_user_by_username(settings.admin_user)
         if admin is None:
