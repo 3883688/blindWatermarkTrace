@@ -9,6 +9,7 @@ from trace_app.database.repositories import Repository
 from trace_app.management.service import ManagementService
 from trace_app.watermark.service import WatermarkService
 from trace_app.v4.domain import OwnerScope
+from trace_app.v4.media import V4MediaService
 from trace_app.v4.security import RateLimitExceeded
 
 
@@ -52,6 +53,13 @@ def get_watermark_service(request: Request) -> WatermarkService:
 
 def get_management_service(request: Request) -> ManagementService:
     return _service_from_state(request, "management_service")
+
+
+def get_v4_media_service(request: Request) -> V4MediaService:
+    service = getattr(request.app.state, "v4_media_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="媒体服务不可用")
+    return service
 
 
 def get_optional_current_user(

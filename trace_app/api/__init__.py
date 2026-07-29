@@ -4,6 +4,6 @@
 这里只做导入，不创建 ``APIRouter``，保证"每个应用实例注册一次路由"的契约。
 """
 
-from trace_app.api import auth, dashboard, images, users, watermark
+from trace_app.api import auth, dashboard, images, media, users, watermark
 
-__all__ = ["auth", "dashboard", "images", "users", "watermark"]
+__all__ = ["auth", "dashboard", "images", "media", "users", "watermark"]

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import mimetypes
 import os
 import sys
@@ -10,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from trace_app.api import auth, dashboard, images, users, watermark
+from trace_app.api import auth, dashboard, images, media, users, watermark
 from trace_app.auth.service import AuthService
 from trace_app.config import (
     DEFAULT_WATERMARK_AUTH_KEY,
@@ -28,6 +30,8 @@ from trace_app.media import (
 from trace_app.runtime import dispose_engine, dispose_runtime
 from trace_app.watermark.service import WatermarkService
 from trace_app.watermark.default_operations import build_default_operations
+from trace_app.v4.media import V4MediaService
+from trace_app.v4.repository import V4Repository
 from trace_app.v4.security import DatabaseSessionStore, LoginRateLimiter
 
 ServiceFactory = Callable[[], object]
@@ -184,6 +188,20 @@ def create_app(
     except ValueError:
         app.state.media_url_ttl_seconds = 300
     app.state.generated_trace_ids = runtime.generated_trace_ids
+    app.state.v4_media_service = None
+    if runtime.engine is not None:
+        v4_media_key = hmac.new(
+            app.state.media_signing_key,
+            b"trace-v4-opaque-media-url-v1",
+            hashlib.sha256,
+        ).digest()
+        app.state.v4_media_service = V4MediaService(
+            V4Repository(runtime.engine),
+            storage_root=settings.upload_dir,
+            signing_key=v4_media_key,
+            public_base_url=settings.media_public_base_url,
+            default_ttl_seconds=app.state.media_url_ttl_seconds,
+        )
     session_store = (
         None if runtime.engine is None else DatabaseSessionStore(runtime.engine)
     )
@@ -224,6 +242,7 @@ def create_app(
         auth.router,
         users.router,
         watermark.router,
+        media.router,
         images.router,
         dashboard.router,
     ):

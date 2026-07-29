@@ -109,6 +109,30 @@ class RecalledGroup:
     distance_consistency: float
 
 
+@dataclass(frozen=True, slots=True)
+class MediaObjectInput:
+    id: str
+    owner_user_id: int
+    variant: str
+    storage_key: str
+    content_type: str
+    byte_size: int
+    sha256: bytes
+    status: str = "active"
+
+
+@dataclass(frozen=True, slots=True)
+class StoredMediaObject:
+    id: str
+    owner_user_id: int
+    variant: str
+    storage_key: str
+    content_type: str
+    byte_size: int
+    sha256: bytes
+    status: str
+
+
 class V4Repository:
     def __init__(self, engine: Engine, *, tables: V4Tables | None = None) -> None:
         self.engine = engine
@@ -141,6 +165,28 @@ class V4Repository:
                 )
             ).mappings().one()
         return self._source_group(row)
+
+    def insert_media(self, value: MediaObjectInput) -> StoredMediaObject:
+        with self.engine.begin() as connection:
+            connection.execute(insert(self.tables.media_objects).values(**asdict(value)))
+        return StoredMediaObject(**asdict(value))
+
+    def get_media(self, media_id: str) -> StoredMediaObject | None:
+        table = self.tables.media_objects
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(
+                    table.c.id,
+                    table.c.owner_user_id,
+                    table.c.variant,
+                    table.c.storage_key,
+                    table.c.content_type,
+                    table.c.byte_size,
+                    table.c.sha256,
+                    table.c.status,
+                ).where(table.c.id == media_id, table.c.status == "active")
+            ).mappings().first()
+        return None if row is None else StoredMediaObject(**dict(row))
 
     def insert_embeddings(
         self,
@@ -440,9 +486,11 @@ class V4Repository:
 __all__ = (
     "EmbeddingInput",
     "FeatureInput",
+    "MediaObjectInput",
     "RecalledGroup",
     "SourceGroupInput",
     "StoredSourceGroup",
+    "StoredMediaObject",
     "StoredV4Record",
     "V4RecordInput",
     "V4Repository",
