@@ -676,21 +676,21 @@ git commit -m "feat: add bounded v4 forensic jobs and telemetry"
 - Test: `tests/v4/test_initialize_v4.py`
 - Test: `tests/v4/test_restore_v4.py`
 
-- [ ] **Step 1: Write failing maintenance tests**
+- [x] **Step 1: Write failing maintenance tests**
 
 Use disposable database/filesystem fixtures. Require absolute resolved non-root targets, rejection of workspace/home/drive roots, PostgreSQL/pgvector/free-space/model/worker preflight, readable database and upload backups before confirmation, the exact confirmation value `RESET-V4:{environment}:{database_name}`, generated new key ID without secret output, preservation of users/roles/admin, clearing of old image/V4/features/statistics/media/uploads, schema creation, smoke tests, and ready marker last. Inject failure after every phase and prove service remains offline and restore recovers fixtures.
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `pytest tests/v4/test_initialize_v4.py tests/v4/test_restore_v4.py -q`
 
 Expected: FAIL because the offline workflow does not exist.
 
-- [ ] **Step 3: Implement guarded CLI commands**
+- [x] **Step 3: Implement guarded CLI commands**
 
 Provide `preflight`, `backup`, `apply --confirm RESET-V4:{environment}:{database_name}`, `verify`, and `restore` subcommands. Use `pg_dump` custom format plus `pg_restore --list` verification; archive upload files without following links and verify archive members/checksum. Snapshot preserved user/role/admin IDs, delete only the explicit algorithm/media tables and validated upload children, create/verify new structures, run smoke tests, then atomically write a non-secret ready marker containing schema/model/key IDs. Never print or log the generated secret.
 
-- [ ] **Step 4: Exercise disposable reset and restore**
+- [x] **Step 4: Exercise disposable reset and restore**
 
 Run: `pytest tests/v4/test_initialize_v4.py tests/v4/test_restore_v4.py -q`
 
@@ -700,7 +700,7 @@ Run: `python tools/initialize_v4.py preflight --env-file .env.v4.test`
 
 Expected: prints only checked target identifiers and `preflight: ok`; does not mutate data.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/initialize_v4.py tools/restore_v4_backup.py docs/operations/v4-initialization.md trace_app/v4/startup.py tests/v4/test_initialize_v4.py tests/v4/test_restore_v4.py

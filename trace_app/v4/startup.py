@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
+from typing import Mapping
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
@@ -75,9 +79,30 @@ def verify_portable_v4_schema(engine: Engine) -> None:
         raise RuntimeError(f"Required V4 tables are unavailable: {sorted(missing)}")
 
 
+def write_ready_marker(path: Path, values: Mapping[str, str]) -> None:
+    allowed = {key: str(values[key]) for key in ("schema_id", "model_id", "key_id")}
+    target = Path(path).resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    temporary.write_text(json.dumps(allowed, sort_keys=True), encoding="utf-8")
+    os.replace(temporary, target)
+
+
+def read_ready_marker(path: Path) -> dict[str, str] | None:
+    target = Path(path)
+    if not target.is_file():
+        return None
+    value = json.loads(target.read_text(encoding="utf-8"))
+    if set(value) != {"schema_id", "model_id", "key_id"}:
+        raise RuntimeError("V4 ready marker is invalid")
+    return {key: str(item) for key, item in value.items()}
+
+
 __all__ = (
     "REQUIRED_INDEXES",
     "initialize_v4_schema",
+    "read_ready_marker",
     "verify_portable_v4_schema",
     "verify_postgres_v4_schema",
+    "write_ready_marker",
 )
