@@ -19,13 +19,14 @@
 content-type 限制。
 """
 
+import http.client
 import ipaddress
 from io import BytesIO
 from pathlib import Path
 import socket
 from typing import Any, Callable
 from urllib.error import HTTPError
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 from urllib import request as urllib_request
 
 from fastapi import HTTPException, UploadFile
@@ -78,11 +79,89 @@ def _default_open_url(request: urllib_request.Request, *, timeout: float):
     return opener.open(request, timeout=timeout)
 
 
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(
+        self,
+        connect_ip: str,
+        server_hostname: str,
+        port: int,
+        *,
+        timeout: float,
+    ) -> None:
+        super().__init__(server_hostname, port=port, timeout=timeout)
+        self._connect_ip = connect_ip
+        self._tls_server_hostname = server_hostname
+
+    def connect(self) -> None:
+        sock = socket.create_connection(
+            (self._connect_ip, self.port),
+            self.timeout,
+            self.source_address,
+        )
+        self.sock = self._context.wrap_socket(
+            sock,
+            server_hostname=self._tls_server_hostname,
+        )
+
+
+class _PinnedResponse:
+    def __init__(self, connection: http.client.HTTPConnection) -> None:
+        self._connection = connection
+        self._response = connection.getresponse()
+        self.status = self._response.status
+        self.headers = self._response.headers
+
+    def read(self, limit: int) -> bytes:
+        return self._response.read(limit)
+
+    def close(self) -> None:
+        self._response.close()
+        self._connection.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args: Any) -> bool:
+        self.close()
+        return False
+
+
+def _open_pinned_url(url: str, connect_ip: str, *, timeout: float):
+    """Connect to a validated IP while preserving the original Host and TLS SNI."""
+    parsed = urlsplit(url)
+    hostname = parsed.hostname
+    if hostname is None:
+        raise ValueError("URL hostname is required")
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if parsed.scheme == "https":
+        connection: http.client.HTTPConnection = _PinnedHTTPSConnection(
+            connect_ip,
+            hostname,
+            port,
+            timeout=timeout,
+        )
+    else:
+        connection = http.client.HTTPConnection(connect_ip, port=port, timeout=timeout)
+    target = urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+    default_port = 443 if parsed.scheme == "https" else 80
+    host = hostname if port == default_port else f"{hostname}:{port}"
+    try:
+        connection.request(
+            "GET",
+            target,
+            headers={"Host": host, "User-Agent": "WatermarkSystem/1.0"},
+        )
+        return _PinnedResponse(connection)
+    except Exception:
+        connection.close()
+        raise
+
+
 def _validate_public_http_url(
     url: str,
     *,
     resolve_host: Callable[..., Any],
-) -> None:
+) -> tuple[str, ...]:
     """校验 URL 指向的是公网 http(s) 地址，不合格直接抛 400。
 
     :param resolve_host: DNS 解析函数，签名同 :func:`socket.getaddrinfo`，可注入以便
@@ -133,6 +212,7 @@ def _validate_public_http_url(
         raise HTTPException(status_code=400, detail="无法解析图片链接地址") from exc
     if any(not address.is_global for address in resolved):
         raise HTTPException(status_code=400, detail="不允许访问内网或本机地址")
+    return tuple(sorted(str(address) for address in resolved))
 
 
 def fetch_remote_image_bytes(
@@ -166,17 +246,21 @@ def fetch_remote_image_bytes(
     解码那一步。
     """
     resolver = resolve_host or socket.getaddrinfo
-    opener = open_url or _default_open_url
+    opener = open_url
     current_url = str(url or "").strip()
 
     for redirect_count in range(REMOTE_IMAGE_MAX_REDIRECTS + 1):
-        _validate_public_http_url(current_url, resolve_host=resolver)
+        validated_ips = _validate_public_http_url(current_url, resolve_host=resolver)
         request = urllib_request.Request(
             current_url,
             headers={"User-Agent": "WatermarkSystem/1.0"},
         )
         try:
-            response = opener(request, timeout=10)
+            response = (
+                _open_pinned_url(current_url, validated_ips[0], timeout=10)
+                if opener is None
+                else opener(request, timeout=10)
+            )
         except HTTPError as exc:
             if exc.code not in REDIRECT_STATUSES:
                 raise HTTPException(status_code=400, detail="无法读取图片链接") from exc
