@@ -61,6 +61,6 @@ test('shell controls retain the original selector contracts and dialog backdrops
   expect(index).toContain('.img-table input[type="checkbox"]{position:relative;top:1.5px}');
   expect(index).toContain('.img-table .status-badge{position:relative;top:-1px}');
   expect(index).toContain('.user-actions{display:flex;gap:8px;align-items:center}');
-  expect(trace).toContain('<span class="result-time">-</span>');
+  expect(trace).toContain('result?.record?.source_group_id');
   expect([...user.matchAll(/class="field-group" style="margin-bottom:0"/g)]).toHaveLength(3);
 });

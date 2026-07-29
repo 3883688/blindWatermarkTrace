@@ -56,10 +56,29 @@ def get_management_service(request: Request) -> ManagementService:
 
 
 def get_v4_media_service(request: Request) -> V4MediaService:
-    service = getattr(request.app.state, "v4_media_service", None)
+    service = _service_from_state(request, "v4_media_service")
     if service is None:
         raise HTTPException(status_code=503, detail="媒体服务不可用")
     return service
+
+
+def _required_v4_service(request: Request, name: str) -> Any:
+    service = _service_from_state(request, name)
+    if service is None:
+        raise HTTPException(status_code=503, detail="V4 服务不可用")
+    return service
+
+
+def get_v4_generation_service(request: Request) -> Any:
+    return _required_v4_service(request, "v4_generation_service")
+
+
+def get_v4_detection_service(request: Request) -> Any:
+    return _required_v4_service(request, "v4_detection_service")
+
+
+def get_v4_record_repository(request: Request) -> Any:
+    return _required_v4_service(request, "v4_record_repository")
 
 
 def get_optional_current_user(

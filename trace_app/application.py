@@ -8,11 +8,11 @@ import sys
 from contextlib import asynccontextmanager
 from collections.abc import Callable
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from trace_app.api import auth, dashboard, images, media, users, watermark
+from trace_app.api import auth, media, users, v4
 from trace_app.auth.service import AuthService
 from trace_app.config import (
     DEFAULT_WATERMARK_AUTH_KEY,
@@ -22,14 +22,8 @@ from trace_app.config import (
 from trace_app.database.connection import create_runtime
 from trace_app.database.repositories import Repository
 from trace_app.management.service import ManagementService
-from trace_app.media import (
-    derive_media_signing_key,
-    resolve_media_path,
-    verify_media_signature,
-)
+from trace_app.media import derive_media_signing_key
 from trace_app.runtime import dispose_engine, dispose_runtime
-from trace_app.watermark.service import WatermarkService
-from trace_app.watermark.default_operations import build_default_operations
 from trace_app.v4.media import V4MediaService
 from trace_app.v4.repository import V4Repository
 from trace_app.v4.security import DatabaseSessionStore, LoginRateLimiter
@@ -56,58 +50,6 @@ async def application_lifespan(app: FastAPI):
         dispose_runtime(app.state.runtime)
 
 
-def _parse_bool(raw: str | bool | None) -> bool:
-    if isinstance(raw, bool):
-        return raw
-    return str(raw or "").lower() in {"1", "true", "yes", "on", "启用"}
-
-
-def _env_bool(name: str, default: str, legacy_name: str | None = None) -> bool:
-    value = os.getenv(name)
-    if value is None and legacy_name:
-        value = os.getenv(legacy_name)
-    return _parse_bool(default if value is None else value)
-
-
-def _clamp_float(
-    value: str | float | None, default: float, low: float, high: float
-) -> float:
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        number = default
-    return max(low, min(high, number))
-
-
-def _initialize_detection_state(app: FastAPI) -> None:
-    app.state.visible_watermark_detection_enabled = _env_bool(
-        "ENABLE_VISIBLE_WATERMARK_DETECTION",
-        "false",
-        "VISIBLE_WATERMARK_DETECTION_ENABLED",
-    )
-    app.state.visual_match_fallback_enabled = _env_bool(
-        "ENABLE_VISUAL_MATCH_FALLBACK", "false", "VISUAL_MATCH_FALLBACK_ENABLED"
-    )
-    app.state.small_crop_trace_default_enabled = _env_bool(
-        "ENABLE_SMALL_CROP_TRACE_REDUNDANCY", "true"
-    )
-    app.state.aligned_authenticated_detection_enabled = _env_bool(
-        "ENABLE_ALIGNED_AUTHENTICATED_DETECTION", "true"
-    )
-    app.state.dense_watermark_fallback_enabled = _env_bool(
-        "ENABLE_DENSE_WATERMARK_FALLBACK", "false"
-    )
-    try:
-        app.state.aligned_candidate_limit = max(
-            1, min(32, int(os.getenv("ALIGNED_CANDIDATE_LIMIT", "8")))
-        )
-    except ValueError:
-        app.state.aligned_candidate_limit = 8
-    app.state.watermark_detection_budget_seconds = _clamp_float(
-        os.getenv("WATERMARK_DETECTION_BUDGET_SECONDS", "5"), 5.0, 0.1, 60.0
-    )
-
-
 def register_static_routes(app: FastAPI, settings: Settings) -> None:
     mimetypes.add_type("font/woff2", ".woff2")
     mimetypes.add_type("font/woff", ".woff")
@@ -117,28 +59,6 @@ def register_static_routes(app: FastAPI, settings: Settings) -> None:
         StaticFiles(directory=str(settings.base_dir / "assets"), check_dir=False),
         name="assets",
     )
-
-    @app.get("/uploads/{media_path:path}", name="uploads")
-    def upload_file(
-        media_path: str,
-        expire_time: str | None = None,
-        signature: str | None = None,
-    ) -> FileResponse:
-        media_url = f"/uploads/{media_path}"
-        path = resolve_media_path(settings.upload_dir, media_path)
-        if not verify_media_signature(
-            media_url,
-            expires=expire_time,
-            signature=signature,
-            key=app.state.media_signing_key,
-        ):
-            raise HTTPException(status_code=403, detail="图片访问链接无效或已过期")
-        if not path.is_file():
-            raise HTTPException(status_code=404, detail="图片不存在")
-        return FileResponse(
-            path,
-            headers={"Cache-Control": "private, no-store"},
-        )
 
     @app.get("/")
     def index() -> FileResponse:
@@ -164,6 +84,12 @@ def create_app(
     auth_service_factory: ServiceFactory | None = None,
     watermark_service_factory: ServiceFactory | None = None,
     management_service_factory: ServiceFactory | None = None,
+    v4_generation_service_factory: ServiceFactory | None = None,
+    v4_detection_service_factory: ServiceFactory | None = None,
+    v4_record_repository_factory: ServiceFactory | None = None,
+    v4_capabilities_factory: ServiceFactory | None = None,
+    v4_media_service_factory: ServiceFactory | None = None,
+    v4_remote_fetch_factory: ServiceFactory | None = None,
 ) -> FastAPI:
     ensure_directories(settings)
     enabled = not running_pytest() if initialize_database is None else initialize_database
@@ -189,14 +115,18 @@ def create_app(
         app.state.media_url_ttl_seconds = 300
     app.state.generated_trace_ids = runtime.generated_trace_ids
     app.state.v4_media_service = None
+    app.state.v4_generation_service = None
+    app.state.v4_detection_service = None
+    app.state.v4_record_repository = None
     if runtime.engine is not None:
         v4_media_key = hmac.new(
             app.state.media_signing_key,
             b"trace-v4-opaque-media-url-v1",
             hashlib.sha256,
         ).digest()
+        app.state.v4_record_repository = V4Repository(runtime.engine)
         app.state.v4_media_service = V4MediaService(
-            V4Repository(runtime.engine),
+            app.state.v4_record_repository,
             storage_root=settings.upload_dir,
             signing_key=v4_media_key,
             public_base_url=settings.media_public_base_url,
@@ -211,18 +141,6 @@ def create_app(
         repository,
         session_store=session_store,
     )
-    app.state.watermark_service = WatermarkService(
-        settings=settings,
-        repository=repository,
-        runtime=runtime,
-        operations=build_default_operations(
-            settings=settings,
-            repository=repository,
-            runtime=runtime,
-            state_value=lambda name: getattr(app.state, name),
-            ensure_directories=lambda: ensure_directories(settings),
-        ),
-    )
     app.state.management_service = ManagementService(
         settings=settings,
         repository=repository,
@@ -236,17 +154,17 @@ def create_app(
         app.state.watermark_service_factory = watermark_service_factory
     if management_service_factory is not None:
         app.state.management_service_factory = management_service_factory
-    _initialize_detection_state(app)
-    register_static_routes(app, settings)
-    for api_router in (
-        auth.router,
-        users.router,
-        watermark.router,
-        media.router,
-        images.router,
-        dashboard.router,
+    for name, factory in (
+        ("v4_generation_service", v4_generation_service_factory),
+        ("v4_detection_service", v4_detection_service_factory),
+        ("v4_record_repository", v4_record_repository_factory),
+        ("v4_capabilities", v4_capabilities_factory),
+        ("v4_media_service", v4_media_service_factory),
+        ("v4_remote_fetch", v4_remote_fetch_factory),
     ):
+        if factory is not None:
+            setattr(app.state, f"{name}_factory", factory)
+    register_static_routes(app, settings)
+    for api_router in (auth.router, users.router, media.router, v4.router):
         app.include_router(api_router)
-    if settings.environment != "production":
-        app.include_router(dashboard.dev_router)
     return app

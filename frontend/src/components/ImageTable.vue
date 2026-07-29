@@ -6,9 +6,9 @@ const emit = defineEmits(['toggle', 'toggle-page', 'preview', 'download', 'trace
 const pageIds = computed(() => props.rows.map(row => row.id).filter(Boolean));
 const selectedCount = computed(() => pageIds.value.filter(id => props.selectedIds.has(id)).length);
 const allSelected = computed(() => pageIds.value.length > 0 && selectedCount.value === pageIds.value.length);
-function thumbnail(record) { return safeImageUrl(record.thumbnail_access_url || record.thumbnail_url || record.download_access_url || record.download_url || record.original_access_url || record.original_url); }
-function preview(record) { return safeImageUrl(record.download_access_url || record.download_url || record.original_access_url || record.original_url || record.thumbnail_access_url || record.thumbnail_url); }
-function download(record) { return safeImageUrl(record.download_access_url || record.download_url); }
+function thumbnail(record) { return safeImageUrl(record.thumbnail_access_url || record.output_access_url); }
+function preview(record) { return safeImageUrl(record.output_access_url || record.thumbnail_access_url); }
+function download(record) { return safeImageUrl(record.output_access_url); }
 function showPreview(record) { emit('preview', { url: preview(record), title: record.name }); }
 function confidence(record) { return Number(record.confidence || record.conf || 0); }
 function badge(status) { return status === '溯源命中' ? 'badge-blue' : status === '泄露预警' ? 'badge-amber' : 'badge-green'; }

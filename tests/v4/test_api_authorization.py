@@ -38,14 +38,15 @@ def _login(client: TestClient, username: str, password: str) -> dict[str, str]:
 
 @pytest.mark.parametrize(
     ("method", "path"),
-    [
-        ("get", "/api/users"),
-        ("get", "/api/roles"),
-        ("get", "/api/dashboard-stats"),
-        ("post", "/api/watermark/extract-url"),
-        ("post", "/api/watermark/extract"),
-        ("post", "/api/watermark/embed"),
-    ],
+        [
+            ("get", "/api/users"),
+            ("get", "/api/roles"),
+            ("get", "/api/v4/capabilities"),
+            ("get", "/api/v4/records"),
+            ("post", "/api/v4/detect-url"),
+            ("post", "/api/v4/detect"),
+            ("post", "/api/v4/generate"),
+        ],
 )
 def test_product_operations_reject_anonymous_users(
     client: TestClient, method: str, path: str

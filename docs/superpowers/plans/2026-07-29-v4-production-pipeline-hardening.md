@@ -595,11 +595,11 @@ git commit -m "feat: authenticate v4 records through source groups"
 - Test: `tests/v4/test_v4_api.py`
 - Test: `frontend/tests/v4-only-contract.test.js`
 
-- [ ] **Step 1: Write failing API contracts**
+- [x] **Step 1: Write failing API contracts**
 
 Require login for upload generation, upload detection, URL detection, listing, deletion, and media issuance. Reject any requested codec/version other than the new V4 codec. Non-admins see only their owner scope; admins must explicitly request cross-owner detection. Assert API payloads expose opaque access URLs and typed outcomes only. Assert frontend labels DINOv2/LightGlue as available only from `/api/v4/capabilities` health data.
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `pytest tests/v4/test_v4_api.py -q`
 
@@ -607,11 +607,11 @@ Run: `npm test -- --run frontend/tests/v4-only-contract.test.js`
 
 Expected: FAIL because the application still wires the generic legacy watermark service.
 
-- [ ] **Step 3: Wire only new services for production V4 routes**
+- [x] **Step 3: Wire only new services for production V4 routes**
 
 Register `/api/v4/generate`, `/api/v4/detect`, `/api/v4/detect-url`, `/api/v4/records`, and `/api/v4/capabilities`. Keep legacy modules importable for their old unit tests but do not call them from these routes. Remove `/api/dev/reset` registration. Return HTTP 401/403/404 without existence leaks and map typed outcomes consistently; do not map timeouts or service errors to 404.
 
-- [ ] **Step 4: Run API and frontend tests**
+- [x] **Step 4: Run API and frontend tests**
 
 Run: `pytest tests/v4/test_v4_api.py tests/v4/test_api_authorization.py -q`
 
@@ -619,7 +619,7 @@ Run: `npm test -- --run frontend/tests/v4-only-contract.test.js frontend/tests/m
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit without staging unrelated frontend edits**
+- [x] **Step 5: Commit without staging unrelated frontend edits**
 
 ```bash
 git add trace_app/api/v4.py trace_app/application.py trace_app/api/images.py trace_app/api/dashboard.py frontend/src/forms/watermark.js frontend/src/views/WatermarkView.vue frontend/src/views/TraceView.vue tests/v4/test_v4_api.py frontend/tests/v4-only-contract.test.js
