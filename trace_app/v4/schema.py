@@ -89,6 +89,12 @@ class V4Tables:
             Column("original_media_id", String(64), nullable=True),
             Column("model_version", String(64), nullable=False),
             Column("feature_schema_version", String(32), nullable=False),
+            Column(
+                "view_policy_version",
+                String(64),
+                nullable=False,
+                server_default="v4-multiview-1",
+            ),
             Column("status", String(24), nullable=False),
             *_timestamps(),
             UniqueConstraint(

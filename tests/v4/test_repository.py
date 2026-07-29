@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine, event, insert
+from sqlalchemy import create_engine, event, func, insert, select
 from sqlalchemy.exc import IntegrityError
 
 from trace_app.v4.domain import OwnerScope
+from trace_app.v4.generation import GenerationUnit, GroupArtifacts, StagedMedia
 from trace_app.v4.repository import (
     EmbeddingInput,
     FeatureInput,
@@ -179,6 +182,46 @@ def test_geometry_features_load_only_recalled_owner_scoped_groups(
         repository.get_features_for_groups(
             OwnerScope(7), tuple(uuid4() for _ in range(41))
         )
+
+
+def test_generation_unit_rolls_back_every_relational_row_on_failure(
+    repository: V4Repository,
+) -> None:
+    group_id = uuid4()
+    group = SourceGroupInput(7, b"g" * 32, 640, 480, "media-original", "dino-v1", "1")
+    artifacts = GroupArtifacts(
+        (EmbeddingInput(0, "full", [1.0] + [0.0] * 383, "dino-v1"),),
+        (
+            FeatureInput("orb", "1", "orb-v1", b"orb", hashlib.sha256(b"orb").digest()),
+            FeatureInput("superpoint", "1", "sp-v1", b"sp", hashlib.sha256(b"sp").digest()),
+        ),
+        "dino-v1",
+        "1",
+    )
+    staged = tuple(
+        StagedMedia(f"media-{variant}", 7, variant, f"{variant}/opaque.bin", "image/png", b"x")
+        for variant in ("original", "watermarked", "thumbnail")
+    )
+    bad_record = replace(
+        _record(group_id, 7, "TR-BAD-TX", b"short"),
+        output_media_id="media-watermarked",
+        thumbnail_media_id="media-thumbnail",
+    )
+    unit = GenerationUnit(group_id, group, artifacts, staged, bad_record, uuid4())
+
+    with pytest.raises(IntegrityError):
+        repository.commit_generation(unit)
+
+    with repository.engine.connect() as connection:
+        for table in (
+            repository.tables.source_groups,
+            repository.tables.source_group_embeddings,
+            repository.tables.source_group_features,
+            repository.tables.media_objects,
+            repository.tables.v4_records,
+            repository.tables.audit_events,
+        ):
+            assert connection.execute(select(func.count()).select_from(table)).scalar_one() == 0
 
 
 def test_audit_rows_accept_only_explicit_safe_columns(repository: V4Repository) -> None:

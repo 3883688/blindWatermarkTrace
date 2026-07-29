@@ -86,4 +86,5 @@ def test_v4_schema_creates_on_sqlite_with_binary_embedding_adapter() -> None:
     assert tables.source_group_embeddings.c.embedding.type.load_dialect_impl(
         engine.dialect
     ).__class__.__name__ == "LargeBinary"
+    assert "view_policy_version" in tables.source_groups.c
     assert set(tables.metadata.tables) == EXPECTED_TABLES

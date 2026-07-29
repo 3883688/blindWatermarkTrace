@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 
 from fastapi import HTTPException
 
-from trace_app.v4.repository import MediaObjectInput, StoredMediaObject, V4Repository
+from trace_app.v4.repository import StoredMediaObject, V4Repository
 
 
 _PREFIXES = {
@@ -60,6 +60,30 @@ class V4MediaService:
         content_type: str,
         content: bytes,
     ) -> StoredMediaObject:
+        staged = self.stage_bytes(
+            owner_user_id=owner_user_id,
+            variant=variant,
+            content_type=content_type,
+            content=content,
+        )
+        try:
+            stored = self.repository.insert_media(staged.media_input)
+            self.promote(staged)
+            return stored
+        except Exception:
+            self.discard(staged)
+            raise
+
+    def stage_bytes(
+        self,
+        *,
+        owner_user_id: int,
+        variant: str,
+        content_type: str,
+        content: bytes,
+    ):
+        from trace_app.v4.generation import StagedMedia
+
         prefix = _PREFIXES.get(variant)
         if prefix is None:
             raise ValueError("unsupported V4 media variant")
@@ -79,16 +103,13 @@ class V4MediaService:
                 temporary_path = Path(temporary.name)
             os.replace(temporary_path, target)
             temporary_path = None
-            return self.repository.insert_media(
-                MediaObjectInput(
-                    id=secrets.token_urlsafe(16),
-                    owner_user_id=owner_user_id,
-                    variant=variant,
-                    storage_key=storage_key,
-                    content_type=content_type,
-                    byte_size=len(content),
-                    sha256=hashlib.sha256(content).digest(),
-                )
+            return StagedMedia(
+                media_id=secrets.token_urlsafe(16),
+                owner_user_id=owner_user_id,
+                variant=variant,
+                storage_key=storage_key,
+                content_type=content_type,
+                content=bytes(content),
             )
         except Exception:
             target.unlink(missing_ok=True)
@@ -96,6 +117,13 @@ class V4MediaService:
         finally:
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
+
+    def discard(self, item) -> None:
+        self.resolve_storage_key(item.storage_key).unlink(missing_ok=True)
+
+    def promote(self, item) -> None:
+        # The opaque mapping becomes visible only when its database transaction commits.
+        return None
 
     def sign(
         self,

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from array import array
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any, Mapping, Sequence
@@ -12,9 +13,14 @@ from sqlalchemy import Select, and_, delete, insert, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 
 from trace_app.v4.domain import OwnerScope
 from trace_app.v4.schema import V4Tables
+
+
+class AuthTagCollision(RuntimeError):
+    """A transaction hit a retryable trace ID or group-local tag constraint."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +32,7 @@ class SourceGroupInput:
     original_media_id: str | None
     model_version: str
     feature_schema_version: str
+    view_policy_version: str = "v4-multiview-1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +46,7 @@ class StoredSourceGroup:
     model_version: str
     feature_schema_version: str
     status: str
+    view_policy_version: str = "v4-multiview-1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +186,139 @@ class V4Repository:
                 )
             ).mappings().one()
         return self._source_group(row)
+
+    def find_source_group(
+        self, owner_user_id: int, source_hash: bytes
+    ) -> StoredSourceGroup | None:
+        table = self.tables.source_groups
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                select(table).where(
+                    table.c.owner_user_id == owner_user_id,
+                    table.c.original_image_sha256 == source_hash,
+                    table.c.status == "active",
+                )
+            ).mappings().first()
+        return None if row is None else self._source_group(row)
+
+    def auth_tag_exists(self, source_group_id: UUID, tag: bytes) -> bool:
+        table = self.tables.v4_records
+        with self.engine.connect() as connection:
+            return connection.execute(
+                select(table.c.id).where(
+                    table.c.source_group_id == source_group_id,
+                    table.c.auth_tag == tag,
+                    table.c.status != "deleted",
+                )
+            ).first() is not None
+
+    def commit_generation(self, unit: Any) -> tuple[StoredV4Record, bool]:
+        groups = self.tables.source_groups
+        embeddings = self.tables.source_group_embeddings
+        features = self.tables.source_group_features
+        media = self.tables.media_objects
+        records = self.tables.v4_records
+        audits = self.tables.audit_events
+        group_values = {
+            "id": unit.provisional_group_id,
+            **asdict(unit.group),
+            "status": "active",
+        }
+        try:
+            with self.engine.begin() as connection:
+                if self.engine.dialect.name == "postgresql":
+                    group_insert = postgres_insert(groups).values(**group_values).on_conflict_do_nothing(
+                        constraint="uq_source_group_owner_sha256"
+                    )
+                elif self.engine.dialect.name == "sqlite":
+                    group_insert = sqlite_insert(groups).values(**group_values).on_conflict_do_nothing(
+                        index_elements=["owner_user_id", "original_image_sha256"]
+                    )
+                else:
+                    group_insert = insert(groups).values(**group_values)
+                result = connection.execute(group_insert)
+                row = connection.execute(
+                    select(groups).where(
+                        groups.c.owner_user_id == unit.group.owner_user_id,
+                        groups.c.original_image_sha256 == unit.group.original_image_sha256,
+                    )
+                ).mappings().one()
+                group = self._source_group(row)
+                created = bool(result.rowcount) and group.id == unit.provisional_group_id
+                if created:
+                    if unit.group_artifacts is None:
+                        raise ValueError("new source group requires model artifacts")
+                    connection.execute(
+                        insert(embeddings),
+                        [
+                            {
+                                "source_group_id": group.id,
+                                "owner_user_id": group.owner_user_id,
+                                **asdict(item),
+                                "embedding": (
+                                    list(item.embedding)
+                                    if self.engine.dialect.name == "postgresql"
+                                    else array("f", item.embedding).tobytes()
+                                ),
+                            }
+                            for item in unit.group_artifacts.embeddings
+                        ],
+                    )
+                    connection.execute(
+                        insert(features),
+                        [
+                            {"source_group_id": group.id, **asdict(item)}
+                            for item in unit.group_artifacts.features
+                        ],
+                    )
+                connection.execute(
+                    insert(media), [asdict(item.media_input) for item in unit.media]
+                )
+                record_input = replace(unit.record, source_group_id=group.id)
+                record_values = asdict(record_input)
+                record_values["metadata_json"] = dict(record_input.metadata_json)
+                record_values["status"] = "active"
+                connection.execute(insert(records).values(**record_values))
+                connection.execute(
+                    insert(audits).values(
+                        id=uuid4(),
+                        actor_user_id=group.owner_user_id,
+                        action="v4.generate",
+                        target_id=str(record_input.id),
+                        outcome="success",
+                        correlation_id=unit.correlation_id,
+                        created_at=datetime.now(UTC),
+                    )
+                )
+            return self._record(record_values), created
+        except IntegrityError as exc:
+            message = str(exc).lower()
+            constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+            sqlite_identity_collision = "unique constraint failed" in message and (
+                (
+                    "v4_records.source_group_id" in message
+                    and "v4_records.auth_tag" in message
+                )
+                or (
+                    "v4_records.owner_user_id" in message
+                    and "v4_records.trace_id" in message
+                )
+            )
+            if constraint in {"uq_v4_group_auth_tag", "uq_v4_owner_trace"} or sqlite_identity_collision:
+                raise AuthTagCollision("V4 generation identity collision") from exc
+            raise
+
+    def append_generation_failure(
+        self, *, owner_user_id: int, correlation_id: UUID, reason: str
+    ) -> None:
+        self.append_audit(
+            actor_user_id=owner_user_id,
+            action="v4.generate",
+            target_id=None,
+            outcome=reason,
+            correlation_id=correlation_id,
+            created_at=datetime.now(UTC),
+        )
 
     def insert_media(self, value: MediaObjectInput) -> StoredMediaObject:
         with self.engine.begin() as connection:
@@ -534,6 +675,7 @@ class V4Repository:
 
 
 __all__ = (
+    "AuthTagCollision",
     "EmbeddingInput",
     "FeatureInput",
     "MediaObjectInput",
