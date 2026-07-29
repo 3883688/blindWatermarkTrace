@@ -65,12 +65,12 @@ def test_decode_result_is_immutable() -> None:
         result.erasure_count = 8  # type: ignore[misc]
 
 
-def test_phase_permutations_cover_the_full_128_bit_codeword() -> None:
+def test_phase_permutations_cover_each_64_bit_carrier_half() -> None:
     assert CODEWORD_BITS == 128
     permutations = [phase_permutation(phase) for phase in range(4)]
     assert len(set(permutations)) == 4
     for permutation in permutations:
-        assert sorted(permutation) == list(range(128))
+        assert sorted(permutation) == list(range(64))
         inverse = inverse_permutation(permutation)
         assert all(
             inverse[physical] == logical
@@ -82,11 +82,13 @@ def test_every_phase_round_trips_the_complete_codeword() -> None:
     codeword = bytes.fromhex("00112233445566778899aabbccddeeff")
     logical = bytes_to_bits(codeword)
     for phase in range(4):
-        physical = permute_codeword_bits(codeword, phase)
-        recovered = [0] * 128
-        for logical_index, physical_index in enumerate(phase_permutation(phase)):
-            recovered[logical_index] = physical[physical_index]
-        assert tuple(recovered) == logical
+        for carrier_class in (0, 1):
+            physical = permute_codeword_bits(codeword, phase, carrier_class)
+            recovered = [0] * 64
+            for logical_index, physical_index in enumerate(phase_permutation(phase)):
+                recovered[logical_index] = physical[physical_index]
+            start = carrier_class * 64
+            assert tuple(recovered) == logical[start : start + 64]
 
 
 def test_tile_phase_is_stable() -> None:

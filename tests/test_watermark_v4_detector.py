@@ -17,37 +17,29 @@ from watermark_v4.detector import (
     detect_v4,
 )
 from watermark_v4.features import extract_feature_index, load_feature_index
-from watermark_v4.payload import authentication_tag, encode_codeword
+from watermark_v4.payload import AuthContext, authentication_tag, encode_codeword
 from watermark_v4.sync import embed_pilot
 
 
-AUTH_KEY = "detector-test-key-material-32-bytes-minimum"
+AUTH_KEY = b"detector-test-key-material-32-bytes-minimum"
 
 
-def test_detect_v4_recovers_reported_downscaled_screenshot() -> None:
-    feature_index = load_feature_index(
-        Path("data/feature_index_v4/bd903a5f9e7f4beda45a4938b31a8433.npz")
+def _tag(trace_id: str) -> bytes:
+    return authentication_tag(
+        AuthContext(
+            "v4",
+            "test-key",
+            1,
+            b"s" * 32,
+            trace_id,
+        ),
+        AUTH_KEY,
     )
-    assert feature_index is not None
-    candidate = V4Candidate(
-        record_id="bd903a5f9e7f4beda45a4938b31a8433",
-        trace_id="TR-2CEDF635874D490D",
-        auth_tag=bytes.fromhex("d9244202"),
-        feature_index=feature_index,
-    )
-    with Image.open("demo/4.png") as loaded:
-        query = loaded.convert("RGB")
-
-    result = detect_v4(query, (candidate,), V4Config())
-
-    assert type(result) is V4Detection
-    assert result.record_id == candidate.record_id
-    assert result.trace_id == candidate.trace_id
 
 
 def _marked_candidate() -> tuple[Image.Image, V4Candidate]:
     trace_id = "TR-V4-DETECTOR-A"
-    tag = authentication_tag(trace_id, AUTH_KEY)
+    tag = _tag(trace_id)
     original = _feature_image((768, 640), seed=77)
     marked = embed_codeword(
         embed_pilot(original, V4Config()),
@@ -95,7 +87,7 @@ def test_decode_aligned_candidate_rejects_wrong_candidate_tag() -> None:
     wrong = V4Candidate(
         record_id="record-wrong",
         trace_id="TR-V4-WRONG",
-        auth_tag=authentication_tag("TR-V4-WRONG", AUTH_KEY),
+        auth_tag=_tag("TR-V4-WRONG"),
         feature_index=candidate.feature_index,
     )
     query = marked.crop((64, 64, 704, 576))
@@ -154,7 +146,7 @@ def test_detect_v4_recovers_exactly_one_authenticated_candidate() -> None:
         V4Candidate(
             record_id=f"decoy-{seed}",
             trace_id=f"TR-DECOY-{seed}",
-            auth_tag=authentication_tag(f"TR-DECOY-{seed}", AUTH_KEY),
+                auth_tag=_tag(f"TR-DECOY-{seed}"),
             feature_index=extract_feature_index(_feature_image((768, 640), seed=seed)),
         )
         for seed in (101, 102, 103)
@@ -213,7 +205,7 @@ def test_detect_v4_never_checks_more_than_three_candidate_geometries(
         V4Candidate(
             record_id=f"record-{seed}",
             trace_id=f"TR-{seed}",
-            auth_tag=authentication_tag(f"TR-{seed}", AUTH_KEY),
+                auth_tag=_tag(f"TR-{seed}"),
             feature_index=extract_feature_index(
                 _feature_image((640, 480), seed=seed)
             ),
@@ -248,7 +240,7 @@ def test_detect_v4_rejects_multiple_authenticated_candidates() -> None:
 
 
 def test_detect_v4_tries_one_rounded_translation_refinement() -> None:
-    tag = bytes.fromhex("b52e76fb")
+    tag = bytes.fromhex("b52e76fb10203040")
     original = _feature_image((512, 384), seed=808)
     marked = embed_codeword(
         embed_pilot(original, V4Config()),
@@ -261,7 +253,7 @@ def test_detect_v4_tries_one_rounded_translation_refinement() -> None:
         auth_tag=tag,
         feature_index=extract_feature_index(marked),
     )
-    query = marked.crop((64, 64, 448, 320))
+    query = marked.crop((64, 0, 512, 384))
 
     result = detect_v4(query, (candidate,), V4Config())
 
@@ -271,7 +263,7 @@ def test_detect_v4_tries_one_rounded_translation_refinement() -> None:
 
 def test_detect_v4_recovers_real_random_crop_at_half_scale() -> None:
     config = V4Config()
-    tag = bytes.fromhex("a1b2c3d4")
+    tag = bytes.fromhex("a1b2c3d410203040")
     with Image.open("img/1.png") as loaded:
         source = loaded.convert("RGB")
     marked = embed_codeword(

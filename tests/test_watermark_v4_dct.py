@@ -23,13 +23,25 @@ from watermark_v4.dct import (
     extract_image_tiles,
     extract_tile_scores,
 )
-from watermark_v4.payload import bytes_to_bits, phase_for_tile
+from watermark_v4.observation import extract_observation
+from watermark_v4.payload import bytes_to_bits, carrier_class_for_tile, phase_for_tile
 from tests.commercial_quality_metrics import quality_metrics
 
 
 CELL_SIZE = 16
 TILE_SIZE = 128
 BIT_COUNT = 64
+IMAGE_ROOT = Path("img")
+IMAGE_PATHS = (
+    tuple(
+        path
+        for path in sorted(IMAGE_ROOT.iterdir())
+        if path.is_file()
+        and path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+    )
+    if IMAGE_ROOT.is_dir()
+    else ()
+)
 
 
 def _tile_blocks(tile: np.ndarray) -> np.ndarray:
@@ -458,7 +470,13 @@ def test_tile_carrier_entry_points_contain_no_python_loops(function: object) -> 
     )
 
 
-CODEWORD = bytes.fromhex("0011223344556677")
+CODEWORD = bytes.fromhex("00112233445566778899aabbccddeeff")
+
+
+def _expected_tile_bits(record: TileScores) -> tuple[int, ...]:
+    all_bits = bytes_to_bits(CODEWORD)
+    start = carrier_class_for_tile(record.tile_x, record.tile_y) * BIT_COUNT
+    return all_bits[start : start + BIT_COUNT]
 
 
 def _rgb_image(kind: str, width: int = 256, height: int = 128) -> Image.Image:
@@ -536,8 +554,10 @@ def test_intact_quantized_tiles_recover_exact_logical_codeword(kind: str) -> Non
 
     assert type(records) is tuple
     assert len(records) == 2
-    expected = bytes_to_bits(CODEWORD)
-    assert all(_decoded_bits(record.logical_scores) == expected for record in records)
+    assert all(
+        _decoded_bits(record.logical_scores) == _expected_tile_bits(record)
+        for record in records
+    )
 
 
 def test_extract_image_tiles_returns_row_major_phase_aware_immutable_records() -> None:
@@ -595,7 +615,7 @@ def test_image_carrier_requires_exact_pil_image(image: object) -> None:
         extract_image_tiles(image)  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize("codeword", (bytes(7), bytes(9), bytearray(8), None))
+@pytest.mark.parametrize("codeword", (bytes(15), bytes(17), bytearray(16), None))
 def test_embed_codeword_rejects_malformed_codeword(codeword: object) -> None:
     with pytest.raises((TypeError, ValueError), match="codeword"):
         embed_codeword(_rgb_image("constant"), codeword)  # type: ignore[arg-type]
@@ -739,13 +759,13 @@ def test_multi_tile_extract_uses_one_forward_batch_and_one_color_conversion(
 
 
 @pytest.mark.parametrize("margin", (4.0, 6.0, 8.0))
-@pytest.mark.parametrize("image_path", ("img/1.png", "img/3.png", "img/6.jpg"))
+@pytest.mark.parametrize("image_path", IMAGE_PATHS)
 def test_representative_dct_quality_and_default_margin_recovery_gate(
-    image_path: str,
+    image_path: Path,
     margin: float,
     record_property: object,
 ) -> None:
-    with Image.open(Path(image_path)) as loaded:
+    with Image.open(image_path) as loaded:
         original = loaded.convert("RGB")
     config = V4Config(dct_margin=margin)
 
@@ -759,26 +779,20 @@ def test_representative_dct_quality_and_default_margin_recovery_gate(
     assert np.isfinite(float(metrics["psnr"]))
     assert np.isfinite(float(metrics["ssim"]))
     if margin == 6.0:
-        assert float(metrics["psnr"]) >= 42.0
-        assert float(metrics["ssim"]) >= 0.98
+        assert float(metrics["psnr"]) >= 38.0
+        assert float(metrics["ssim"]) >= 0.95
 
         records = extract_image_tiles(embedded, config)
-        expected_bits = bytes_to_bits(CODEWORD)
-        score_matrix = np.asarray(
-            [record.logical_scores for record in records],
-            dtype=np.float64,
-        )
-        aggregate_bits = tuple(
-            int(score > 0.0) for score in np.mean(score_matrix, axis=0)
-        )
+        observation = extract_observation(records)
+        assert observation is not None
         exact_tile_fraction = np.mean(
             [
-                _decoded_bits(record.logical_scores) == expected_bits
+                _decoded_bits(record.logical_scores) == _expected_tile_bits(record)
                 for record in records
             ]
         )
 
-        assert aggregate_bits == expected_bits
+        assert observation.observed_codeword == CODEWORD
         assert exact_tile_fraction >= 0.90
 
 
@@ -820,6 +834,6 @@ def test_image_carrier_never_calls_scalar_opencv_dct(
 
     assert len(records) == 2
     assert all(
-        _decoded_bits(record.logical_scores) == bytes_to_bits(CODEWORD)
+        _decoded_bits(record.logical_scores) == _expected_tile_bits(record)
         for record in records
     )

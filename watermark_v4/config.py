@@ -37,9 +37,9 @@ class V4Config:
 
     # ---- 版本标识（写入记录，用于提取端选择正确的解码路径）----
     version: int = field(default=4, init=False)
-    # 编解码方案的完整描述：HMAC-32 位认证 + RS(8,4) 纠错 + 全图重复 + 同步导频
+    # 编解码方案：HMAC64 + RS(16,8) + A/B 棋盘分片 + 同步导频
     codec: str = field(
-        default="hmac32_rs_8_4_full_repeat_sync_v4",
+        default="hmac64_rs_16_8_split_repeat_sync_v4",
         init=False,
     )
 

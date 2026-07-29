@@ -22,6 +22,7 @@ RS_CODEWORD_BYTES = 16
 RS_ERASURE_COUNTS = tuple(range(RS_PARITY_BYTES + 1))
 PHASE_COUNT = 4
 CODEWORD_BITS = RS_CODEWORD_BYTES * 8
+CARRIER_BITS = CODEWORD_BITS // 2
 PHASE_PERMUTATION_PREFIX = (
     b"hmac64_rs_16_8_split_repeat_sync_v4:carrier-permutation:"
 )
@@ -192,7 +193,7 @@ def phase_permutation(phase: int) -> tuple[int, ...]:
     seed = hashlib.sha256(
         PHASE_PERMUTATION_PREFIX + str(phase).encode("ascii")
     ).digest()
-    values = list(range(CODEWORD_BITS))
+    values = list(range(CARRIER_BITS))
     random.Random(int.from_bytes(seed, "big")).shuffle(values)
     return tuple(values)
 
@@ -201,20 +202,25 @@ def inverse_permutation(permutation: tuple[int, ...]) -> tuple[int, ...]:
     if type(permutation) is not tuple:
         raise TypeError("permutation must be a tuple")
     if (
-        len(permutation) != CODEWORD_BITS
+        len(permutation) != CARRIER_BITS
         or any(type(value) is not int for value in permutation)
-        or sorted(permutation) != list(range(CODEWORD_BITS))
+        or sorted(permutation) != list(range(CARRIER_BITS))
     ):
         raise ValueError("permutation must contain every V4 codeword bit index")
-    inverse = [0] * CODEWORD_BITS
+    inverse = [0] * CARRIER_BITS
     for logical, physical in enumerate(permutation):
         inverse[physical] = logical
     return tuple(inverse)
 
 
-def permute_codeword_bits(codeword: bytes, phase: int) -> tuple[int, ...]:
-    logical_bits = bytes_to_bits(codeword)
-    physical_bits = [0] * CODEWORD_BITS
+def permute_codeword_bits(
+    codeword: bytes, phase: int, carrier_class: int
+) -> tuple[int, ...]:
+    _validate_carrier_class(carrier_class)
+    all_bits = bytes_to_bits(codeword)
+    start = carrier_class * CARRIER_BITS
+    logical_bits = all_bits[start : start + CARRIER_BITS]
+    physical_bits = [0] * CARRIER_BITS
     for logical, physical in enumerate(phase_permutation(phase)):
         physical_bits[physical] = logical_bits[logical]
     return tuple(physical_bits)
@@ -226,6 +232,19 @@ def phase_for_tile(tile_x: int, tile_y: int) -> int:
     if tile_x < 0 or tile_y < 0:
         raise ValueError("tile coordinates must be nonnegative")
     return (tile_x + 2 * tile_y) % PHASE_COUNT
+
+
+def carrier_class_for_tile(tile_x: int, tile_y: int) -> int:
+    if type(tile_x) is not int or type(tile_y) is not int:
+        raise TypeError("tile coordinates must be integers")
+    if tile_x < 0 or tile_y < 0:
+        raise ValueError("tile coordinates must be nonnegative")
+    return (tile_x + tile_y) % 2
+
+
+def _validate_carrier_class(carrier_class: int) -> None:
+    if type(carrier_class) is not int or carrier_class not in (0, 1):
+        raise ValueError("carrier class must be zero or one")
 
 
 def _validate_phase(phase: int) -> None:
@@ -241,6 +260,7 @@ __all__ = (
     "AUTH_TAG_BYTES",
     "AuthContext",
     "CODEC_ID",
+    "CARRIER_BITS",
     "CODEWORD_BITS",
     "CandidateDecode",
     "PHASE_COUNT",
@@ -252,6 +272,7 @@ __all__ = (
     "authentication_tag",
     "bytes_to_bits",
     "canonical_auth_message",
+    "carrier_class_for_tile",
     "decode_candidate_codeword",
     "encode_codeword",
     "inverse_permutation",

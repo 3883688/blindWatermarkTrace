@@ -27,7 +27,7 @@ import numpy as np
 from PIL import Image
 
 from .config import V4Config
-from .dct import extract_tile_scores
+from .dct import TileScores, extract_tile_scores
 from .features import (
     FeatureIndex,
     extract_feature_index,
@@ -35,6 +35,7 @@ from .features import (
     match_feature_indexes_constrained,
     rank_feature_candidates,
 )
+from .observation import extract_observation
 from .payload import decode_candidate_codeword, phase_for_tile, phase_permutation
 from .sync import detect_pilot
 
@@ -63,8 +64,8 @@ class V4Candidate:
         for name, value in (("record ID", self.record_id), ("trace ID", self.trace_id)):
             if type(value) is not str or not value or value != value.strip():
                 raise ValueError(f"{name} must be a nonempty canonical string")
-        if type(self.auth_tag) is not bytes or len(self.auth_tag) != 4:
-            raise ValueError("candidate auth tag must contain exactly 4 bytes")
+        if type(self.auth_tag) is not bytes or len(self.auth_tag) != 8:
+            raise ValueError("candidate auth tag must contain exactly 8 bytes")
         if type(self.feature_index) is not FeatureIndex:
             raise TypeError("candidate feature index must be an exact FeatureIndex")
 
@@ -92,6 +93,10 @@ class CandidateEvidence:
     bit_errors: int
     # 聚合分数的平均绝对值，反映信号整体强度
     mean_abs_score: float
+    tile_counts: tuple[int, int] = (0, 0)
+    phase_counts: tuple[int, int] = (0, 0)
+    coverage: tuple[float, float] = (0.0, 0.0)
+    observation_elapsed_seconds: float = 0.0
 
     def __post_init__(self) -> None:
         """校验各指标为非负整数 / 有限非负浮点，覆盖率不超过 1。"""
@@ -115,6 +120,31 @@ class CandidateEvidence:
                 raise ValueError(f"{name} must be a finite nonnegative float")
         if self.minimum_coverage > 1.0:
             raise ValueError("minimum coverage must not exceed one")
+        for name, value in (
+            ("tile counts", self.tile_counts),
+            ("phase counts", self.phase_counts),
+        ):
+            if (
+                type(value) is not tuple
+                or len(value) != 2
+                or any(type(item) is not int or item < 0 for item in value)
+            ):
+                raise ValueError(f"{name} must contain two nonnegative integers")
+        if (
+            type(self.coverage) is not tuple
+            or len(self.coverage) != 2
+            or any(
+                type(item) is not float or not np.isfinite(item) or not 0.0 <= item <= 1.0
+                for item in self.coverage
+            )
+        ):
+            raise ValueError("coverage must contain two finite ratios")
+        if (
+            type(self.observation_elapsed_seconds) is not float
+            or not np.isfinite(self.observation_elapsed_seconds)
+            or self.observation_elapsed_seconds < 0.0
+        ):
+            raise ValueError("observation elapsed seconds must be finite and nonnegative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,7 +159,7 @@ class V4Detection:
     # RANSAC 内点数与内点占比，衡量几何对齐的可靠程度
     orb_inliers: int
     orb_ratio: float
-    # 参与排序的候选总数，配合 candidate_match_probability 估算误报率
+    # 参与排序的候选总数，仅用于审计工作量；认证只依赖 64 位 HMAC 比对
     candidate_count: int
     tile_count: int
     phase_count: int
@@ -241,7 +271,7 @@ def decode_aligned_candidate(
     _check_deadline(deadline)
     luminance = cv2.cvtColor(warped_rgb, cv2.COLOR_RGB2YCrCb)[..., 0]
 
-    logical_batches: list[np.ndarray] = []
+    observed_tiles: list[TileScores] = []
     coverages: list[float] = []
     phases: set[int] = set()
     tile_size = config.tile_size
@@ -285,51 +315,57 @@ def decode_aligned_candidate(
                 continue
             # 除以自身强度做归一化后再聚合。这一步让强块与弱块获得**同等
             # 权重**：否则一个高对比度分块会主导整个平均值，而它未必更可信。
-            logical_batches.append(logical / robust_energy)
+            observed_tiles.append(
+                TileScores(
+                    tile_x=tile_x,
+                    tile_y=tile_y,
+                    phase=phase,
+                    logical_scores=tuple(logical.tolist()),
+                )
+            )
             coverages.append(coverage)
             phases.add(phase)
 
     # 样本量不足：分块太少或相位太单一，冗余不够，结论不可信。
     if (
-        len(logical_batches) < config.minimum_tiles
+        len(observed_tiles) < config.minimum_tiles
         or len(phases) < config.minimum_phases
     ):
         return None
     # 所有分块逐比特平均。因为每块嵌的都是同一个码字，这就是一次
     # 相干累加：信号同向叠加、噪声互相抵消，信噪比随分块数提升。
-    aggregate = np.mean(np.stack(logical_batches), axis=0)
-    observed = _scores_to_bytes(aggregate)
-    # 每字节（8 比特一组）的置信度，取该组中**最弱的那一位**——
-    # 一个字节只要有一位读错，整字节就错了，所以短板决定成败。
-    # 再用 m/(1+m) 把 [0, ∞) 压缩到 [0, 1)：这是一条单调饱和曲线，
-    # 弱信号区分辨率高，强信号区趋近 1，正好符合置信度的语义。
-    byte_confidences = tuple(
-        float(
-            minimum
-            / (1.0 + minimum)
-        )
-        for minimum in (
-            np.min(np.abs(aggregate[start : start + 8]))
-            for start in range(0, 64, 8)
-        )
+    observation = extract_observation(
+        tuple(observed_tiles),
+        coverages=tuple(coverages),
+        minimum_tiles_per_class=max(1, config.minimum_tiles // 2),
+        minimum_phases=config.minimum_phases,
+        minimum_coverage=float(config.minimum_coverage),
     )
+    if observation is None:
+        return None
     decoded = decode_candidate_codeword(
-        observed,
+        observation.observed_codeword,
         candidate.auth_tag,
-        byte_confidences,
+        observation.byte_confidences,
     )
     if decoded is None:
         return None
     return CandidateEvidence(
         record_id=candidate.record_id,
         trace_id=candidate.trace_id,
-        tile_count=len(logical_batches),
+        tile_count=sum(observation.tile_counts),
         phase_count=len(phases),
-        minimum_coverage=float(min(coverages)),
+        minimum_coverage=min(observation.coverage),
         corrected_symbols=decoded.corrected_symbols,
         erasure_count=decoded.erasure_count,
         bit_errors=decoded.bit_errors,
-        mean_abs_score=float(np.mean(np.abs(aggregate))),
+        mean_abs_score=float(
+            np.mean([item.signal_score for item in observation.class_evidence])
+        ),
+        tile_counts=observation.tile_counts,
+        phase_counts=observation.phase_counts,
+        coverage=observation.coverage,
+        observation_elapsed_seconds=observation.elapsed_seconds,
     )
 
 
@@ -353,7 +389,7 @@ def detect_v4(
     先 ORB 特征匹配（并附带九宫格平移微调），失败则用导频参数做受限匹配。
 
     候选数量硬性设限，因为每多验一个候选，误报概率就线性上升一分
-    （见 :func:`watermark_v4.payload.candidate_match_probability`），
+    候选数量不参与认证概率或成功判定，
     同时耗时也线性增长。
     """
     _validate_image(image)

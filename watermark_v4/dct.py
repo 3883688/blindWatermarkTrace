@@ -31,6 +31,7 @@ from PIL import Image
 
 from .config import V4Config
 from .payload import (
+    carrier_class_for_tile,
     permute_codeword_bits,
     phase_for_tile,
     phase_permutation,
@@ -209,7 +210,7 @@ def embed_codeword(
     codeword: bytes,
     config: V4Config = V4Config(),
 ) -> Image.Image:
-    """把 8 字节码字嵌入整张图片的所有完整分块，返回新图片。
+    """把 16 字节码字按 A/B 棋盘分片嵌入完整分块。
 
     :param codeword: RS 编码后的 8 字节码字。
     :param config: 算法参数，默认用标准配置。
@@ -226,8 +227,8 @@ def embed_codeword(
     _validate_image(image)
     if type(codeword) is not bytes:
         raise TypeError("codeword must be bytes")
-    if len(codeword) != 8:
-        raise ValueError("codeword must contain exactly 8 bytes")
+    if len(codeword) != 16:
+        raise ValueError("codeword must contain exactly 16 bytes")
     _validate_config(config)
     tiles = _eligible_tiles(image, config)
 
@@ -250,7 +251,7 @@ def embed_codeword(
                 for tile_x, tile_y, _ in batch
             ),
             axis=0,
-        )
+        ).astype(np.float32)
         # 转到 YCrCb，只有 Y（首通道）参与调制，Cr/Cb 原样保留。
         ycrcb_strip = cv2.cvtColor(rgb_strip, cv2.COLOR_RGB2YCrCb)
         luminance_tiles = ycrcb_strip[..., 0].reshape(
@@ -276,7 +277,14 @@ def embed_codeword(
         ).reshape(tile_count, BIT_COUNT, CELL_SIZE, CELL_SIZE)
         # 同一个码字，按各分块自己的相位置换出不同的物理比特排列。
         physical_bits = np.asarray(
-            [permute_codeword_bits(codeword, phase) for _, _, phase in batch],
+            [
+                permute_codeword_bits(
+                    codeword,
+                    phase,
+                    carrier_class_for_tile(tile_x, tile_y),
+                )
+                for tile_x, tile_y, phase in batch
+            ],
             dtype=np.float64,
         )
         _embed_coefficients(coefficients, physical_bits, config)
@@ -298,10 +306,10 @@ def embed_codeword(
                 _blocks_to_tile(restored_blocks[tile_index]) + LUMINANCE_CENTER
             )
             ycrcb_strip[top : top + TILE_SIZE, :, 0] = np.clip(
-                np.rint(embedded_y),
-                0,
-                255,
-            ).astype(np.uint8)
+                embedded_y,
+                0.0,
+                255.0,
+            )
 
         # 转回 RGB，再把长条按原坐标散射回输出画布。
         converted_strip = cv2.cvtColor(ycrcb_strip, cv2.COLOR_YCrCb2RGB)
@@ -314,10 +322,16 @@ def embed_codeword(
                 target_left : target_left + TILE_SIZE,
                 # 只写 RGB 三通道；RGBA 图的 alpha 通道保持原值不动。
                 :3,
-            ] = converted_strip[
-                source_top : source_top + TILE_SIZE,
-                :,
-            ]
+            ] = np.clip(
+                np.rint(
+                    converted_strip[
+                        source_top : source_top + TILE_SIZE,
+                        :,
+                    ]
+                ),
+                0,
+                255,
+            ).astype(np.uint8)
 
     return Image.fromarray(output)
 
@@ -338,31 +352,47 @@ def extract_image_tiles(
     _validate_config(config)
     tiles = _eligible_tiles(image, config)
 
-    rgb = np.asarray(image)[..., :3]
-    ycrcb = cv2.cvtColor(rgb, cv2.COLOR_RGB2YCrCb)
-    centered_blocks = _gather_centered_blocks(ycrcb[..., 0], tiles)
-    tile_count = len(tiles)
-    coefficients = _forward_dct_blocks(
-        centered_blocks.reshape(tile_count * BIT_COUNT, CELL_SIZE, CELL_SIZE)
-    ).reshape(tile_count, BIT_COUNT, CELL_SIZE, CELL_SIZE)
-    physical_score_batches = _extract_coefficient_scores(coefficients, config)
+    source = np.asarray(image)[..., :3]
     records = []
-    for tile_index, (tile_x, tile_y, phase) in enumerate(tiles):
-        # 逆置换：用置换表当索引数组一次性重排。
-        # 正向表满足 permutation[逻辑] = 物理，因此
-        # scores[permutation] 取出的第 i 项就是逻辑位 i 的分数——
-        # 这正是逆置换，无需另行构造逆表。
-        logical_scores = physical_score_batches[tile_index][
-            np.asarray(phase_permutation(phase), dtype=np.intp)
-        ]
-        records.append(
-            TileScores(
-                tile_x=tile_x,
-                tile_y=tile_y,
-                phase=phase,
-                logical_scores=tuple(logical_scores.tolist()),
-            )
+    for batch_start in range(0, len(tiles), DCT_TILE_BATCH):
+        batch = tiles[batch_start : batch_start + DCT_TILE_BATCH]
+        tile_count = len(batch)
+        rgb_strip = np.concatenate(
+            tuple(
+                source[
+                    tile_y * TILE_SIZE : (tile_y + 1) * TILE_SIZE,
+                    tile_x * TILE_SIZE : (tile_x + 1) * TILE_SIZE,
+                ]
+                for tile_x, tile_y, _phase in batch
+            ),
+            axis=0,
+        ).astype(np.float32)
+        luminance_tiles = cv2.cvtColor(rgb_strip, cv2.COLOR_RGB2YCrCb)[..., 0].reshape(
+            tile_count, TILE_SIZE, TILE_SIZE
         )
+        centered_blocks = np.stack(
+            tuple(
+                _tile_to_blocks(tile.astype(np.float64) - LUMINANCE_CENTER)
+                for tile in luminance_tiles
+            ),
+            axis=0,
+        ).astype(np.float32)
+        coefficients = _forward_dct_blocks(
+            centered_blocks.reshape(tile_count * BIT_COUNT, CELL_SIZE, CELL_SIZE)
+        ).reshape(tile_count, BIT_COUNT, CELL_SIZE, CELL_SIZE)
+        physical_score_batches = _extract_coefficient_scores(coefficients, config)
+        for tile_index, (tile_x, tile_y, phase) in enumerate(batch):
+            logical_scores = physical_score_batches[tile_index][
+                np.asarray(phase_permutation(phase), dtype=np.intp)
+            ]
+            records.append(
+                TileScores(
+                    tile_x=tile_x,
+                    tile_y=tile_y,
+                    phase=phase,
+                    logical_scores=tuple(logical_scores.tolist()),
+                )
+            )
     return tuple(records)
 
 

@@ -8,7 +8,7 @@ def test_defaults_match_v4_contract() -> None:
     config = V4Config()
 
     assert config.version == 4
-    assert config.codec == "hmac32_rs_8_4_full_repeat_sync_v4"
+    assert config.codec == "hmac64_rs_16_8_split_repeat_sync_v4"
     assert (config.tile_size, config.grid_size, config.cell_size) == (128, 8, 16)
     assert config.dct_margin == 6
     assert config.dct_margin_range == (2.0, 10.0)
