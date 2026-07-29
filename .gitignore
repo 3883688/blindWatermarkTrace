@@ -1,5 +1,6 @@
 # Local environment and secrets
 .env
+.env.v4.test
 
 # Python bytecode and test caches
 __pycache__/

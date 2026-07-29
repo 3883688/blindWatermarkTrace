@@ -12,6 +12,7 @@ opencv-python-headless==4.13.0.92
 PyWavelets
 reedsolo==1.7.0
 pgvector==0.5.0
+onnxruntime==1.27.0
 torch==2.13.0
 torchvision==0.28.0
 safetensors==0.8.0
