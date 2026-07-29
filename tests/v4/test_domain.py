@@ -44,9 +44,15 @@ def test_v4_outcomes_are_closed_and_owner_scope_is_explicit() -> None:
     assert OwnerScope(user_id=7, cross_owner=True).query_owner_id is None
 
 
+@pytest.mark.parametrize("cross_owner", [1, "true", None])
+def test_owner_scope_rejects_non_boolean_cross_owner_values(cross_owner: object) -> None:
+    with pytest.raises(ValueError, match="cross_owner"):
+        OwnerScope(user_id=7, cross_owner=cross_owner)  # type: ignore[arg-type]
+
+
 def test_v4_contracts_are_frozen_slots_and_defensively_normalize_mappings() -> None:
-    source_metadata = {"source": "upload"}
-    evidence_payload = {"score": 0.9}
+    source_metadata = {"source": {"labels": ["upload"]}}
+    evidence_payload = {"scores": [0.9, {"candidate": 1}]}
     record = _record()
     source_group = SourceGroup(
         source_group_id=uuid4(),
@@ -72,13 +78,17 @@ def test_v4_contracts_are_frozen_slots_and_defensively_normalize_mappings() -> N
         assert value.__dataclass_params__.frozen is True
         assert hasattr(value, "__slots__")
 
-    source_metadata["source"] = "changed"
-    evidence_payload["score"] = 0.1
-    assert source_group.metadata == {"source": "upload"}
-    assert evidence.payload == {"score": 0.9}
+    source_metadata["source"]["labels"].append("changed")
+    evidence_payload["scores"][1]["candidate"] = 2
+    assert source_group.metadata == {"source": {"labels": ("upload",)}}
+    assert evidence.payload == {"scores": (0.9, {"candidate": 1})}
     assert isinstance(result.evidence, MappingProxyType)
     with pytest.raises(TypeError):
         result.evidence["another"] = evidence  # type: ignore[index]
+    with pytest.raises(TypeError):
+        source_group.metadata["source"]["labels"] = ()  # type: ignore[index]
+    with pytest.raises(TypeError):
+        evidence.payload["scores"][1]["candidate"] = 3  # type: ignore[index]
     with pytest.raises(FrozenInstanceError):
         record.owner_user_id = 8  # type: ignore[misc]
 

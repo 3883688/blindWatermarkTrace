@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping as MappingABC
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -10,8 +12,22 @@ from typing import Any, Mapping
 from uuid import UUID
 
 
+def _freeze_value(value: Any) -> Any:
+    if isinstance(value, MappingABC):
+        return MappingProxyType(
+            {key: _freeze_value(nested_value) for key, nested_value in value.items()}
+        )
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return tuple(_freeze_value(item) for item in value)
+    if isinstance(value, bytearray):
+        return bytes(value)
+    if isinstance(value, set):
+        return frozenset(_freeze_value(item) for item in value)
+    return value
+
+
 def _immutable_mapping(value: Mapping[str, Any]) -> Mapping[str, Any]:
-    return MappingProxyType(dict(value))
+    return _freeze_value(value)
 
 
 def _require_positive_user_id(user_id: int) -> None:
@@ -40,10 +56,12 @@ class OwnerScope:
 
     def __post_init__(self) -> None:
         _require_positive_user_id(self.user_id)
+        if type(self.cross_owner) is not bool:
+            raise ValueError("cross_owner must be a boolean")
 
     @property
     def query_owner_id(self) -> int | None:
-        return None if self.cross_owner else self.user_id
+        return None if self.cross_owner is True else self.user_id
 
 
 @dataclass(frozen=True, slots=True)

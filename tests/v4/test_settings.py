@@ -31,6 +31,31 @@ def test_production_v4_requires_postgresql_and_fixed_deadlines(tmp_path: Path) -
     assert settings.v4_deep_timeout_seconds == 1000
 
 
+@pytest.mark.parametrize(
+    "db_url",
+    [
+        "postgresql-evil://trace:test@db/trace",
+        "postgresqlfoo://trace:test@db/trace",
+        "postgresql",
+        "postgresql://",
+        "not a database URL",
+    ],
+)
+def test_production_v4_rejects_malformed_or_non_postgresql_urls(
+    tmp_path: Path, db_url: str
+) -> None:
+    with pytest.raises(ValueError, match="PostgreSQL"):
+        Settings.from_values(
+            base_dir=tmp_path,
+            upload_dir="uploads",
+            data_dir="data",
+            db_url=db_url,
+            admin_user="admin",
+            admin_pass="secret",
+            environment="production",
+        )
+
+
 def test_v4_settings_resolve_relative_paths_and_preserve_test_sqlite(tmp_path: Path) -> None:
     settings = Settings.from_values(
         base_dir=tmp_path,

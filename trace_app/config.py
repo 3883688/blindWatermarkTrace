@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 
 load_dotenv()
@@ -66,10 +68,8 @@ class Settings:
         manifest_path = cls._resolve_path(base_path, v4_model_manifest_path)
         normalized_environment = environment.strip().lower()
         normalized_db_url = db_url.strip()
-        if normalized_environment == "production" and not normalized_db_url.lower().startswith(
-            "postgresql"
-        ):
-            raise ValueError("Production V4 requires a PostgreSQL DB_URL")
+        if normalized_environment == "production":
+            cls._validate_production_database_url(normalized_db_url)
         cls._validate_v4_limits(
             sync_worker_quota=v4_sync_worker_quota,
             deep_worker_quota=v4_deep_worker_quota,
@@ -125,6 +125,17 @@ class Settings:
             raise ValueError("V4 deep timeout may not exceed 1000 seconds")
         if not sync_p95_seconds <= sync_timeout_seconds <= deep_timeout_seconds:
             raise ValueError("V4 deadlines must satisfy p95 <= hard <= deep")
+
+    @staticmethod
+    def _validate_production_database_url(db_url: str) -> None:
+        try:
+            url = make_url(db_url)
+        except ArgumentError as error:
+            raise ValueError(
+                "Production V4 requires a valid PostgreSQL DB_URL"
+            ) from error
+        if url.get_backend_name() != "postgresql" or url.database is None:
+            raise ValueError("Production V4 requires a valid PostgreSQL DB_URL")
 
 
 settings = Settings.from_values(
