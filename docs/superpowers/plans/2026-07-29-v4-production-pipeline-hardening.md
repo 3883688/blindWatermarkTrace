@@ -720,21 +720,23 @@ git commit -m "feat: add guarded v4 initialization and restore"
 - Create: `docs/operations/v4-release-gates.md`
 - Modify: `tools/build_centos_release.py`
 
-- [ ] **Step 1: Write failing release-gate tests**
+- [x] **Step 1: Write failing release-gate tests**
 
 Freeze dataset hashes and keep development/release/blind manifests disjoint. Encode these exact thresholds: DINO recall >=99% for full/resize/JPEG and >=95% qualifying crops; final attribution >=95%; wrong traces exactly zero; at least 3,000 independent negatives with zero attribution; PSNR >=38 and SSIM >=0.95 by low/high texture, photo, text, UI, and synthetic strata; standard P95 <=120 seconds and every request <=300 seconds; deep jobs <=1,000 seconds. Include JPEG/recompression, crop, rotation, screenshot, screen-photo, denoise, sharpen, noise, pilot notch, DCT attenuation, same-source collusion, and overwrite attacks.
 
-- [ ] **Step 2: Verify gates fail closed without datasets/hardware metadata**
+- [x] **Step 2: Verify gates fail closed without datasets/hardware metadata**
 
 Run: `pytest tests/v4/test_negative_gate.py tests/v4/test_scale_gate.py tests/v4/test_attack_gate.py tests/v4/test_quality_gate.py tests/v4/test_performance_gate.py -q`
 
 Expected: FAIL with explicit missing manifest/reference hardware/model evidence, never SKIP or PASS.
 
-- [ ] **Step 3: Implement deterministic runners and signed reports**
+- [x] **Step 3: Implement deterministic runners and signed reports**
 
 Record git commit, schema/codec/model versions, manifest hashes, random seed, reference CPU/GPU/RAM, per-stage timing distributions, outcome counts, quality strata, and raw evidence artifact hashes. `run_release_gates.py` exits nonzero for a missing suite, threshold miss, wrong trace, timeout overrun, dataset overlap, model-health failure, query-plan failure, or sensitive log leak. Release building reads the successful report for the current commit and refuses stale or absent evidence.
 
 - [ ] **Step 4: Run fast regression and full release commands**
+
+Fast regression is verified. The full signed PostgreSQL/hardware/image evidence run remains pending and fails closed until its release manifest exists.
 
 Run: `pytest tests/v4 -q -m "not postgres and not benchmark"`
 
@@ -744,7 +746,7 @@ Run: `python -m tests.v4.run_release_gates --manifest tests/fixtures/v4/release.
 
 Expected: exits 0 only after all PostgreSQL, 3,000-negative, scale, attack, quality, security, and timing gates pass on documented hardware.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/v4/benchmark_manifest.py tests/v4/run_release_gates.py tests/v4/test_negative_gate.py tests/v4/test_scale_gate.py tests/v4/test_attack_gate.py tests/v4/test_quality_gate.py tests/v4/test_performance_gate.py docs/operations/v4-release-gates.md tools/build_centos_release.py

@@ -13,6 +13,11 @@ from tools.build_centos_release import ROOT_FILES, is_release_source, release_fi
 BUILD_TIME = datetime(2026, 7, 20, 14, 35, 42)
 
 
+@pytest.fixture(autouse=True)
+def allow_unit_release_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(builder, "_require_release_evidence", lambda: None)
+
+
 def test_release_targets_use_current_package_time() -> None:
     targets = builder.release_targets(BUILD_TIME)
 

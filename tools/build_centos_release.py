@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import stat
@@ -8,6 +9,9 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+import subprocess
+
+from tests.v4.benchmark_manifest import verify_signed_report
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -225,6 +229,18 @@ def _validate_release_targets(targets: ReleaseTargets) -> None:
             raise ValueError(f"Invalid release artifact path: {actual}")
 
 
+def _require_release_evidence() -> None:
+    report_path = os.getenv("V4_RELEASE_REPORT", "")
+    report_key = os.getenv("V4_RELEASE_REPORT_KEY", "").encode()
+    if not report_path or not report_key:
+        raise RuntimeError("Current signed V4 release evidence is required")
+    current_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    verify_signed_report(report, report_key, git_commit=current_commit)
+
+
 def build_release(
     build_time: datetime | None = None,
     *,
@@ -234,6 +250,7 @@ def build_release(
         raise ValueError("Specify either build_time or targets, not both")
     targets = release_targets(build_time) if targets is None else targets
     _validate_release_targets(targets)
+    _require_release_evidence()
     files = release_files(ROOT)
     if targets.root.exists():
         shutil.rmtree(targets.root)
