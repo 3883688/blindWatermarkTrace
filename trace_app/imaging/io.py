@@ -33,6 +33,7 @@ from fastapi import HTTPException, UploadFile
 from PIL import Image
 
 from trace_app.media import media_path_from_url, resolve_media_path
+from trace_app.v4.deadlines import Deadline, DeadlineExceeded
 
 
 REMOTE_IMAGE_MAX_BYTES = 20 * 1024 * 1024
@@ -218,6 +219,7 @@ def _validate_public_http_url(
 def fetch_remote_image_bytes(
     url: str,
     *,
+    deadline: Deadline | None = None,
     resolve_host: Callable[..., Any] | None = None,
     open_url: Callable[..., Any] | None = None,
 ) -> tuple[bytes, str]:
@@ -248,18 +250,25 @@ def fetch_remote_image_bytes(
     resolver = resolve_host or socket.getaddrinfo
     opener = open_url
     current_url = str(url or "").strip()
+    active_deadline = deadline or Deadline.synchronous()
 
     for redirect_count in range(REMOTE_IMAGE_MAX_REDIRECTS + 1):
+        active_deadline.check("remote_dns")
         validated_ips = _validate_public_http_url(current_url, resolve_host=resolver)
+        active_deadline.check("remote_connect")
         request = urllib_request.Request(
             current_url,
             headers={"User-Agent": "WatermarkSystem/1.0"},
         )
         try:
             response = (
-                _open_pinned_url(current_url, validated_ips[0], timeout=10)
+                _open_pinned_url(
+                    current_url,
+                    validated_ips[0],
+                    timeout=min(10.0, active_deadline.remaining()),
+                )
                 if opener is None
-                else opener(request, timeout=10)
+                else opener(request, timeout=min(10.0, active_deadline.remaining()))
             )
         except HTTPError as exc:
             if exc.code not in REDIRECT_STATUSES:
@@ -272,7 +281,7 @@ def fetch_remote_image_bytes(
                 raise HTTPException(status_code=400, detail="图片链接重定向无效")
             current_url = urljoin(current_url, location)
             continue
-        except HTTPException:
+        except (HTTPException, DeadlineExceeded):
             # 校验函数抛出的 400 要原样放行：落进下面的兜底分支会把具体文案
             # （"不允许访问内网或本机地址"等）覆盖成笼统的"无法读取图片链接"。
             raise
@@ -299,6 +308,7 @@ def fetch_remote_image_bytes(
                 raise HTTPException(status_code=400, detail="图片链接响应无效") from exc
             # 多读 1 字节：读满 MAX+1 就说明对方内容超限，与它声明的长度无关。
             data = response.read(REMOTE_IMAGE_MAX_BYTES + 1)
+            active_deadline.check("remote_read")
 
         if len(data) > REMOTE_IMAGE_MAX_BYTES:
             raise HTTPException(status_code=400, detail="图片链接文件超过 20MB")

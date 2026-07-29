@@ -9,6 +9,7 @@ from PIL import Image
 
 from trace_app.imaging import io as image_io
 from trace_app.imaging.io import _validate_public_http_url
+from trace_app.v4.deadlines import Deadline, DeadlineExceeded
 from trace_app.v4.uploads import UploadLimitExceeded, decode_image_unbounded, stream_upload
 
 
@@ -116,6 +117,42 @@ def test_pinned_connection_closes_when_request_fails(monkeypatch) -> None:
             timeout=1,
         )
     assert closed == [True]
+
+
+def test_remote_fetch_obeys_shared_absolute_deadline() -> None:
+    now = [10.0]
+    deadline = Deadline.after(2, clock=lambda: now[0])
+
+    class SlowResponse:
+        status = 200
+        headers = {"content-type": "image/png"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _limit: int) -> bytes:
+            now[0] += 3
+            return b"slow bytes"
+
+    timeouts: list[float] = []
+
+    def open_url(_request, *, timeout: float):
+        timeouts.append(timeout)
+        return SlowResponse()
+
+    with pytest.raises(DeadlineExceeded):
+        image_io.fetch_remote_image_bytes(
+            "https://images.example.test/a.png",
+            deadline=deadline,
+            resolve_host=lambda *_args, **_kwargs: [
+                (2, 1, 6, "", ("93.184.216.34", 443))
+            ],
+            open_url=open_url,
+        )
+    assert timeouts == [2.0]
 
 
 @pytest.mark.parametrize(
