@@ -122,6 +122,9 @@ class Repository:
     ) -> dict[str, Any] | None:
         return self.store.authenticate_user(username, password)
 
+    def get_login_identity(self, username: str) -> dict[str, Any] | None:
+        return self.store.get_login_identity(username)
+
     def get_user_by_id(self, user_id: int) -> dict[str, Any] | None:
         return self.store.get_user_by_id(user_id)
 

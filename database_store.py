@@ -397,6 +397,12 @@ class DatabaseStore:
     def authenticate_user(
         self, username: str, password: str
     ) -> dict[str, Any] | None:
+        row = self.get_login_identity(username)
+        if not row or not verify_password(password, row["password_hash"]):
+            return None
+        return self._user_identity(row)
+
+    def get_login_identity(self, username: str) -> dict[str, Any] | None:
         with self.engine.connect() as connection:
             row = connection.execute(
                 select(
@@ -406,9 +412,7 @@ class DatabaseStore:
                     self.users.c.role_key,
                 ).where(self.users.c.username == username)
             ).mappings().first()
-        if not row or not verify_password(password, row["password_hash"]):
-            return None
-        return self._user_identity(row)
+        return None if row is None else dict(row)
 
     def authenticate(self, username: str, password: str) -> str | None:
         identity = self.authenticate_user(username, password)

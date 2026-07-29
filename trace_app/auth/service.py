@@ -3,23 +3,30 @@
 承载 ``/auth/login``、``/api/roles``、``/api/users`` 背后的全部业务规则，
 让路由层保持薄委托。两点设计需要留意：
 
-**会话存放在进程内存。** ``sessions`` 是一个 ``token -> user_id`` 的字典，
-不落库也不跨进程共享——这意味着服务重启即全员掉线，多副本部署必须配置粘性会话
-或改用外部会话存储。构造时可注入自定义字典，测试因此能预置登录态。
+**会话存放在数据库。** 客户端只拿到一次随机令牌，服务端仅保存 SHA-256，
+并同时执行闲置过期、绝对过期和撤销检查，支持多进程部署。
 
 **仓储可以缺席。** ``repository`` 允许为 ``None``（数据库尚未就绪时），
 只有真正访问数据时才通过 :meth:`_require_repository` 抛 503，
 从而避免应用启动阶段因数据库未连上而整体失败。
 """
 
-import uuid
 from typing import Any
 
 from fastapi import HTTPException
 
+from password_security import verify_password
+
 from trace_app.auth.schemas import AuthenticatedUser
 from trace_app.config import MENU_LABELS
 from trace_app.database.repositories import Repository
+from trace_app.v4.security import DatabaseSessionStore
+
+
+DUMMY_PASSWORD_HASH = (
+    "scrypt$v1$16384$8$1$giFsH8US92hSmgQ2cOpFCg=="
+    "$MY9HAnKBOcnMPhQkjr0zm018QJuFdL2Mg+D34WPUTHg="
+)
 
 
 class AuthService:
@@ -29,15 +36,14 @@ class AuthService:
         self,
         repository: Repository | None = None,
         *,
-        sessions: dict[str, int] | None = None,
+        session_store: DatabaseSessionStore | None = None,
     ) -> None:
         """
         :param repository: 数据仓储；``None`` 表示数据库暂不可用（延迟到访问时才报错）。
-        :param sessions: 令牌表，外部注入时**共享同一个字典对象**，
-            这样应用重建服务实例后已登录用户不会掉线。
+        :param session_store: 数据库会话存储；缺席时登录入口 fail closed。
         """
         self.repository = repository
-        self.sessions = {} if sessions is None else sessions
+        self.session_store = session_store
 
     def _require_repository(self) -> Repository:
         """取仓储；未配置时以 503 结束请求，而不是抛 ``AttributeError``。"""
@@ -82,17 +88,28 @@ class AuthService:
         防止通过报错差异枚举有效用户名。
         """
         repository = self._require_repository()
-        identity = repository.authenticate_user(username, password)
-        if identity is None:
+        credentials = repository.get_login_identity(username)
+        password_hash = (
+            DUMMY_PASSWORD_HASH
+            if credentials is None
+            else str(credentials["password_hash"])
+        )
+        if not verify_password(password, password_hash) or credentials is None:
             raise HTTPException(status_code=401, detail="用户名或密码错误")
+        identity = {
+            "id": credentials["id"],
+            "username": credentials["username"],
+            "role": credentials["role_key"],
+        }
         role = str(identity["role"])
         roles = repository.read_roles()["roles"]
         # 菜单来自角色配置，且再过一道白名单：角色表里的历史脏键不会下发给前端。
         menus = self.allowed_menu_keys(roles.get(role, {}).get("menus", []))
-        # 令牌只是随机串，不携带任何身份信息——权限一律回表查，
+        # 令牌只是随机串，不携带任何身份信息，数据库也只保存其摘要。
         # 因此改角色/删用户能立即生效，不存在"旧令牌仍带旧权限"的窗口。
-        token = f"local-{uuid.uuid4().hex}"
-        self.sessions[token] = int(identity["id"])
+        if self.session_store is None:
+            raise HTTPException(status_code=503, detail="会话服务不可用")
+        token = self.session_store.issue(int(identity["id"]))
         return {
             "token": token,
             "username": str(identity["username"]),
@@ -109,20 +126,23 @@ class AuthService:
         令牌存在但用户已不存在时，顺手把这条会话从表中清掉再抛 401，
         避免内存里堆积永远解析不出身份的僵尸令牌。
         """
-        user_id = self.sessions.get(token)
+        user_id = None if self.session_store is None else self.session_store.resolve(token)
         identity = (
             None
             if user_id is None
             else self._require_repository().get_user_by_id(user_id)
         )
         if identity is None:
-            self.sessions.pop(token, None)
             raise HTTPException(status_code=401, detail="登录已失效，请重新登录")
         return AuthenticatedUser(
             id=int(identity["id"]),
             username=str(identity["username"]),
             role=str(identity["role"]),
         )
+
+    def logout(self, token: str) -> None:
+        if self.session_store is not None:
+            self.session_store.revoke(token)
 
     def list_roles(self) -> dict[str, Any]:
         """返回全部角色及其菜单授权，并附上菜单键到中文名的字典。
@@ -208,8 +228,11 @@ class AuthService:
         :meth:`resolve_token` 每次都回库校验，删除后下一次请求即失效。
         """
         repository = self._require_repository()
-        if not repository.delete_user(username):
+        identity = repository.get_user_by_username(username)
+        if identity is None or not repository.delete_user(username):
             raise HTTPException(status_code=404, detail="用户不存在")
+        if self.session_store is not None:
+            self.session_store.revoke_user(int(identity["id"]))
         return {
             "users": repository.list_users(),
             "roles": repository.read_roles()["roles"],

@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, Form, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from trace_app.auth.schemas import AuthenticatedUser
@@ -8,6 +8,8 @@ from trace_app.auth.service import AuthService
 from trace_app.database.repositories import Repository
 from trace_app.management.service import ManagementService
 from trace_app.watermark.service import WatermarkService
+from trace_app.v4.domain import OwnerScope
+from trace_app.v4.security import RateLimitExceeded
 
 
 bearer_auth = HTTPBearer(auto_error=False)
@@ -26,6 +28,22 @@ def _service_from_state(request: Request, name: str) -> Any:
 
 def get_auth_service(request: Request) -> AuthService:
     return _service_from_state(request, "auth_service")
+
+
+def enforce_login_rate_limit(
+    request: Request,
+    username: str = Form(...),
+) -> None:
+    limiter = getattr(request.app.state, "login_rate_limiter", None)
+    if limiter is None:
+        return
+    client_ip = "unknown" if request.client is None else request.client.host
+    try:
+        limiter.consume(username=username, client_ip=client_ip)
+    except RateLimitExceeded as error:
+        raise HTTPException(
+            status_code=429, detail="登录尝试过多，请稍后再试"
+        ) from error
 
 
 def get_watermark_service(request: Request) -> WatermarkService:
@@ -51,3 +69,20 @@ def get_current_user(
     if current_user is None:
         raise HTTPException(status_code=401, detail="请先登录")
     return current_user
+
+
+def require_admin(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> AuthenticatedUser:
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return current_user
+
+
+def resolve_owner_scope(
+    cross_owner: bool = False,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+) -> OwnerScope:
+    if cross_owner and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return OwnerScope(current_user.id, cross_owner=cross_owner)

@@ -9,7 +9,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, Form
 
 from trace_app.auth.service import AuthService
-from trace_app.dependencies import get_auth_service
+from trace_app.auth.schemas import AuthenticatedUser
+from trace_app.dependencies import (
+    bearer_auth,
+    enforce_login_rate_limit,
+    get_auth_service,
+    get_current_user,
+)
+from fastapi.security import HTTPAuthorizationCredentials
 
 router = APIRouter(tags=["auth"])
 
@@ -18,6 +25,7 @@ router = APIRouter(tags=["auth"])
 def login(
     username: str = Form(...),
     password: str = Form(...),
+    _rate_limit: None = Depends(enforce_login_rate_limit),
     service: AuthService = Depends(get_auth_service),
 ) -> dict[str, Any]:
     """账号密码登录，返回令牌与该用户可见的菜单权限。
@@ -27,3 +35,13 @@ def login(
     不做任何分支判断，避免鉴权逻辑散落在两处（结构测试也会强制这一点）。
     """
     return service.login(username, password)
+
+
+@router.post("/auth/logout")
+def logout(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_auth),
+    _current_user: AuthenticatedUser = Depends(get_current_user),
+    service: AuthService = Depends(get_auth_service),
+) -> dict[str, bool]:
+    service.logout(credentials.credentials)
+    return {"logged_out": True}

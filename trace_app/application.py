@@ -28,6 +28,7 @@ from trace_app.media import (
 from trace_app.runtime import dispose_engine, dispose_runtime
 from trace_app.watermark.service import WatermarkService
 from trace_app.watermark.default_operations import build_default_operations
+from trace_app.v4.security import DatabaseSessionStore, LoginRateLimiter
 
 ServiceFactory = Callable[[], object]
 
@@ -183,9 +184,14 @@ def create_app(
     except ValueError:
         app.state.media_url_ttl_seconds = 300
     app.state.generated_trace_ids = runtime.generated_trace_ids
+    session_store = (
+        None if runtime.engine is None else DatabaseSessionStore(runtime.engine)
+    )
+    rate_limiter = None if runtime.engine is None else LoginRateLimiter(runtime.engine)
+    app.state.login_rate_limiter = rate_limiter
     app.state.auth_service = AuthService(
         repository,
-        sessions=runtime.auth_sessions,
+        session_store=session_store,
     )
     app.state.watermark_service = WatermarkService(
         settings=settings,
@@ -222,4 +228,6 @@ def create_app(
         dashboard.router,
     ):
         app.include_router(api_router)
+    if settings.environment != "production":
+        app.include_router(dashboard.dev_router)
     return app

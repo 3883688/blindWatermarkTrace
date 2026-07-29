@@ -46,6 +46,7 @@ from watermark_v4.features import (
 from watermark_v4.detector import V4Candidate, detect_v4
 
 from trace_app.auth.service import AuthService
+from trace_app.v4.security import DatabaseSessionStore
 from trace_app.application import create_app, dispose_runtime, running_pytest
 from trace_app.config import (
     ADMIN_PASS,
@@ -218,6 +219,15 @@ def seed_database_defaults(store: DatabaseStore) -> None:
     seed_runtime_defaults(store, settings)
 
 
+def _auth_service_for_runtime() -> AuthService:
+    if runtime.engine is None:
+        return AuthService(repository)
+    return AuthService(
+        repository,
+        session_store=DatabaseSessionStore(runtime.engine),
+    )
+
+
 def _sync_application_state() -> None:
     current_app = globals().get("app")
     if current_app is None:
@@ -225,10 +235,7 @@ def _sync_application_state() -> None:
     current_app.state.runtime = runtime
     current_app.state.repository = repository
     current_app.state.generated_trace_ids = runtime.generated_trace_ids
-    current_app.state.auth_service = AuthService(
-        repository,
-        sessions=runtime.auth_sessions,
-    )
+    current_app.state.auth_service = _auth_service_for_runtime()
     current_app.state.watermark_service = get_watermark_service()
     current_app.state.management_service = get_management_service()
 
@@ -318,7 +325,7 @@ def read_users() -> dict[str, Any]:
 
 
 def get_auth_service() -> AuthService:
-    return AuthService(repository, sessions=runtime.auth_sessions)
+    return _auth_service_for_runtime()
 
 
 def _records_call_mode(callback) -> str:

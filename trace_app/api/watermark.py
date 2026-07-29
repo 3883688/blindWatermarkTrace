@@ -21,7 +21,7 @@ from trace_app.config import (
     DEFAULT_ROBUST_WATERMARK_STRENGTH,
     DEFAULT_ROBUST_WATERMARK_VERSION,
 )
-from trace_app.dependencies import get_optional_current_user, get_watermark_service
+from trace_app.dependencies import get_current_user, get_watermark_service
 from trace_app.media import sign_media_url
 from trace_app.watermark.service import WatermarkService
 
@@ -166,8 +166,8 @@ async def embed_watermark(
     # ---- 点阵追踪层（仅非 v4 链路生效）----
     dot_matrix_trace_enabled: str = Form("false"),
     dot_matrix_trace_strength: str = Form("0.85"),
-    # 登录态可选：未登录也允许嵌入，此时记录归属会回落到管理员账号。
-    current_user: AuthenticatedUser | None = Depends(get_optional_current_user),
+    # 所有生成操作必须登录，记录直接绑定当前用户。
+    current_user: AuthenticatedUser = Depends(get_current_user),
     service: WatermarkService = Depends(get_watermark_service),
 ) -> dict[str, Any]:
     """嵌入水印：上传原图，返回带水印成品图的证据信息与限时下载地址。
@@ -175,12 +175,11 @@ async def embed_watermark(
     所有表单字段都以字符串接收、由服务层统一解析和夹紧，好处是前端传空值或非法值
     不会在 FastAPI 校验阶段直接 422，而是回落到各自的安全默认值。
 
-    归属判定：``current_user`` 为 ``None``（匿名调用）时传 ``owner_user_id=None``，
-    服务层会把记录挂到管理员名下，保证任何一次嵌入都有明确责任人。
+    归属使用当前登录用户 ID，匿名请求在进入服务层前即被拒绝。
     """
     result = await service.embed(
         file=file,
-        owner_user_id=None if current_user is None else current_user.id,
+        owner_user_id=current_user.id,
         user_id=user_id,
         mode=mode,
         copyright_enabled=copyright_enabled,
@@ -205,6 +204,7 @@ async def embed_watermark(
 async def extract_watermark(
     request: Request,
     file: UploadFile = File(...),
+    _current_user: AuthenticatedUser = Depends(get_current_user),
     service: WatermarkService = Depends(get_watermark_service),
 ) -> dict[str, Any]:
     """提取水印：上传一张可疑图片，反查它属于哪条溯源记录。
@@ -219,6 +219,7 @@ async def extract_watermark(
 def extract_watermark_url(
     request: Request,
     url: str = Form(...),
+    _current_user: AuthenticatedUser = Depends(get_current_user),
     service: WatermarkService = Depends(get_watermark_service),
 ) -> dict[str, Any]:
     """按 URL 提取水印：由服务端下载图片后走与上传提取相同的检测流水线。

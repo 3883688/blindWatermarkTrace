@@ -10,13 +10,17 @@ from typing import Any
 from fastapi import APIRouter, Depends
 
 from trace_app.auth.service import AuthService
-from trace_app.dependencies import get_auth_service
+from trace_app.auth.schemas import AuthenticatedUser
+from trace_app.dependencies import get_auth_service, require_admin
 
 router = APIRouter(prefix="/api", tags=["users"])
 
 
 @router.get("/roles")
-def get_roles(service: AuthService = Depends(get_auth_service)) -> dict[str, Any]:
+def get_roles(
+    _admin: AuthenticatedUser = Depends(require_admin),
+    service: AuthService = Depends(get_auth_service),
+) -> dict[str, Any]:
     """列出全部角色及其菜单授权。"""
     return service.list_roles()
 
@@ -25,6 +29,7 @@ def get_roles(service: AuthService = Depends(get_auth_service)) -> dict[str, Any
 def update_role(
     role_key: str,
     payload: dict[str, Any],
+    _admin: AuthenticatedUser = Depends(require_admin),
     service: AuthService = Depends(get_auth_service),
 ) -> dict[str, Any]:
     """更新某个角色的菜单授权。
@@ -36,7 +41,10 @@ def update_role(
 
 
 @router.get("/users")
-def get_users(service: AuthService = Depends(get_auth_service)) -> dict[str, Any]:
+def get_users(
+    _admin: AuthenticatedUser = Depends(require_admin),
+    service: AuthService = Depends(get_auth_service),
+) -> dict[str, Any]:
     """列出全部用户（服务层已剔除密码哈希等敏感列）。"""
     return service.list_users()
 
@@ -44,6 +52,7 @@ def get_users(service: AuthService = Depends(get_auth_service)) -> dict[str, Any
 @router.post("/users")
 def create_user(
     payload: dict[str, Any],
+    _admin: AuthenticatedUser = Depends(require_admin),
     service: AuthService = Depends(get_auth_service),
 ) -> dict[str, Any]:
     """新建用户；未指定角色时服务层落到默认角色。"""
@@ -54,6 +63,7 @@ def create_user(
 def update_user(
     username: str,
     payload: dict[str, Any],
+    _admin: AuthenticatedUser = Depends(require_admin),
     service: AuthService = Depends(get_auth_service),
 ) -> dict[str, Any]:
     """按用户名更新用户资料；``payload`` 中不含的字段保持原值。"""
@@ -63,6 +73,7 @@ def update_user(
 @router.delete("/users/{username}")
 def delete_user(
     username: str,
+    _admin: AuthenticatedUser = Depends(require_admin),
     service: AuthService = Depends(get_auth_service),
 ) -> dict[str, Any]:
     """按用户名删除用户；用户不存在时服务层抛 404。"""

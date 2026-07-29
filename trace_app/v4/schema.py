@@ -272,7 +272,12 @@ class V4Tables:
             "auth_sessions",
             metadata,
             Column("token_hash", LargeBinary(32), primary_key=True),
-            Column("user_id", Integer, ForeignKey("users.id"), nullable=False),
+            Column(
+                "user_id",
+                Integer,
+                ForeignKey("users.id", ondelete="CASCADE"),
+                nullable=False,
+            ),
             Column("created_at", DateTime(timezone=True), nullable=False),
             Column("idle_expires_at", DateTime(timezone=True), nullable=False),
             Column("absolute_expires_at", DateTime(timezone=True), nullable=False),
