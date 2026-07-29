@@ -17,27 +17,30 @@
 from .config import V4Config
 from .dct import TileScores, embed_codeword, extract_image_tiles
 from .payload import (
+    AuthContext,
     CandidateDecode,
     authentication_tag,
     bytes_to_bits,
-    candidate_match_probability,
+    canonical_auth_message,
     decode_candidate_codeword,
     encode_codeword,
     inverse_permutation,
     phase_for_tile,
     phase_permutation,
     permute_codeword_bits,
+    verify_authentication_tag,
 )
 from .sync import SyncEstimate, detect_pilot, embed_pilot
 
 __all__ = (
+    "AuthContext",
     "CandidateDecode",
     "TileScores",
     "SyncEstimate",
     "V4Config",
     "authentication_tag",
     "bytes_to_bits",
-    "candidate_match_probability",
+    "canonical_auth_message",
     "decode_candidate_codeword",
     "detect_pilot",
     "encode_codeword",
@@ -48,4 +51,5 @@ __all__ = (
     "phase_for_tile",
     "phase_permutation",
     "permute_codeword_bits",
+    "verify_authentication_tag",
 )
