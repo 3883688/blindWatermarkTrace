@@ -553,7 +553,7 @@ git commit -m "feat: generate source grouped hardened v4 records"
 
 - [ ] **Step 1: Write failing pipeline tests**
 
-Test exact MD5+SHA-256 lookup before decode; owner-scoped vector recall; max 40 groups; geometry before watermark extraction; one warp/observation per confirmed group; blind RS tag decode; indexed `(group, tag)` lookup; constant-time source-bound HMAC verification; unique success, zero-match `not_found`, multi-match `ambiguous` with no record, timeout/resource/service distinctions, and order/cache/recent-state invariance. Seed 100,000 versions in one group and verify the correct oldest/middle/newest record without per-version image processing, including the previously failing correct-version-ranked-fourth case.
+Test exact MD5+SHA-256 lookup before decode; owner-scoped vector recall; max 40 groups; geometry before watermark extraction; one warp/observation per confirmed group; blind RS tag decode; indexed `(group, tag)` lookup; constant-time source-bound HMAC verification; unique success, zero-match `not_found`, multi-match `ambiguous` with no record, timeout/resource/service distinctions, and order/cache/recent-state invariance. Seed 1,000 versions in one group and verify the correct oldest/middle/newest and fixed random records without per-version image processing, including the previously failing correct-version-ranked-fourth case. The 100,000-version PostgreSQL capacity run is deferred to a separate release benchmark.
 
 - [ ] **Step 2: Verify failure**
 
@@ -578,7 +578,7 @@ git add trace_app/v4/detection.py tests/v4/test_detection_pipeline.py tests/v4/t
 git commit -m "feat: authenticate v4 records through source groups"
 ```
 
-**Checkpoint 4 gate:** generation is atomic; source features are reused; the fourth/100,000th same-source version is found; candidate order and cache state do not change outcomes; no visual-only success is possible.
+**Checkpoint 4 gate:** generation is atomic; source features are reused; the fourth/1,000th same-source version is found; candidate order and cache state do not change outcomes; no visual-only success is possible. This checkpoint does not claim that the deferred 100,000-version PostgreSQL capacity benchmark has passed.
 
 ## Checkpoint 5: API, Jobs, Management, And Observability
 
