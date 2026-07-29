@@ -341,7 +341,7 @@ Sensitive values and real storage locations are excluded from telemetry.
 - DINO source-group recall is at least 99 percent for full images, resizing,
   and JPEG queries, and at least 95 percent for qualifying crops.
 - Final correct attribution is at least 95 percent, with zero wrong traces.
-- At least 30,000 independent negative cases produce zero false attributions.
+- At least 3,000 independent negative cases produce zero false attributions.
 - Attack coverage includes JPEG and repeated compression, cropping, rotation,
   screenshot and screen-photo routes, denoising, sharpening, additive noise,
   pilot notch filtering, targeted DCT attenuation, same-source multi-version

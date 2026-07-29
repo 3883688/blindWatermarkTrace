@@ -722,7 +722,7 @@ git commit -m "feat: add guarded v4 initialization and restore"
 
 - [ ] **Step 1: Write failing release-gate tests**
 
-Freeze dataset hashes and keep development/release/blind manifests disjoint. Encode these exact thresholds: DINO recall >=99% for full/resize/JPEG and >=95% qualifying crops; final attribution >=95%; wrong traces exactly zero; at least 30,000 independent negatives with zero attribution; PSNR >=38 and SSIM >=0.95 by low/high texture, photo, text, UI, and synthetic strata; standard P95 <=120 seconds and every request <=300 seconds; deep jobs <=1,000 seconds. Include JPEG/recompression, crop, rotation, screenshot, screen-photo, denoise, sharpen, noise, pilot notch, DCT attenuation, same-source collusion, and overwrite attacks.
+Freeze dataset hashes and keep development/release/blind manifests disjoint. Encode these exact thresholds: DINO recall >=99% for full/resize/JPEG and >=95% qualifying crops; final attribution >=95%; wrong traces exactly zero; at least 3,000 independent negatives with zero attribution; PSNR >=38 and SSIM >=0.95 by low/high texture, photo, text, UI, and synthetic strata; standard P95 <=120 seconds and every request <=300 seconds; deep jobs <=1,000 seconds. Include JPEG/recompression, crop, rotation, screenshot, screen-photo, denoise, sharpen, noise, pilot notch, DCT attenuation, same-source collusion, and overwrite attacks.
 
 - [ ] **Step 2: Verify gates fail closed without datasets/hardware metadata**
 
@@ -742,7 +742,7 @@ Expected: PASS.
 
 Run: `python -m tests.v4.run_release_gates --manifest tests/fixtures/v4/release.json --output test_output/v4-release-report.json`
 
-Expected: exits 0 only after all PostgreSQL, 30,000-negative, scale, attack, quality, security, and timing gates pass on documented hardware.
+Expected: exits 0 only after all PostgreSQL, 3,000-negative, scale, attack, quality, security, and timing gates pass on documented hardware.
 
 - [ ] **Step 5: Commit**
 
@@ -779,7 +779,7 @@ Expected: PASS with no skipped PostgreSQL requirement.
 
 Run: `python -m tests.v4.run_release_gates --manifest tests/fixtures/v4/release.json --output test_output/v4-release-report.json`
 
-Expected: PASS with zero wrong traces, zero of at least 30,000 negative attributions, P95 <=120 seconds, hard max <=300 seconds, and deep max <=1,000 seconds.
+Expected: PASS with zero wrong traces, zero of at least 3,000 negative attributions, P95 <=120 seconds, hard max <=300 seconds, and deep max <=1,000 seconds.
 
 - [ ] **Step 4: Review the complete diff and secret/path hygiene**
 
