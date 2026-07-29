@@ -757,13 +757,13 @@ git commit -m "test: enforce hardened v4 release gates"
 
 ## Final Integration Verification
 
-- [ ] **Step 1: Prove the V4 runtime has no legacy scan or fallback dependency**
+- [x] **Step 1: Prove the V4 runtime has no legacy scan or fallback dependency**
 
 Run: `rg -n "read_records\(|detect_by_visual_match|detect_by_residual_match|detect_robust_watermark|legacy" trace_app/v4 trace_app/api/v4.py`
 
 Expected: no matches except an explicit negative assertion in comments/tests; remove any runtime match before proceeding.
 
-- [ ] **Step 2: Run all backend and frontend regression tests**
+- [x] **Step 2: Run all backend and frontend regression tests**
 
 Run: `pytest -q`
 
@@ -783,7 +783,7 @@ Run: `python -m tests.v4.run_release_gates --manifest tests/fixtures/v4/release.
 
 Expected: PASS with zero wrong traces, zero of at least 3,000 negative attributions, P95 <=120 seconds, hard max <=300 seconds, and deep max <=1,000 seconds.
 
-- [ ] **Step 4: Review the complete diff and secret/path hygiene**
+- [x] **Step 4: Review the complete diff and secret/path hygiene**
 
 Run: `git diff --check`
 

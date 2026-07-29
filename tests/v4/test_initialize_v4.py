@@ -2,11 +2,21 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
 from tools.initialize_v4 import GuardedInitializer, validate_destructive_target
 from trace_app.v4.startup import read_ready_marker
+
+
+def test_cli_can_run_directly_from_repository_root() -> None:
+    result = subprocess.run(
+        [sys.executable, "tools/initialize_v4.py", "--help"],
+        cwd=Path(__file__).resolve().parents[2], capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_destructive_targets_reject_roots_home_and_workspace(tmp_path: Path) -> None:
