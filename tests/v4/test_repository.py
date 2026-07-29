@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from trace_app.v4.domain import OwnerScope
 from trace_app.v4.repository import (
     EmbeddingInput,
+    FeatureInput,
     SourceGroupInput,
     V4RecordInput,
     V4Repository,
@@ -154,6 +155,30 @@ def test_delete_and_atomic_counter_respect_owner_scope(repository: V4Repository)
 def test_repository_has_no_legacy_full_record_api(repository: V4Repository) -> None:
     assert not hasattr(repository, "read_records")
     assert "metadata_json" not in str(repository.exact_file_statement()).lower()
+
+
+def test_geometry_features_load_only_recalled_owner_scoped_groups(
+    repository: V4Repository,
+) -> None:
+    alice = _group(repository, 7, b"a" * 32)
+    bob = _group(repository, 8, b"b" * 32)
+    for group in (alice, bob):
+        repository.put_feature(
+            group.id,
+            FeatureInput("orb", "1", "orb-v1", b"feature", b"f" * 32),
+        )
+
+    rows = repository.get_features_for_groups(OwnerScope(7), (alice.id, bob.id))
+    admin_rows = repository.get_features_for_groups(
+        OwnerScope(7, cross_owner=True), (alice.id, bob.id)
+    )
+
+    assert {(row.source_group_id, row.owner_user_id) for row in rows} == {(alice.id, 7)}
+    assert {row.source_group_id for row in admin_rows} == {alice.id, bob.id}
+    with pytest.raises(ValueError, match="40"):
+        repository.get_features_for_groups(
+            OwnerScope(7), tuple(uuid4() for _ in range(41))
+        )
 
 
 def test_audit_rows_accept_only_explicit_safe_columns(repository: V4Repository) -> None:

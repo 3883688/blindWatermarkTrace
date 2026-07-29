@@ -110,6 +110,19 @@ class RecalledGroup:
 
 
 @dataclass(frozen=True, slots=True)
+class StoredFeature:
+    source_group_id: UUID
+    owner_user_id: int
+    image_width: int
+    image_height: int
+    feature_kind: str
+    schema_version: str
+    model_version: str
+    feature_bytes: bytes
+    feature_sha256: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class MediaObjectInput:
     id: str
     owner_user_id: int
@@ -241,6 +254,43 @@ class V4Repository:
                     return
                 statement = insert(table).values(**values)
             connection.execute(statement)
+
+    def get_features_for_groups(
+        self,
+        scope: OwnerScope,
+        source_group_ids: Sequence[UUID],
+    ) -> tuple[StoredFeature, ...]:
+        group_ids = tuple(dict.fromkeys(source_group_ids))
+        if len(group_ids) > 40:
+            raise ValueError("at most 40 recalled source groups may load features")
+        if not group_ids:
+            return ()
+        features = self.tables.source_group_features
+        groups = self.tables.source_groups
+        conditions = [groups.c.id.in_(group_ids), groups.c.status == "active"]
+        if scope.query_owner_id is not None:
+            conditions.append(groups.c.owner_user_id == scope.query_owner_id)
+        statement = (
+            select(
+                features.c.source_group_id,
+                groups.c.owner_user_id,
+                groups.c.image_width,
+                groups.c.image_height,
+                features.c.feature_kind,
+                features.c.schema_version,
+                features.c.model_version,
+                features.c.feature_bytes,
+                features.c.feature_sha256,
+            )
+            .select_from(
+                features.join(groups, features.c.source_group_id == groups.c.id)
+            )
+            .where(*conditions)
+            .order_by(features.c.source_group_id, features.c.feature_kind)
+        )
+        with self.engine.connect() as connection:
+            rows = connection.execute(statement).mappings()
+            return tuple(StoredFeature(**dict(row)) for row in rows)
 
     def insert_record(self, value: V4RecordInput) -> StoredV4Record:
         values = asdict(value)
@@ -491,6 +541,7 @@ __all__ = (
     "SourceGroupInput",
     "StoredSourceGroup",
     "StoredMediaObject",
+    "StoredFeature",
     "StoredV4Record",
     "V4RecordInput",
     "V4Repository",
