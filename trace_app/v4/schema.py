@@ -331,6 +331,8 @@ class V4Tables:
             metadata,
             Column("id", Uuid, primary_key=True),
             Column("owner_user_id", Integer, ForeignKey("users.id"), nullable=False),
+            Column("requested_owner_user_id", Integer, ForeignKey("users.id")),
+            Column("input_media_id", String(64), ForeignKey("media_objects.id"), nullable=False),
             Column("status", String(24), nullable=False),
             Column("progress", Integer, nullable=False),
             Column("lease_owner", String(128)),

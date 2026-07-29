@@ -25,6 +25,7 @@ from trace_app.management.service import ManagementService
 from trace_app.media import derive_media_signing_key
 from trace_app.runtime import dispose_engine, dispose_runtime
 from trace_app.v4.media import V4MediaService
+from trace_app.v4.jobs import DeepJobStore
 from trace_app.v4.repository import V4Repository
 from trace_app.v4.security import DatabaseSessionStore, LoginRateLimiter
 
@@ -90,6 +91,7 @@ def create_app(
     v4_capabilities_factory: ServiceFactory | None = None,
     v4_media_service_factory: ServiceFactory | None = None,
     v4_remote_fetch_factory: ServiceFactory | None = None,
+    v4_job_service_factory: ServiceFactory | None = None,
 ) -> FastAPI:
     ensure_directories(settings)
     enabled = not running_pytest() if initialize_database is None else initialize_database
@@ -118,6 +120,7 @@ def create_app(
     app.state.v4_generation_service = None
     app.state.v4_detection_service = None
     app.state.v4_record_repository = None
+    app.state.v4_job_service = None
     if runtime.engine is not None:
         v4_media_key = hmac.new(
             app.state.media_signing_key,
@@ -125,6 +128,7 @@ def create_app(
             hashlib.sha256,
         ).digest()
         app.state.v4_record_repository = V4Repository(runtime.engine)
+        app.state.v4_job_service = DeepJobStore(runtime.engine)
         app.state.v4_media_service = V4MediaService(
             app.state.v4_record_repository,
             storage_root=settings.upload_dir,
@@ -161,6 +165,7 @@ def create_app(
         ("v4_capabilities", v4_capabilities_factory),
         ("v4_media_service", v4_media_service_factory),
         ("v4_remote_fetch", v4_remote_fetch_factory),
+        ("v4_job_service", v4_job_service_factory),
     ):
         if factory is not None:
             setattr(app.state, f"{name}_factory", factory)

@@ -635,27 +635,27 @@ git commit -m "feat: expose authenticated v4 only api"
 - Test: `tests/v4/test_deep_jobs.py`
 - Test: `tests/v4/test_telemetry.py`
 
-- [ ] **Step 1: Write failing job and telemetry tests**
+- [x] **Step 1: Write failing job and telemetry tests**
 
 Test explicit asynchronous creation, owner-scoped status, progress, cancellation, lease recovery, absolute 1,000-second termination, and no synchronous work continuing after 300 seconds. Capture telemetry and require timings/counts for every design stage and a final typed outcome. Assert tokens, keys, auth tags, image bytes, absolute paths, internal hosts, and buckets never occur in logs/audit.
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `pytest tests/v4/test_deep_jobs.py tests/v4/test_telemetry.py -q`
 
 Expected: FAIL because jobs and redacted structured events do not exist.
 
-- [ ] **Step 3: Implement durable jobs and allowlisted events**
+- [x] **Step 3: Implement durable jobs and allowlisted events**
 
 Persist queued/running/completed/failed/cancelled states, progress 0..100, lease owner/expiry, requested owner scope, and result media/evidence IDs. Workers claim with `FOR UPDATE SKIP LOCKED`, renew leases, check cancellation and the fixed absolute deadline, and terminate descendants. Telemetry serializes only an explicit field allowlist; audit records actor/action/target/outcome/correlation/time without request secrets.
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pytest tests/v4/test_deep_jobs.py tests/v4/test_telemetry.py -q`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add trace_app/v4/jobs.py trace_app/v4/telemetry.py trace_app/api/v4.py tests/v4/test_deep_jobs.py tests/v4/test_telemetry.py

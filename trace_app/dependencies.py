@@ -81,6 +81,10 @@ def get_v4_record_repository(request: Request) -> Any:
     return _required_v4_service(request, "v4_record_repository")
 
 
+def get_v4_job_service(request: Request) -> Any:
+    return _required_v4_service(request, "v4_job_service")
+
+
 def get_optional_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_auth),
     service: AuthService = Depends(get_auth_service),

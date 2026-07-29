@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -14,6 +15,7 @@ from trace_app.dependencies import (
     get_current_user,
     get_v4_detection_service,
     get_v4_generation_service,
+    get_v4_job_service,
     get_v4_media_service,
     get_v4_record_repository,
 )
@@ -201,3 +203,59 @@ def delete_record(
     if not deleted:
         raise HTTPException(status_code=404, detail="V4 记录不存在")
     return {"deleted": True}
+
+
+def _job_payload(job: Any) -> dict[str, Any]:
+    payload = {
+        "id": str(job.id),
+        "status": job.status,
+        "progress": int(job.progress),
+        "deadline_at": job.deadline_at.isoformat(),
+    }
+    if job.result is not None:
+        payload["result"] = {
+            key: value
+            for key, value in job.result.items()
+            if key in {"outcome", "result_media_id", "evidence_id"}
+        }
+    return payload
+
+
+@router.post("/jobs", status_code=202)
+def create_deep_job(
+    media_id: str = Form(...),
+    cross_owner: bool = Form(False),
+    user: AuthenticatedUser = Depends(get_current_user),
+    jobs: Any = Depends(get_v4_job_service),
+    media_service: Any = Depends(get_v4_media_service),
+) -> dict[str, Any]:
+    scope = _scope(user, cross_owner)
+    media = media_service.get_media_or_404(media_id)
+    if scope.query_owner_id is not None and media.owner_user_id != scope.query_owner_id:
+        raise HTTPException(status_code=404, detail="媒体不存在")
+    return _job_payload(jobs.create(user.id, scope, media.id))
+
+
+@router.get("/jobs/{job_id}")
+def get_deep_job(
+    job_id: UUID,
+    cross_owner: bool = Query(False),
+    user: AuthenticatedUser = Depends(get_current_user),
+    jobs: Any = Depends(get_v4_job_service),
+) -> dict[str, Any]:
+    job = jobs.get(_scope(user, cross_owner), job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return _job_payload(job)
+
+
+@router.delete("/jobs/{job_id}")
+def cancel_deep_job(
+    job_id: UUID,
+    cross_owner: bool = Query(False),
+    user: AuthenticatedUser = Depends(get_current_user),
+    jobs: Any = Depends(get_v4_job_service),
+) -> dict[str, bool]:
+    if not jobs.cancel(_scope(user, cross_owner), job_id, now=datetime.now(UTC)):
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return {"cancelled": True}
