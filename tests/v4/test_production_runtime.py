@@ -110,3 +110,11 @@ def test_production_services_wire_v4_generation_and_detection_only() -> None:
 
     assert isinstance(services.generation, V4GenerationService)
     assert isinstance(services.detection, V4DetectionService)
+
+
+def test_runtime_requirements_exclude_legacy_and_test_dependencies() -> None:
+    requirements = (__import__("pathlib").Path(__file__).resolve().parents[2] / "requirements.txt").read_text(
+        encoding="utf-8"
+    ).lower()
+    for forbidden in ("torch", "nvidia", "pytest", "httpx", "pymysql", "pywavelets"):
+        assert forbidden not in requirements

@@ -6,12 +6,8 @@ python-multipart
 pillow
 python-dotenv
 sqlalchemy
-pymysql
 psycopg[binary]
-pytest
-httpx
 opencv-python-headless==4.13.0.92
-PyWavelets
 reedsolo==1.7.0
 pgvector==0.5.0
 onnxruntime==1.27.0
