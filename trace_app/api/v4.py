@@ -185,7 +185,7 @@ def capabilities(
     _user: AuthenticatedUser = Depends(get_current_user),
 ) -> dict[str, Any]:
     factory = getattr(request.app.state, "v4_capabilities_factory", None)
-    state = {} if factory is None else factory()
+    state = getattr(request.app.state, "v4_capabilities", {}) if factory is None else factory()
     return {
         "codec": CODEC_ID,
         "dinov2": state.get("dinov2") is True,

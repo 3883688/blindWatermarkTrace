@@ -155,6 +155,25 @@ def test_delete_and_atomic_counter_respect_owner_scope(repository: V4Repository)
     assert repository.increment_counter(7, "generation", 3) == 5
 
 
+def test_group_lookup_and_dashboard_stats_are_owner_scoped(repository: V4Repository) -> None:
+    alice_group = _group(repository, 7, b"a" * 32)
+    bob_group = _group(repository, 8, b"b" * 32)
+    repository.insert_record(_record(alice_group.id, 7, "TR-A", b"12345678"))
+    repository.insert_record(_record(bob_group.id, 8, "TR-B", b"87654321"))
+    repository.increment_counter(7, "detection_total", 2)
+    repository.increment_counter(7, "detection_success", 1)
+
+    assert repository.get_source_group(OwnerScope(7), alice_group.id) == alice_group
+    assert repository.get_source_group(OwnerScope(8), alice_group.id) is None
+    assert repository.dashboard_stats(OwnerScope(7)) == {
+        "total": 1,
+        "today": 1,
+        "detected": 2,
+        "success_rate": 50.0,
+    }
+    assert repository.dashboard_stats(OwnerScope(7, cross_owner=True))["total"] == 2
+
+
 def test_repository_has_no_legacy_full_record_api(repository: V4Repository) -> None:
     assert not hasattr(repository, "read_records")
     assert "metadata_json" not in str(repository.exact_file_statement()).lower()

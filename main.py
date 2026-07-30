@@ -1,3 +1,7 @@
-import sys as _sys
-from trace_app import compat as _compat
-_sys.modules[__name__] = _compat
+from trace_app.application import create_app
+
+
+app = create_app()
+
+
+__all__ = ("app",)

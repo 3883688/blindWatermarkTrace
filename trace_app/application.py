@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from trace_app.api import auth, media, users, v4
+from trace_app.api import auth, compat_v4, media, users, v4
 from trace_app.auth.service import AuthService
 from trace_app.config import (
     DEFAULT_WATERMARK_AUTH_KEY,
@@ -26,6 +26,9 @@ from trace_app.media import derive_media_signing_key
 from trace_app.runtime import dispose_engine, dispose_runtime
 from trace_app.v4.media import V4MediaService
 from trace_app.v4.jobs import DeepJobStore
+from trace_app.v4.keys import KeyRing
+from trace_app.v4.onnx_models import DinoOnnxModels, LightGlueOnnxMatcher
+from trace_app.v4.production import create_production_services
 from trace_app.v4.repository import V4Repository
 from trace_app.v4.security import DatabaseSessionStore, LoginRateLimiter
 
@@ -121,6 +124,7 @@ def create_app(
     app.state.v4_detection_service = None
     app.state.v4_record_repository = None
     app.state.v4_job_service = None
+    app.state.v4_capabilities = {"dinov2": False, "lightglue": False}
     if runtime.engine is not None:
         v4_media_key = hmac.new(
             app.state.media_signing_key,
@@ -136,6 +140,30 @@ def create_app(
             public_base_url=settings.media_public_base_url,
             default_ttl_seconds=app.state.media_url_ttl_seconds,
         )
+        model_root = settings.v4_model_manifest_path.parent
+        model_paths = (
+            model_root / "dinov2-small.onnx",
+            model_root / "superpoint_lightglue_pipeline.onnx",
+        )
+        if settings.environment == "production" or all(path.is_file() for path in model_paths):
+            if not DEFAULT_WATERMARK_AUTH_KEY:
+                raise RuntimeError("WATERMARK_AUTH_KEY is required for V4 production")
+            secret = hashlib.sha256(DEFAULT_WATERMARK_AUTH_KEY.encode("utf-8")).digest()
+            key_id = "v4-" + hashlib.sha256(secret).hexdigest()[:16]
+            dino_models = DinoOnnxModels(model_paths[0])
+            lightglue = LightGlueOnnxMatcher(
+                model_paths[1]
+            )
+            services = create_production_services(
+                repository=app.state.v4_record_repository,
+                media=app.state.v4_media_service,
+                key_ring=KeyRing({key_id: secret}, key_id),
+                dino_models=dino_models,
+                lightglue_matcher=lightglue,
+            )
+            app.state.v4_generation_service = services.generation
+            app.state.v4_detection_service = services.detection
+            app.state.v4_capabilities = {"dinov2": True, "lightglue": True}
     session_store = (
         None if runtime.engine is None else DatabaseSessionStore(runtime.engine)
     )
@@ -170,6 +198,6 @@ def create_app(
         if factory is not None:
             setattr(app.state, f"{name}_factory", factory)
     register_static_routes(app, settings)
-    for api_router in (auth.router, users.router, media.router, v4.router):
+    for api_router in (auth.router, users.router, media.router, v4.router, compat_v4.router):
         app.include_router(api_router)
     return app

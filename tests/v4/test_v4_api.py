@@ -202,7 +202,7 @@ def test_record_deletion_requires_login_and_owner_scope(context) -> None:
     assert records.scope.query_owner_id == 7
 
 
-def test_runtime_does_not_register_legacy_product_or_upload_routes(context) -> None:
+def test_runtime_registers_original_v4_contract_without_legacy_upload_routes(context) -> None:
     app, *_ = context
     paths = set(app.openapi()["paths"])
     assert "/api/v4/generate" in paths
@@ -210,6 +210,9 @@ def test_runtime_does_not_register_legacy_product_or_upload_routes(context) -> N
         "/api/watermark/embed",
         "/api/watermark/extract",
         "/api/watermark/extract-url",
+    ):
+        assert path in paths
+    for path in (
         "/uploads/{media_path:path}",
         "/api/dev/reset",
     ):

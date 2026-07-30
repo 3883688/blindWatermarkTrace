@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any, Mapping, Sequence
 from uuid import UUID, uuid4
 
-from sqlalchemy import Select, and_, delete, insert, or_, select, text, update
+from sqlalchemy import Select, and_, delete, func, insert, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Engine
@@ -198,6 +198,17 @@ class V4Repository:
                     table.c.status == "active",
                 )
             ).mappings().first()
+        return None if row is None else self._source_group(row)
+
+    def get_source_group(
+        self, scope: OwnerScope, source_group_id: UUID
+    ) -> StoredSourceGroup | None:
+        table = self.tables.source_groups
+        conditions = [table.c.id == source_group_id, table.c.status == "active"]
+        if scope.query_owner_id is not None:
+            conditions.append(table.c.owner_user_id == scope.query_owner_id)
+        with self.engine.connect() as connection:
+            row = connection.execute(select(table).where(*conditions)).mappings().first()
         return None if row is None else self._source_group(row)
 
     def auth_tag_exists(self, source_group_id: UUID, tag: bytes) -> bool:
@@ -566,6 +577,43 @@ class V4Repository:
                 )
                 return result
             return int(connection.execute(statement).scalar_one())
+
+    def dashboard_stats(self, scope: OwnerScope) -> dict[str, int | float]:
+        records = self.tables.v4_records
+        counters = self.tables.v4_counters
+        record_conditions = [records.c.status != "deleted"]
+        counter_conditions = []
+        if scope.query_owner_id is not None:
+            record_conditions.append(records.c.owner_user_id == scope.query_owner_id)
+            counter_conditions.append(counters.c.owner_user_id == scope.query_owner_id)
+        with self.engine.connect() as connection:
+            total = int(
+                connection.execute(
+                    select(func.count()).select_from(records).where(*record_conditions)
+                ).scalar_one()
+            )
+            today = int(
+                connection.execute(
+                    select(func.count()).select_from(records).where(
+                        *record_conditions,
+                        func.date(records.c.created_at) == func.current_date(),
+                    )
+                ).scalar_one()
+            )
+            rows = connection.execute(
+                select(counters.c.counter_key, func.sum(counters.c.counter_value))
+                .where(*counter_conditions)
+                .group_by(counters.c.counter_key)
+            ).all()
+        values = {str(key): int(value) for key, value in rows}
+        detected = values.get("detection_total", 0)
+        succeeded = values.get("detection_success", 0)
+        return {
+            "total": total,
+            "today": today,
+            "detected": detected,
+            "success_rate": round(100.0 * succeeded / detected, 2) if detected else 0.0,
+        }
 
     def append_audit(
         self,
