@@ -68,7 +68,7 @@ def _record(group_id, owner: int, trace_id: str, tag: bytes) -> V4RecordInput:
         output_media_id=None,
         thumbnail_media_id=None,
         evidence_uuid=uuid4(),
-        metadata_json={"display": "allowed"},
+        original_filename="allowed.png",
     )
 
 

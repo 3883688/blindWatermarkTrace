@@ -35,7 +35,8 @@ def test_v4_schema_defines_all_relational_tables_and_constraints() -> None:
         item.name for item in tables.v4_records.constraints
     }
     assert tables.v4_records.c.auth_tag.type.length == 8
-    assert tables.v4_records.c.metadata_json.type.__class__.__name__ == "JSON"
+    assert "metadata_json" not in tables.v4_records.c
+    assert tables.v4_records.c.original_filename.type.length == 512
     check_names = {
         constraint.name
         for table in tables.metadata.tables.values()

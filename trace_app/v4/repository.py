@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from array import array
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
-from types import MappingProxyType
 from typing import Any, Mapping, Sequence
 from uuid import UUID, uuid4
 
@@ -84,7 +83,7 @@ class V4RecordInput:
     output_media_id: str | None
     thumbnail_media_id: str | None
     evidence_uuid: UUID
-    metadata_json: Mapping[str, Any] = field(default_factory=dict)
+    original_filename: str = "image"
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +105,7 @@ class StoredV4Record:
     thumbnail_media_id: str | None
     evidence_uuid: UUID
     status: str
-    metadata_json: Mapping[str, Any] = field(default_factory=dict)
+    original_filename: str = "image"
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,7 +275,6 @@ class V4Repository:
                 )
                 record_input = replace(unit.record, source_group_id=group.id)
                 record_values = asdict(record_input)
-                record_values["metadata_json"] = dict(record_input.metadata_json)
                 record_values["status"] = "active"
                 connection.execute(insert(records).values(**record_values))
                 connection.execute(
@@ -435,7 +433,6 @@ class V4Repository:
 
     def insert_record(self, value: V4RecordInput) -> StoredV4Record:
         values = asdict(value)
-        values["metadata_json"] = dict(value.metadata_json)
         values["status"] = "active"
         with self.engine.begin() as connection:
             connection.execute(insert(self.tables.v4_records).values(**values))
@@ -652,7 +649,7 @@ class V4Repository:
 
     def _record_columns(self):
         table = self.tables.v4_records
-        return tuple(column for column in table.c if column.name != "metadata_json")
+        return tuple(table.c)
 
     @staticmethod
     def _source_group(row: Mapping[str, Any]) -> StoredSourceGroup:
@@ -670,7 +667,6 @@ class V4Repository:
             for key in StoredV4Record.__dataclass_fields__
             if key in row
         }
-        values["metadata_json"] = MappingProxyType(dict(values.get("metadata_json", {})))
         return StoredV4Record(**values)
 
 

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
-    JSON,
     BigInteger,
     CheckConstraint,
     Column,
@@ -24,7 +23,6 @@ from sqlalchemy import (
     Uuid,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine
 from sqlalchemy.types import TypeDecorator
 
@@ -198,7 +196,6 @@ class V4Tables:
             ),
         )
 
-        json_type = JSON().with_variant(JSONB(), "postgresql")
         v4_records = Table(
             "v4_records",
             metadata,
@@ -222,8 +219,8 @@ class V4Tables:
             Column("output_media_id", String(64), ForeignKey("media_objects.id")),
             Column("thumbnail_media_id", String(64), ForeignKey("media_objects.id")),
             Column("evidence_uuid", Uuid, nullable=False),
+            Column("original_filename", String(512), nullable=False),
             Column("status", String(24), nullable=False),
-            Column("metadata_json", json_type, nullable=False, default=dict),
             *_timestamps(),
             ForeignKeyConstraint(
                 ["source_group_id", "owner_user_id"],
@@ -338,7 +335,11 @@ class V4Tables:
             Column("lease_owner", String(128)),
             Column("lease_expires_at", DateTime(timezone=True)),
             Column("deadline_at", DateTime(timezone=True), nullable=False),
-            Column("result_json", json_type),
+            Column("result_outcome", String(32)),
+            Column("result_media_id", String(64), ForeignKey("media_objects.id")),
+            Column("result_evidence_id", Uuid),
+            Column("error_code", String(64)),
+            Column("error_detail", String(512)),
             *_timestamps(),
             CheckConstraint("progress BETWEEN 0 AND 100", name="ck_deep_job_progress"),
             CheckConstraint(

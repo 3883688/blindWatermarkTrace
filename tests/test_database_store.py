@@ -17,6 +17,7 @@ def store() -> DatabaseStore:
 def test_schema_uses_dedicated_unprefixed_tables(store: DatabaseStore) -> None:
     assert set(inspect(store.engine).get_table_names()) == {
         "image_records",
+        "role_menus",
         "roles",
         "stats",
         "users",
@@ -144,6 +145,8 @@ def test_roles_records_and_stats_round_trip(store: DatabaseStore) -> None:
     }
     with store.engine.connect() as connection:
         menus = connection.execute(
-            select(store.roles.c.menus).where(store.roles.c.role_key == "admin")
-        ).scalar_one()
-    assert json.loads(menus) == ["watermark", "trace", "role"]
+            select(store.role_menus.c.menu_key)
+            .where(store.role_menus.c.role_key == "admin")
+            .order_by(store.role_menus.c.position_index)
+        ).scalars().all()
+    assert menus == ["watermark", "trace", "role"]

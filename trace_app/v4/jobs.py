@@ -51,7 +51,11 @@ class DeepJobStore:
             "lease_owner": None,
             "lease_expires_at": None,
             "deadline_at": created + timedelta(seconds=1000),
-            "result_json": None,
+            "result_outcome": None,
+            "result_media_id": None,
+            "result_evidence_id": None,
+            "error_code": None,
+            "error_detail": None,
             "created_at": created,
             "updated_at": created,
         }
@@ -150,12 +154,12 @@ class DeepJobStore:
     ) -> bool:
         table = self.tables.deep_forensics_jobs
         final_status = "completed" if outcome == "success" else "failed"
-        safe_result = {
-            key: value
-            for key, value in result.items()
-            if key in {"outcome", "result_media_id", "evidence_id"}
-            and isinstance(value, (str, int, float, bool, type(None)))
-        }
+        result_media_id = result.get("result_media_id")
+        evidence_id = result.get("evidence_id")
+        try:
+            normalized_evidence_id = None if evidence_id is None else UUID(str(evidence_id))
+        except ValueError:
+            normalized_evidence_id = None
         with self.engine.begin() as connection:
             changed = connection.execute(
                 update(table)
@@ -165,7 +169,13 @@ class DeepJobStore:
                     progress=100,
                     lease_owner=None,
                     lease_expires_at=None,
-                    result_json=safe_result,
+                    result_outcome=outcome,
+                    result_media_id=(
+                        str(result_media_id)[:64] if result_media_id is not None else None
+                    ),
+                    result_evidence_id=normalized_evidence_id,
+                    error_code=None if final_status == "completed" else outcome[:64],
+                    error_detail=None,
                     updated_at=now,
                 )
             )
@@ -179,6 +189,13 @@ class DeepJobStore:
             lease_expires_at = lease_expires_at.replace(tzinfo=UTC)
         if deadline_at.tzinfo is None:
             deadline_at = deadline_at.replace(tzinfo=UTC)
+        result = None
+        if row.get("result_outcome") is not None:
+            result = {"outcome": row["result_outcome"]}
+            if row.get("result_media_id") is not None:
+                result["result_media_id"] = row["result_media_id"]
+            if row.get("result_evidence_id") is not None:
+                result["evidence_id"] = str(row["result_evidence_id"])
         return DeepJob(
             id=row["id"],
             owner_user_id=row["owner_user_id"],
@@ -189,7 +206,7 @@ class DeepJobStore:
             lease_owner=row["lease_owner"],
             lease_expires_at=lease_expires_at,
             deadline_at=deadline_at,
-            result=row.get("result_json"),
+            result=result,
         )
 
 

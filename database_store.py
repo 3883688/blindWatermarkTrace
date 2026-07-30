@@ -48,7 +48,6 @@ class DatabaseStore:
             self.metadata,
             Column("role_key", String(64), primary_key=True),
             Column("label", String(128), nullable=False),
-            Column("menus", Text, nullable=False),
             Column(
                 "created_at",
                 DateTime,
@@ -62,6 +61,18 @@ class DatabaseStore:
                 server_default=func.current_timestamp(),
                 onupdate=func.current_timestamp(),
             ),
+        )
+        self.role_menus = Table(
+            "role_menus",
+            self.metadata,
+            Column(
+                "role_key",
+                String(64),
+                ForeignKey("roles.role_key", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+            Column("menu_key", String(64), primary_key=True),
+            Column("position_index", Integer, nullable=False),
         )
         self.users = Table(
             "users",
@@ -103,8 +114,19 @@ class DatabaseStore:
             ),
         )
 
-    def create_schema(self, connection: Connection | None = None) -> None:
-        self.metadata.create_all(connection or self.engine)
+    def create_schema(
+        self,
+        connection: Connection | None = None,
+        *,
+        identity_only: bool = False,
+    ) -> None:
+        bind = connection or self.engine
+        if not identity_only:
+            self.metadata.create_all(bind)
+            return
+        self.roles.create(bind, checkfirst=True)
+        self.users.create(bind, checkfirst=True)
+        self.role_menus.create(bind, checkfirst=True)
 
     @contextmanager
     def _transaction(
@@ -220,45 +242,85 @@ class DatabaseStore:
         connection: Connection | None = None,
     ) -> None:
         with self._transaction(connection) as conn:
+            conn.execute(delete(self.role_menus))
             conn.execute(delete(self.roles))
             rows = [
                 {
                     "role_key": role_key,
                     "label": str(info.get("label") or role_key),
-                    "menus": json.dumps(info.get("menus") or [], ensure_ascii=False),
                 }
                 for role_key, info in roles.items()
             ]
             if rows:
                 conn.execute(insert(self.roles), rows)
+                menu_rows = [
+                    {
+                        "role_key": role_key,
+                        "menu_key": str(menu_key),
+                        "position_index": position,
+                    }
+                    for role_key, info in roles.items()
+                    for position, menu_key in enumerate(info.get("menus") or [])
+                ]
+                if menu_rows:
+                    conn.execute(insert(self.role_menus), menu_rows)
 
     def read_roles(
         self, connection: Connection | None = None
     ) -> dict[str, dict[str, Any]]:
         with self._transaction(connection) as conn:
-            rows = conn.execute(
-                select(
-                    self.roles.c.role_key,
-                    self.roles.c.label,
-                    self.roles.c.menus,
-                ).order_by(self.roles.c.role_key)
-            ).mappings()
-            return {
-                row["role_key"]: {
-                    "label": row["label"],
-                    "menus": json.loads(row["menus"]),
-                }
-                for row in rows
+            role_rows = tuple(
+                conn.execute(
+                    select(self.roles.c.role_key, self.roles.c.label).order_by(
+                        self.roles.c.role_key
+                    )
+                ).mappings()
+            )
+            menu_rows = tuple(
+                conn.execute(
+                    select(
+                        self.role_menus.c.role_key,
+                        self.role_menus.c.menu_key,
+                    ).order_by(
+                        self.role_menus.c.role_key,
+                        self.role_menus.c.position_index,
+                    )
+                ).mappings()
+            )
+        menus: dict[str, list[str]] = {}
+        for row in menu_rows:
+            menus.setdefault(str(row["role_key"]), []).append(str(row["menu_key"]))
+        return {
+            str(row["role_key"]): {
+                "label": str(row["label"]),
+                "menus": menus.get(str(row["role_key"]), []),
             }
+            for row in role_rows
+        }
 
     def update_role_menus(self, role_key: str, menus: list[str]) -> bool:
         with self.engine.begin() as connection:
-            result = connection.execute(
-                update(self.roles)
-                .where(self.roles.c.role_key == role_key)
-                .values(menus=json.dumps(menus, ensure_ascii=False))
+            exists = connection.execute(
+                select(self.roles.c.role_key).where(self.roles.c.role_key == role_key)
+            ).first()
+            if exists is None:
+                return False
+            connection.execute(
+                delete(self.role_menus).where(self.role_menus.c.role_key == role_key)
             )
-            return bool(result.rowcount)
+            if menus:
+                connection.execute(
+                    insert(self.role_menus),
+                    [
+                        {
+                            "role_key": role_key,
+                            "menu_key": menu_key,
+                            "position_index": position,
+                        }
+                        for position, menu_key in enumerate(menus)
+                    ],
+                )
+            return True
 
     def set_stats(
         self,
@@ -422,5 +484,6 @@ class DatabaseStore:
         with self._transaction(connection) as conn:
             conn.execute(delete(self.image_records))
             conn.execute(delete(self.users))
+            conn.execute(delete(self.role_menus))
             conn.execute(delete(self.roles))
             conn.execute(delete(self.stats))

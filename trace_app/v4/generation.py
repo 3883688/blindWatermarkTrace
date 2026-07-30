@@ -29,6 +29,7 @@ class GenerationRequest:
     owner_user_id: int
     content: bytes
     content_type: str
+    original_filename: str = "image"
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -270,7 +271,7 @@ class V4GenerationService:
                     output_media_id=staged[1].media_id,
                     thumbnail_media_id=staged[2].media_id,
                     evidence_uuid=correlation_id,
-                    metadata_json=dict(request.metadata),
+                    original_filename=request.original_filename[:512] or "image",
                 )
                 unit = GenerationUnit(
                     provisional_group_id,
