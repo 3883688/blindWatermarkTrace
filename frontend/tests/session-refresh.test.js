@@ -23,7 +23,10 @@ test('reloading the current menu data after logout and login', async () => {
     token: 'old-session',
   }));
   const fetchMock = vi.fn(path => {
-    if (path === '/api/v4/records') {
+    if (path === '/api/dashboard-stats') {
+      return Promise.resolve(okJson({ today: 0, detection_success_rate: 0 }));
+    }
+    if (path === '/api/images') {
       return Promise.resolve(okJson({ items: [], stats: {} }));
     }
     if (path === '/auth/login') {
@@ -45,7 +48,7 @@ test('reloading the current menu data after logout and login', async () => {
 
   root.querySelector('[data-menu="manage"]').click();
   await vi.waitFor(() => {
-    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/v4/records')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/images')).toHaveLength(1);
   });
 
   root.querySelector('.btn-logout').click();
@@ -60,7 +63,7 @@ test('reloading the current menu data after logout and login', async () => {
   );
 
   await vi.waitFor(() => {
-    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/v4/records')).toHaveLength(2);
+    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/images')).toHaveLength(2);
   });
   expect(root.querySelector('[data-menu="manage"]').classList.contains('active')).toBe(true);
 });

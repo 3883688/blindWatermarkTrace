@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   createUser,
+  dashboardStats,
   deleteImage,
   embedWatermark,
   extractUpload,
@@ -67,7 +68,7 @@ test('authenticated 401 responses clear cached login state', async () => {
   expect(localStorage.getItem('currentUser')).toBeNull();
 });
 
-test('watermark requests use V4-only endpoint paths and payloads', async () => {
+test('watermark requests retain the existing endpoint paths and payloads', async () => {
   const fetchMock = vi.fn().mockImplementation(() => okJson({}));
   vi.stubGlobal('fetch', fetchMock);
   const upload = new FormData();
@@ -79,15 +80,15 @@ test('watermark requests use V4-only endpoint paths and payloads', async () => {
   await extractUrl(url);
 
   expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
-    '/api/v4/generate',
-    '/api/v4/detect',
-    '/api/v4/detect-url',
+    '/api/watermark/embed',
+    '/api/watermark/extract',
+    '/api/watermark/extract-url',
   ]);
   expect(fetchMock.mock.calls.every(([, options]) => options.method === 'POST')).toBe(true);
   expect(fetchMock.mock.calls[2][1].body).toBe(url);
 });
 
-test('management requests use V4 records and current administration paths', async () => {
+test('management requests preserve current FastAPI paths and JSON payloads', async () => {
   const fetchMock = vi.fn().mockImplementation(() => okJson({}));
   vi.stubGlobal('fetch', fetchMock);
 
@@ -98,15 +99,17 @@ test('management requests use V4 records and current administration paths', asyn
   await listUsers();
   await createUser({ username: 'new-user', password: 'secret', role: 'operator' });
   await saveUser('new/user', 'admin');
+  await dashboardStats();
 
   expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
-    '/api/v4/records',
-    '/api/v4/records/image%2Fa',
+    '/api/images',
+    '/api/images/image%2Fa',
     '/api/roles',
     '/api/roles/operator',
     '/api/users',
     '/api/users',
     '/api/users/new%2Fuser',
+    '/api/dashboard-stats',
   ]);
   expect(fetchMock.mock.calls[3][1]).toMatchObject({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ menus: ['trace'] }) });
   expect(fetchMock.mock.calls[5][1].body).toBe(JSON.stringify({ username: 'new-user', password: 'secret', role: 'operator' }));

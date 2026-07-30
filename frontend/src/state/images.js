@@ -23,7 +23,6 @@ export function createImageState(initialRecords = [], pageSize = 10) {
   const records = ref(initialRecords);
   const activeFilter = ref('全部');
   const search = ref('');
-  const mode = ref('');
   const date = ref('');
   const sort = ref('created_desc');
   const currentPage = ref(1);
@@ -34,12 +33,9 @@ export function createImageState(initialRecords = [], pageSize = 10) {
       record.name,
       record.user_id,
       record.trace_id,
-      record.mode_label,
-      record.mode,
       record.status,
     ].map(value => String(value || '').toLocaleLowerCase()).join(' ');
     if (!matchesFilter(record, activeFilter.value)) return false;
-    if (mode.value && record.mode !== mode.value && record.mode_label !== mode.value) return false;
     if (date.value && String(record.created_at || '').slice(0, 10) !== date.value) return false;
     return !normalizedSearch.value || haystack.includes(normalizedSearch.value);
   }), sort.value));
@@ -51,7 +47,7 @@ export function createImageState(initialRecords = [], pageSize = 10) {
     return filteredRows.value.slice(start, start + pageSize);
   });
 
-  watch([activeFilter, search, mode, date, sort], () => { currentPage.value = 1; }, { flush: 'sync' });
+  watch([activeFilter, search, date, sort], () => { currentPage.value = 1; }, { flush: 'sync' });
 
   return {
     records,
@@ -59,8 +55,6 @@ export function createImageState(initialRecords = [], pageSize = 10) {
     set activeFilter(value) { activeFilter.value = value; },
     get search() { return search.value; },
     set search(value) { search.value = value; },
-    get mode() { return mode.value; },
-    set mode(value) { mode.value = value; },
     get date() { return date.value; },
     set date(value) { date.value = value; },
     get sort() { return sort.value; },

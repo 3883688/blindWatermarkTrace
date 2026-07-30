@@ -14,9 +14,9 @@ export function reconcileSelectedIds(selected, records) {
 }
 
 export function csvRows(records) {
-  const header = ['文件名', '用户', 'Trace ID', '水印模式', '嵌入时间', '状态', '置信度', '原图', '水印图'];
+  const header = ['文件名', '用户', 'Trace ID', '水印版本', '嵌入时间', '状态', '置信度', '原图', '水印图'];
   return [header.map(csvCell).join(','), ...records.map(record => [
-    record.name, record.user_id, record.trace_id, record.mode_label || record.mode,
+    record.name, record.user_id, record.trace_id, 'V4',
     record.created_at || record.time, record.status, Number(record.confidence || record.conf || 0),
     record.original_url, record.download_url,
   ].map(csvCell).join(','))];

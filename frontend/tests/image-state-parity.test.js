@@ -19,7 +19,7 @@ const rows = [
   },
 ];
 
-test('image state matches the original search, status, mode, and date filters', () => {
+test('image state matches search, status, and date filters', () => {
   const state = createImageState(rows, 10);
 
   state.search = 'trace-b';
@@ -33,10 +33,6 @@ test('image state matches the original search, status, mode, and date filters', 
   expect(state.filteredRows.value.map(row => row.id)).toEqual(['mid']);
 
   state.activeFilter = '全部';
-  state.mode = 'DCT + 空间域';
-  expect(state.filteredRows.value.map(row => row.id)).toEqual(['old']);
-
-  state.mode = '';
   state.date = '2026-07-17';
   expect(state.filteredRows.value.map(row => row.id)).toEqual(['new', 'mid']);
 });
@@ -46,8 +42,6 @@ test('image state searches each original searchable field and excludes unrelated
     'name',
     'user_id',
     'trace_id',
-    'mode_label',
-    'mode',
     'status',
   ];
 
@@ -85,10 +79,6 @@ test('all filter and sort changes reset pagination and paged rows clamp the stat
   state.search = 'trace-a';
   expect(state.currentPage).toBe(1);
   state.search = '';
-  state.currentPage = 3;
-  state.mode = 'dct';
-  expect(state.currentPage).toBe(1);
-  state.mode = '';
   state.currentPage = 3;
   state.date = '2026-07-17';
   expect(state.currentPage).toBe(1);

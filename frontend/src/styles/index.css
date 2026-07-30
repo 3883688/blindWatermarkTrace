@@ -86,6 +86,120 @@
   .user-actions .app-select{width:auto;min-width:0;flex:1}
 }
 
+/* Responsive shell: keep dense V4 workflows usable on touch-sized screens. */
+html,body,#app{min-width:0;overflow-x:hidden}
+.page-content,.page-header,.card,.side-panel,.stats-card,.user-card,.role-card{min-width:0}
+.field-input{max-width:100%}
+.img-table{min-width:760px}
+.login-title{display:flex;flex-direction:column;align-items:center;gap:3px}
+.login-title-cn{font-size:20px;line-height:1.25}
+.login-title-en{font-size:12px;font-weight:400;letter-spacing:.08em;color:rgba(165,180,252,0.78);line-height:1.2}
+[data-theme="light"] .login-title-en{color:#6366f1}
+.nav-brand-copy{display:contents}
+
+@media (max-width:840px){
+  .navbar{padding:12px 20px}
+  .page{padding:28px 20px}
+  .page-content{width:100%}
+  .page-header{margin-bottom:24px}
+  .page-title{font-size:24px}
+  .grid-2{grid-template-columns:minmax(0,1fr);gap:16px}
+  .card{padding:20px;border-radius:12px}
+  .side-panel{padding:20px}
+  .stats-bar{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:20px}
+  .stats-card{padding:16px}
+  .stats-card .s-num{font-size:22px}
+  .advanced-section-head{gap:10px}
+  .result-row{align-items:flex-start;gap:12px}
+  .result-key{flex:0 0 38%}
+  .result-val{min-width:0;text-align:right;overflow-wrap:anywhere}
+  .result-actions{flex-wrap:wrap}
+  .method-item{min-width:0}
+  .pagination{align-items:flex-start;gap:16px;flex-direction:column}
+  .page-btns{width:100%;overflow-x:auto;padding-bottom:2px}
+  .page-btn{flex:0 0 auto}
+  .card:has(.img-table){overflow-x:auto}
+  .user-create-row{gap:8px}
+  .role-head{align-items:flex-start}
+}
+
+@media (max-width:560px){
+  .navbar{padding:10px 14px;gap:10px}
+  .nav-brand{font-size:13px;gap:8px;line-height:1.2}
+  .nav-brand-copy{display:flex;flex-direction:column;min-width:0;line-height:1.1}
+  .nav-brand-cn{white-space:nowrap}
+  .nav-brand-en{font-size:8px;font-weight:400;letter-spacing:.02em;white-space:nowrap;color:rgba(226,232,240,0.42)}
+  [data-theme="light"] .nav-brand-en{color:#64748b}
+  .nav-brand .logo-icon{width:30px;height:30px;flex:0 0 30px}
+  .nav-menu-toggle{display:inline-flex}
+  .nav-links{display:none;order:4;margin:0 -2px;padding:4px 0 2px;flex-direction:column;align-items:stretch;gap:4px;width:calc(100% + 4px);overflow:visible}
+  .nav-links.is-open{display:flex}
+  .nav-link{width:100%;padding:10px 12px;text-align:left}
+  .nav-right{gap:6px}
+  .theme-select{display:block;width:82px;min-width:82px;flex:0 0 82px}
+  .theme-select .el-select__wrapper{padding:0 8px}
+  .user-pill{display:flex;padding:4px;border:0;background:transparent}
+  .current-user-name{display:none}
+  .btn-logout{width:34px;min-height:34px;padding:0;border-radius:8px}
+  .logout-label{display:none}
+  .page{padding:22px 12px}
+  .page-title{font-size:22px}
+  .page-subtitle{font-size:13px;line-height:1.6}
+  .tag-row{gap:6px;margin-top:12px}
+  .tag{padding:4px 8px;font-size:11px}
+  .card,.side-panel{padding:16px;border-radius:10px}
+  .card-label{margin-bottom:12px}
+  .dropzone{padding:30px 14px}
+  .dropzone.compact{padding:24px 14px}
+  .dz-text{font-size:13px}
+  .dz-hint{font-size:11px}
+  .advanced-section{padding:14px}
+  .advanced-section-head{flex-direction:column;gap:8px}
+  .inline-status{align-self:flex-start}
+  .checkbox-row{align-items:flex-start;gap:10px;padding:10px}
+  .cb-title{font-size:13px}
+  .cb-desc{font-size:11px;line-height:1.5}
+  .stat-row{gap:8px}
+  .stat-box{padding:14px 10px}
+  .stat-num{font-size:21px}
+  .stat-lbl{font-size:11px}
+  .trace-url-box{display:flex;gap:8px}
+  .trace-url-box .field-input{min-width:0}
+  .url-btn{width:42px;flex:0 0 42px}
+  .upload-preview{gap:8px;padding:10px}
+  .preview-info{min-width:0}
+  .preview-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .result-box{padding:14px}
+  .result-title{font-size:14px}
+  .result-row{font-size:12px}
+  .result-key{flex-basis:42%}
+  .result-link{flex:1 1 100%;justify-content:center}
+  .trace-help{font-size:12px;line-height:1.65}
+  .table-toolbar{align-items:stretch;flex-direction:column;gap:10px}
+  .search-box{width:100%;max-width:none;flex:0 0 auto}
+  .filter-row{justify-content:flex-start;gap:6px}
+  .filter-btn{padding:8px 11px}
+  .filter-row .btn-outline{margin-left:0!important}
+  .selection-bar{align-items:flex-start;flex-direction:column}
+  .selection-actions{width:100%}
+  .selection-actions .btn-outline{flex:1;justify-content:center}
+  .login-title-cn{font-size:19px}
+  .login-title-en{font-size:11px}
+  .user-actions{align-items:stretch}
+  .user-actions .app-select{flex-basis:0}
+  .role-head{gap:8px}
+  .role-title{font-size:14px}
+  .role-save-btn{padding:8px 12px}
+  .pagination{margin-top:18px}
+  .page-info{line-height:1.6}
+  .element-image-dialog .el-dialog__body{padding:8px}
+  .element-image-preview{padding:8px}
+}
+
+@media (min-width:561px){
+  .nav-menu-toggle{display:none}
+}
+
 /* Element Plus popup surfaces inherit the application's restrained theme. */
 .el-overlay{backdrop-filter:blur(4px)}
 .el-dialog,.el-message-box{border:1px solid var(--el-border-color);border-radius:8px}

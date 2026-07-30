@@ -5,13 +5,12 @@ import {
   extractUpload,
   extractUrl,
   listImages,
-  v4Capabilities,
 } from '../src/api/trace.js';
 import { createWatermarkForm, watermarkFormData } from '../src/forms/watermark.js';
 
 const ok = () => Promise.resolve(new Response('{}', { status: 200 }));
 
-test('product requests use only V4 endpoints', async () => {
+test('original product paths use the V4-only compatibility API', async () => {
   const fetchMock = vi.fn(ok);
   vi.stubGlobal('fetch', fetchMock);
   const form = new FormData();
@@ -20,27 +19,25 @@ test('product requests use only V4 endpoints', async () => {
   await extractUpload(form);
   await extractUrl(form);
   await listImages();
-  await v4Capabilities();
 
   expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
-    '/api/v4/generate', '/api/v4/detect', '/api/v4/detect-url',
-    '/api/v4/records', '/api/v4/capabilities',
+    '/api/watermark/embed', '/api/watermark/extract',
+    '/api/watermark/extract-url', '/api/images',
   ]);
 });
 
-test('generation form contains only file and exact V4 codec', () => {
+test('generation form pins the original UI to V4', () => {
   const file = new File(['image'], 'source.png', { type: 'image/png' });
   const data = watermarkFormData(file, createWatermarkForm());
-  expect([...data.entries()].map(([key, value]) => [key, value instanceof File ? value.name : value]))
-    .toEqual([['file', 'source.png'], ['codec', 'hmac64_rs_16_8_split_repeat_sync_v4']]);
+  expect(data.get('file')).toBe(file);
+  expect(data.get('robust_watermark_version')).toBe('4');
 });
 
-test('V4 views contain no legacy algorithms or real upload paths', () => {
+test('V4 views contain no real upload paths', () => {
   const source = [
     readFileSync('src/views/WatermarkView.vue', 'utf8'),
     readFileSync('src/views/TraceView.vue', 'utf8'),
   ].join('\n');
-  for (const legacy of ['DCT', 'DWT', 'FFT', 'LSB', '/uploads/']) {
-    expect(source).not.toContain(legacy);
-  }
+  expect(source).not.toContain('/uploads/');
+  expect(source).toContain('/api/media/');
 });

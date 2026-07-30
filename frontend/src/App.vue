@@ -26,6 +26,10 @@ function showTraceRecord(record) {
   state.selectPage('trace');
 }
 
+function consumeTraceRecord() {
+  traceRecord.value = null;
+}
+
 watch(() => state.theme, theme => {
   document.documentElement.dataset.theme = theme;
   document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -45,7 +49,11 @@ watch(() => state.theme, theme => {
     />
     <main v-if="state.currentUser" class="page active" :id="`page-${state.activePage}`">
       <WatermarkView v-if="state.activePage === 'watermark'" :current-user="state.currentUser" />
-      <TraceView v-else-if="state.activePage === 'trace'" :record="traceRecord" />
+      <TraceView
+        v-else-if="state.activePage === 'trace'"
+        :record="traceRecord"
+        @record-consumed="consumeTraceRecord"
+      />
       <ManageView v-else-if="state.activePage === 'manage'" @trace="showTraceRecord" />
       <template v-else-if="state.activePage === 'role'">
         <div class="page-content">

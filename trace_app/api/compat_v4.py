@@ -51,12 +51,24 @@ def _url(media: Any, media_id: str | None, user: AuthenticatedUser) -> str | Non
     )
 
 
+def _format_byte_size(value: object) -> str:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        return "-"
+    if value < 1024:
+        return f"{value} B"
+    if value < 1024 * 1024:
+        return f"{value / 1024:.1f} KB"
+    return f"{value / 1024 / 1024:.1f} MB"
+
+
 def _image_payload(record: object, user: AuthenticatedUser, repository: Any, media: Any) -> dict[str, Any]:
     group = _group(repository, _scope(user), record)
+    output_media_id = getattr(record, "output_media_id", None)
+    output_media = repository.get_media(output_media_id) if output_media_id else None
     result: dict[str, Any] = {
         "id": str(getattr(record, "id")),
         "name": getattr(record, "original_filename", "image"),
-        "size": "-",
+        "size": _format_byte_size(getattr(output_media, "byte_size", None)),
         "user_id": str(getattr(record, "owner_user_id")),
         "trace_id": getattr(record, "trace_id"),
         "mode": "dct",

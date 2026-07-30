@@ -1,55 +1,24 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import FileDropzone from '../components/FileDropzone.vue';
-import { extractUpload, extractUrl } from '../api/trace.js';
+import { dashboardStats, extractUpload, extractUrl, listImages } from '../api/trace.js';
 import { showAlert } from '../ui-feedback.js';
+import { syncConfidence, traceResultFromRecord } from './result-format.js';
 
-const file = ref(null);
-const url = ref('');
-const busy = ref(false);
-const result = ref(null);
-
-async function detectUpload() {
-  if (!file.value) { showAlert('请选择待检测图片'); return; }
-  const data = new FormData(); data.append('file', file.value);
-  await run(() => extractUpload(data));
-}
-
-async function detectUrl() {
-  if (!url.value.trim()) { showAlert('请输入图片链接'); return; }
-  const data = new FormData(); data.append('url', url.value.trim());
-  await run(() => extractUrl(data));
-}
-
-async function run(operation) {
-  busy.value = true; result.value = null;
-  try { result.value = await operation(); }
-  catch (error) { showAlert(error.message); }
-  finally { busy.value = false; }
-}
+const file = ref(null), url = ref(''), source = ref(''), result = ref(null), busy = ref(false);
+const props = defineProps({ record: { type: Object, default: null } });
+const emit = defineEmits(['record-consumed']);
+watch(() => props.record, record => {
+  if (!record) return;
+  const managedResult = traceResultFromRecord(record);
+  if (managedResult) result.value = managedResult;
+  emit('record-consumed');
+}, { immediate: true });
+function empty(value) { return value ?? '-'; }
+function number(value, digits = 0, suffix = '') { return Number.isFinite(Number(value)) ? `${Number(value).toFixed(digits)}${suffix}` : '-'; }
+function traceFile(selected) { file.value = selected; if (selected) source.value = 'file'; else if (source.value === 'file') source.value = ''; }
+async function trace() { if (source.value === 'url' && url.value.trim()) return traceUrl(); if (file.value) return traceUpload(); return traceUrl(); }
+async function traceUpload() { if (!file.value) return traceUrl(); busy.value = true; result.value = null; url.value = ''; source.value = 'file'; const form = new FormData(); form.append('file', file.value); try { result.value = await extractUpload(form); } catch (error) { showAlert(error.message); } finally { busy.value = false; } }
+async function traceUrl() { if (!url.value.trim()) { showAlert('请输入图片链接或上传待溯源图片'); return; } busy.value = true; result.value = null; file.value = null; source.value = 'url'; const form = new FormData(); form.append('url', url.value.trim()); try { result.value = await extractUrl(form); await Promise.all([listImages(), dashboardStats()]); } catch (error) { showAlert(error.message); } finally { busy.value = false; } }
 </script>
-
-<template>
-  <section class="page-content">
-    <div class="page-header">
-      <div class="page-title">V4 图片溯源</div>
-      <div class="page-subtitle">通过视觉召回、几何确认和源组认证定位记录</div>
-    </div>
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-label">待检测图片</div>
-        <div class="field-group"><label>映射图片地址</label><input v-model="url" class="field-input" placeholder="https://example.com/photo.jpg"></div>
-        <button class="btn-primary trace-button" :disabled="busy" @click="detectUrl">检测地址</button>
-        <div class="or-divider">或上传文件</div>
-        <FileDropzone v-model:file="file" label="将待溯源图片拖移至此" hint="支持 JPG、PNG、WEBP" compact />
-        <button class="btn-primary trace-button" :disabled="busy" @click="detectUpload">检测文件</button>
-      </div>
-      <div class="card trace-result-card">
-        <div class="card-label">认证结果</div>
-        <div class="result-row"><span class="result-key">结果</span><span class="result-val">{{ result?.outcome || (busy ? '处理中' : '-') }}</span></div>
-        <div class="result-row"><span class="result-key">Trace ID</span><span class="result-val">{{ result?.record?.trace_id || '-' }}</span></div>
-        <div class="result-row"><span class="result-key">源组</span><span class="result-val">{{ result?.record?.source_group_id || '-' }}</span></div>
-      </div>
-    </div>
-  </section>
-</template>
+<template><section class="page-content"><div class="page-header"><div class="page-title">图片溯源</div><div class="page-subtitle">上传或输入链接，验证图片中的 V4 认证水印与来源组</div></div><div class="grid-2"><div><div class="card" style="margin-bottom:24px"><div class="card-label">图片来源</div><div class="field-group"><label>图片链接</label><div class="trace-url-box"><input v-model="url" class="field-input" placeholder="https://example.com/photo.jpg 或 /api/media/..." @input="url.trim() && (source = 'url')"><button class="url-btn" @click="traceUrl"><i class="ti ti-arrow-right"></i></button></div></div><div class="or-divider">或上传文件</div><FileDropzone v-model:file="file" label="将待溯源图片拖移至此" hint="支持 JPG、PNG、WEBP" icon="ti-photo-search" compact @update:file="traceFile"/><button class="btn-primary trace-button" :disabled="busy" @click="trace"><i class="ti" :class="busy ? 'ti-loader' : 'ti-search'"></i> {{ busy ? '正在溯源...' : '开始 V4 溯源' }}</button></div></div><div><div class="card trace-result-card"><div v-if="busy"><div class="result-title"><i class="ti ti-loader"></i> 正在溯源</div><div class="result-row"><span class="result-key">当前状态</span><span class="result-val">等待 V4 认证结果</span></div></div><template v-else-if="result"><div class="result-title"><i class="ti ti-circle-check"></i> V4 溯源结果 <span class="result-time">{{ empty(result.extracted_at) }}</span></div><div class="result-row"><span class="result-key">水印持有者</span><span class="result-val owner">{{ empty(result.user_id) }}</span></div><div class="result-row"><span class="result-key">Trace ID</span><span class="result-val">{{ empty(result.trace_id) }}</span></div><div class="result-row"><span class="result-key">证据 UUID 前段</span><span class="result-val">{{ empty(result.evidence_uuid_head) }}</span></div><div class="result-row"><span class="result-key">证据 UUID 后段</span><span class="result-val">{{ empty(result.evidence_uuid_tail) }}</span></div><div class="result-row"><span class="result-key">水印版本</span><span class="result-val">V4</span></div><div class="result-row"><span class="result-key">嵌入时间</span><span class="result-val">{{ empty(result.created_at) }}</span></div><div class="result-row"><span class="result-key">置信度</span><span class="result-val">{{ Number(result.confidence || 0) }}% <span class="confidence-bar"><span class="confidence-fill" :style="{ width: `${Number(result.confidence || 0)}%` }"></span></span></span></div><div class="result-row"><span class="result-key">认证瓦片 / 相位</span><span class="result-val">{{ number(result.code_recovery?.authenticated_tiles) }} / {{ number(result.code_recovery?.phase_count) }}</span></div><div class="result-row"><span class="result-key">纠错 / Bit 错误</span><span class="result-val">{{ number(result.code_recovery?.corrected_symbols) }} / {{ number(result.code_recovery?.bit_errors) }}</span></div><div class="result-row"><span class="result-key">同步置信度</span><span class="result-val">{{ syncConfidence(result.code_recovery?.sync_confidence) }}</span></div><div class="result-row"><span class="result-key">检测耗时</span><span class="result-val">{{ number(result.code_recovery?.elapsed_ms, 1, ' ms') }}</span></div><div class="result-row"><span class="result-key">认证标签</span><span class="result-val"><span class="status-badge badge-green">V4 匹配</span></span></div><div class="result-row"><span class="result-key">图片状态</span><span class="result-val"><span class="status-badge badge-green">{{ empty(result.status) }}</span></span></div></template><template v-else><div class="result-title"><i class="ti ti-shield-check"></i> V4 溯源结果 <span class="result-time">-</span></div><div v-for="label in ['水印持有者','Trace ID','水印版本','嵌入时间','置信度','认证瓦片 / 相位','纠错 / Bit 错误','同步置信度','检测耗时','认证标签','图片状态']" :key="label" class="result-row"><span class="result-key">{{ label }}</span><span class="result-val" :class="{ owner: label === '水印持有者' }">-</span></div></template></div><div class="card"><div class="section-title">V4 认证流程</div><div class="trace-help"><div><i class="ti ti-shield-check"></i>优先执行 V4 盲认证：FFT Pilot 同步与校正后，从全局/局部 DCT 瓦片提取 64-bit RS 码字。</div><div><i class="ti ti-key"></i>RS(8,4) 纠错恢复 32-bit HMAC-SHA256 认证码，由认证码唯一确定记录。</div><div><i class="ti ti-info-circle"></i>盲认证失败时，DINOv2 + pgvector 召回来源组，经 ORB/RANSAC 与 SuperPoint/LightGlue 几何验证后，解码组内全部 V4 版本。</div></div></div></div></div></section></template>

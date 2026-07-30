@@ -43,6 +43,14 @@ class _Repository:
     def get_source_group(self, scope, source_group_id):
         return SimpleNamespace(original_media_id="opaque-original")
 
+    def get_media(self, media_id):
+        sizes = {
+            "opaque-original": 1024,
+            "opaque-output": 2621440,
+            "opaque-thumb": 512,
+        }
+        return SimpleNamespace(byte_size=sizes[media_id])
+
     def delete_record(self, scope, record_id):
         return True
 
@@ -104,7 +112,9 @@ def test_original_generation_and_images_use_only_opaque_v4_media_urls(tmp_path) 
     assert generated.status_code == 200, generated.text
     assert generated.json()["download_access_url"].startswith("/api/media/opaque-output?")
     assert generated.json()["original_access_url"].startswith("/api/media/opaque-original?")
+    assert generated.json()["size"] == "2.5 MB"
     assert listed.status_code == 200
+    assert listed.json()["items"][0]["size"] == "2.5 MB"
     assert listed.json()["items"][0]["thumbnail_access_url"].startswith(
         "/api/media/opaque-thumb?"
     )

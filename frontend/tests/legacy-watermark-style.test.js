@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test } from 'vitest';
 
-test('watermark view retains shared style selectors with V4-only status markup', async () => {
+test('watermark view retains shared style baselines and exposes only the V4 method marker', async () => {
   const [css, index, tokens, view] = await Promise.all([
     readFile('src/styles/legacy.css', 'utf8'),
     readFile('src/styles/index.css', 'utf8'),
@@ -18,10 +18,14 @@ test('watermark view retains shared style selectors with V4-only status markup',
   expect(css).toContain('.progress-wrap{margin-top:8px}');
   expect(css).toContain('.role-save-btn{min-height:34px;white-space:nowrap;flex-shrink:0;align-self:center}');
   expect(css).toContain('.img-name{font-size:13px;font-weight:500;color:rgba(255,255,255,0.85)}');
-  expect(view).toContain('HMAC64 + RS(16,8)');
-  expect(view).toContain("capabilities.dinov2 ? '可用' : '不可用'");
-  expect(view).toContain("capabilities.lightglue ? '可用' : '不可用'");
-  expect(view).not.toContain('频域');
+  expect(view).toContain('<span class="method-name">V4 认证水印</span><span class="method-tag badge-blue">唯一版本</span>');
+  expect([...view.matchAll(/<span class="method-name">/g)]).toHaveLength(1);
+  expect(view).not.toContain('DCT 频域');
+  expect(view).not.toContain('FFT 傅里叶');
+  expect([...view.matchAll(/class="card" style="margin-bottom:24px"/g)]).toHaveLength(2);
+  expect([...view.matchAll(/class="advanced-section-head"/g)]).toHaveLength(1);
+  expect(view).toContain('<div class="cb-content"><div class="cb-title">启用小面积截图增强</div><div class="cb-desc">');
+  expect(view).toContain('<div class="cb-content"><div class="cb-title">启用点阵追溯水印</div><div class="cb-desc">');
   expect(tokens).not.toContain('button, input, select { font: inherit; }');
   expect(tokens).not.toContain('--font-sans');
   expect(index).toContain('.field-range{display:block}');
