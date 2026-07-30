@@ -246,7 +246,9 @@ class V4Repository:
                     )
                 else:
                     group_insert = insert(groups).values(**group_values)
-                result = connection.execute(group_insert)
+                inserted_group_id = connection.execute(
+                    group_insert.returning(groups.c.id)
+                ).scalar_one_or_none()
                 row = connection.execute(
                     select(groups).where(
                         groups.c.owner_user_id == unit.group.owner_user_id,
@@ -254,7 +256,7 @@ class V4Repository:
                     )
                 ).mappings().one()
                 group = self._source_group(row)
-                created = bool(result.rowcount) and group.id == unit.provisional_group_id
+                created = inserted_group_id == unit.provisional_group_id
                 if created:
                     if unit.group_artifacts is None:
                         raise ValueError("new source group requires model artifacts")

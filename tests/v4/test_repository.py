@@ -243,6 +243,75 @@ def test_generation_unit_rolls_back_every_relational_row_on_failure(
             assert connection.execute(select(func.count()).select_from(table)).scalar_one() == 0
 
 
+def test_generation_reuses_group_when_conflict_rowcount_is_unknown(
+    repository: V4Repository,
+) -> None:
+    digest = b"r" * 32
+    existing = _group(repository, 7, digest)
+    real_engine = repository.engine
+
+    class UnknownRowcountResult:
+        def __init__(self, result):
+            self.result = result
+            self.rowcount = -1
+
+        def __getattr__(self, name):
+            return getattr(self.result, name)
+
+    class ConnectionProxy:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def execute(self, statement, *args, **kwargs):
+            result = self.connection.execute(statement, *args, **kwargs)
+            if getattr(getattr(statement, "table", None), "name", None) == "source_groups":
+                return UnknownRowcountResult(result)
+            return result
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+    class BeginProxy:
+        def __init__(self, context):
+            self.context = context
+
+        def __enter__(self):
+            return ConnectionProxy(self.context.__enter__())
+
+        def __exit__(self, *args):
+            return self.context.__exit__(*args)
+
+    class EngineProxy:
+        dialect = real_engine.dialect
+
+        def begin(self):
+            return BeginProxy(real_engine.begin())
+
+    repository.engine = EngineProxy()
+    staged = tuple(
+        StagedMedia(f"reuse-{variant}", 7, variant, f"{variant}/reuse.bin", "image/png", b"x")
+        for variant in ("original", "watermarked", "thumbnail")
+    )
+    record = replace(
+        _record(existing.id, 7, "TR-REUSE", b"87654321"),
+        output_media_id="reuse-watermarked",
+        thumbnail_media_id="reuse-thumbnail",
+    )
+    unit = GenerationUnit(
+        existing.id,
+        SourceGroupInput(7, digest, 640, 480, None, "dinov2-vits14", "features-v1"),
+        None,
+        staged,
+        record,
+        uuid4(),
+    )
+
+    stored, created = repository.commit_generation(unit)
+
+    assert created is False
+    assert stored.source_group_id == existing.id
+
+
 def test_audit_rows_accept_only_explicit_safe_columns(repository: V4Repository) -> None:
     correlation_id = uuid4()
     event_id = repository.append_audit(
