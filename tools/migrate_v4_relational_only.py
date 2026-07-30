@@ -46,6 +46,14 @@ def decode_legacy_menus(value: Any) -> tuple[str, ...]:
     return tuple(result)
 
 
+def role_menu_order_clause(columns: set[str]) -> str:
+    if "position_index" in columns:
+        return "role_key, position_index"
+    if "position" in columns:
+        return "role_key, position"
+    return "role_key, menu_key"
+
+
 def _snapshot_users(engine: Engine) -> tuple[tuple[Any, ...], ...]:
     table = Table("users", MetaData(), autoload_with=engine)
     primary = tuple(table.primary_key.columns)
@@ -70,11 +78,15 @@ def _snapshot_menus(engine: Engine) -> dict[str, tuple[str, ...]]:
     role_columns = {item["name"] for item in inspector.get_columns("roles")}
     menus: dict[str, tuple[str, ...]] = {}
     if "role_menus" in inspector.get_table_names():
+        menu_columns = {
+            item["name"] for item in inspector.get_columns("role_menus")
+        }
+        order_clause = role_menu_order_clause(menu_columns)
         with engine.connect() as connection:
             rows = connection.execute(
                 text(
                     "SELECT role_key, menu_key FROM role_menus "
-                    "ORDER BY role_key, position_index"
+                    f"ORDER BY {order_clause}"
                 )
             ).all()
         for role_key, menu_key in rows:
@@ -104,6 +116,14 @@ def migrate(engine: Engine) -> None:
 
     DatabaseStore(engine).create_schema(identity_only=True)
     with engine.begin() as connection:
+        menu_columns = {
+            item["name"]
+            for item in inspect(connection).get_columns("role_menus")
+        }
+        if "position_index" not in menu_columns:
+            connection.execute(
+                text("ALTER TABLE role_menus ADD COLUMN position_index INTEGER")
+            )
         connection.execute(text("DELETE FROM role_menus"))
         for role_key, menus in menus_before.items():
             for position, menu_key in enumerate(menus):
@@ -118,6 +138,9 @@ def migrate(engine: Engine) -> None:
                         "position_index": position,
                     },
                 )
+        connection.execute(
+            text("ALTER TABLE role_menus ALTER COLUMN position_index SET NOT NULL")
+        )
         quoted = ", ".join(f'"{name}"' for name in LEGACY_TABLES)
         connection.execute(text(f"DROP TABLE IF EXISTS {quoted} CASCADE"))
         columns = {item["name"] for item in inspect(connection).get_columns("roles")}
@@ -150,4 +173,9 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-__all__ = ("LEGACY_TABLES", "decode_legacy_menus", "migrate")
+__all__ = (
+    "LEGACY_TABLES",
+    "decode_legacy_menus",
+    "migrate",
+    "role_menu_order_clause",
+)

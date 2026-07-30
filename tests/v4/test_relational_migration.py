@@ -6,7 +6,12 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import create_engine, inspect, text
 
-from tools.migrate_v4_relational_only import LEGACY_TABLES, decode_legacy_menus, migrate
+from tools.migrate_v4_relational_only import (
+    LEGACY_TABLES,
+    decode_legacy_menus,
+    migrate,
+    role_menu_order_clause,
+)
 
 
 def test_migration_has_fixed_v4_only_cleanup_scope_and_decodes_legacy_menus() -> None:
@@ -26,6 +31,10 @@ def test_migration_has_fixed_v4_only_cleanup_scope_and_decodes_legacy_menus() ->
         "trace",
     )
     assert decode_legacy_menus("not-json") == ()
+    assert role_menu_order_clause({"role_key", "menu_key"}) == "role_key, menu_key"
+    assert role_menu_order_clause(
+        {"role_key", "menu_key", "position_index"}
+    ) == "role_key, position_index"
 
 
 def test_postgres_migration_preserves_users_roles_and_normalizes_menus() -> None:
