@@ -95,7 +95,8 @@ html,body,#app{min-width:0;overflow-x:hidden}
 .login-title-cn{font-size:20px;line-height:1.25}
 .login-title-en{font-size:12px;font-weight:400;letter-spacing:.08em;color:rgba(165,180,252,0.78);line-height:1.2}
 [data-theme="light"] .login-title-en{color:#6366f1}
-.nav-brand-copy{display:contents}
+.nav-brand-copy{display:flex;flex-direction:column;align-items:flex-start;min-width:0;line-height:1.1}
+.stats-card .s-num{text-align:center}
 
 @media (max-width:840px){
   .navbar{padding:12px 20px}

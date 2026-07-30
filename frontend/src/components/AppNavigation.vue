@@ -25,7 +25,7 @@ const menuItems = [
   <nav class="navbar">
     <div class="nav-brand">
       <div class="logo-icon"><img :src="logoUrl" alt=""></div>
-      <span class="nav-brand-copy" data-brand-title="图片溯源系统（Watermark System）"><span class="nav-brand-cn">图片溯源系统</span><span class="nav-brand-en">（Watermark System）</span></span>
+      <span class="nav-brand-copy" data-brand-title="图片溯源系统 Watermark System"><span class="nav-brand-cn">图片溯源系统</span><span class="nav-brand-en">Watermark System</span></span>
     </div>
     <button
       class="nav-menu-toggle"

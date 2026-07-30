@@ -16,4 +16,13 @@ describe('mobile application shell', () => {
     expect(styles).toContain('@media (max-width:560px)');
     expect(styles).toContain('.nav-links.is-open{display:flex}');
   });
+
+  it('aligns the unwrapped English brand and centers management totals', () => {
+    expect(navigation).toContain('<span class="nav-brand-en">Watermark System</span>');
+    expect(navigation).not.toContain('（Watermark System）');
+    expect(styles).toContain(
+      '.nav-brand-copy{display:flex;flex-direction:column;align-items:flex-start',
+    );
+    expect(styles).toMatch(/\.stats-card \.s-num\{[^}]*text-align:center/);
+  });
 });

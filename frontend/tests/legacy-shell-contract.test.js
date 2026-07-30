@@ -23,7 +23,7 @@ test('website branding uses the configured bilingual title', async () => {
 
   const title = '图片溯源系统（Watermark System）';
   expect(html).toContain(`<title>${title}</title>`);
-  expect(navigation).toContain(title);
+  expect(navigation).toContain('data-brand-title="图片溯源系统 Watermark System"');
   expect(login).toContain(title);
 });
 
