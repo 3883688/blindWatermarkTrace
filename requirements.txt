@@ -1,3 +1,5 @@
+--index-url https://mirrors.cloud.tencent.com/pypi/simple
+
 fastapi
 uvicorn[standard]
 python-multipart
