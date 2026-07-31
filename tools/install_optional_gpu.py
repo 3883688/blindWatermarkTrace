@@ -1,5 +1,6 @@
 import argparse
 import csv
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,31 @@ assert cupy.asnumpy(squared).tolist() == [1, 4, 9]
 class InstallResult:
     installed: bool
     reason: str
+
+
+def _has_valid_nvidia_devices(output: str) -> bool:
+    try:
+        rows = csv.reader(output.splitlines(), strict=True)
+        parsed_rows = list(rows)
+    except (AttributeError, csv.Error):
+        return False
+
+    found_device = False
+    for row in parsed_rows:
+        if not row or all(not value.strip() for value in row):
+            continue
+        if len(row) != 2:
+            return False
+        name, driver_version = (value.strip() for value in row)
+        if (
+            not name
+            or not name.isprintable()
+            or name.casefold() in {"name", "n/a", "unknown"}
+            or re.fullmatch(r"\d+(?:\.\d+)+", driver_version) is None
+        ):
+            return False
+        found_device = True
+    return found_device
 
 
 def detect_nvidia(*, which=shutil.which, run=subprocess.run) -> InstallResult:
@@ -49,12 +75,7 @@ def detect_nvidia(*, which=shutil.which, run=subprocess.run) -> InstallResult:
     if completed.returncode != 0:
         return InstallResult(False, "nvidia-smi-failed")
 
-    devices = [
-        row
-        for row in csv.reader(completed.stdout.splitlines())
-        if len(row) == 2 and all(value.strip() for value in row)
-    ]
-    if not devices:
+    if not _has_valid_nvidia_devices(completed.stdout):
         return InstallResult(False, "no-nvidia-device")
     return InstallResult(True, "nvidia-gpu-detected")
 
@@ -83,6 +104,7 @@ def install_optional_gpu(
                 "-r",
                 str(requirements_path),
             ],
+            capture_output=True,
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
@@ -93,6 +115,7 @@ def install_optional_gpu(
     try:
         smoke = run(
             [python_executable, "-c", GPU_SMOKE_SOURCE],
+            capture_output=True,
             check=False,
             timeout=30,
         )
