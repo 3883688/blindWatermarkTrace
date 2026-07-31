@@ -15,6 +15,10 @@ describe('mobile application shell', () => {
     expect(navigation).toContain("'is-open': menuOpen");
     expect(styles).toContain('@media (max-width:560px)');
     expect(styles).toContain('.nav-links.is-open{display:flex}');
+    expect(styles).toContain(
+      '.nav-menu-toggle{-webkit-appearance:none;appearance:none;width:34px;height:34px',
+    );
+    expect(styles).toContain('-webkit-tap-highlight-color:transparent');
   });
 
   it('aligns the unwrapped English brand and centers management totals', () => {

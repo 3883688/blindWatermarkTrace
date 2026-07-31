@@ -97,6 +97,12 @@ html,body,#app{min-width:0;overflow-x:hidden}
 [data-theme="light"] .login-title-en{color:#6366f1}
 .nav-brand-copy{display:flex;flex-direction:column;align-items:flex-start;min-width:0;line-height:1.1}
 .stats-card .s-num{text-align:center}
+.nav-menu-toggle{-webkit-appearance:none;appearance:none;width:34px;height:34px;min-width:34px;padding:0;align-items:center;justify-content:center;flex:0 0 34px;border:1px solid rgba(255,255,255,0.12);border-radius:8px;background:rgba(255,255,255,0.06);background-clip:padding-box;color:rgba(255,255,255,0.75);font:inherit;line-height:1;box-shadow:none;overflow:hidden;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.nav-menu-toggle i{display:block;font-size:18px;line-height:1}
+.nav-menu-toggle:active{background:rgba(255,255,255,0.12)}
+.nav-menu-toggle:focus-visible{outline:2px solid #818cf8;outline-offset:2px}
+[data-theme="light"] .nav-menu-toggle{background:#fff;border-color:rgba(15,23,42,0.14);color:#475569}
+[data-theme="light"] .nav-menu-toggle:active{background:#f1f5f9}
 
 @media (max-width:840px){
   .navbar{padding:12px 20px}
