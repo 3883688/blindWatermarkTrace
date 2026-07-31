@@ -31,6 +31,7 @@ test('managed trace result is consumed after its first navigation', async () => 
         items: [{
           id: 'managed-record',
           name: 'managed.png',
+          download_access_url: '/api/media/managed-image',
           trace_id: 'TR-MANAGED-ONCE',
           robust_watermark_version: 4,
           confidence: 97,
@@ -60,6 +61,9 @@ test('managed trace result is consumed after its first navigation', async () => 
   root.querySelector('button[title="溯源"]').click();
   await nextTick();
   expect(root.querySelector('.trace-result-card').textContent).toContain('TR-MANAGED-ONCE');
+  expect(root.querySelector('.trace-url-box input').value).toBe('/api/media/managed-image');
+  expect(root.querySelector('.managed-trace-preview img').getAttribute('src')).toBe('/api/media/managed-image');
+  expect(root.querySelector('.managed-trace-preview').textContent).toContain('managed.png');
 
   root.querySelector('[data-menu="watermark"]').click();
   await nextTick();

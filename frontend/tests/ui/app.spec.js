@@ -5,6 +5,10 @@ const admin = {
   role: 'admin',
   menus: ['watermark', 'trace', 'manage', 'role'],
 };
+const previewPng = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+);
 
 function apiResponse(url) {
   if (url.pathname === '/api/dashboard-stats') {
@@ -15,6 +19,7 @@ function apiResponse(url) {
       items: [{
         id: 'record-1', name: 'sample.jpg', user_id: 'admin', trace_id: 'trace-1',
         size: '2.5 MB', mode: 'dct', created_at: '2026-07-17', status: '保护中', confidence: 98,
+        robust_watermark_version: 4, download_access_url: '/api/media/record-1',
       }],
       stats: { total: 1, protected: 1, leaks: 0, hits: 1 },
     };
@@ -43,6 +48,9 @@ async function installRouteMocks(page) {
   }));
   await page.route('**/api/**', route => route.fulfill({
     contentType: 'application/json', body: JSON.stringify(apiResponse(new URL(route.request().url()))),
+  }));
+  await page.route('**/api/media/**', route => route.fulfill({
+    contentType: 'image/png', body: previewPng,
   }));
 }
 
@@ -75,6 +83,12 @@ test('Vue shell retains existing workflow labels across desktop and mobile', asy
   await page.getByRole('button', { name: '图片管理' }).click();
   await expect(page.getByText('sample.jpg')).toBeVisible();
   await page.screenshot({ path: 'test-results/management-desktop.png', fullPage: true });
+  await page.getByTitle('溯源').click();
+  await expect(page.getByPlaceholder('https://example.com/photo.jpg 或 /api/media/...')).toHaveValue('/api/media/record-1');
+  const managedPreview = page.locator('.managed-trace-preview img');
+  await expect(managedPreview).toBeVisible();
+  await expect.poll(() => managedPreview.evaluate(image => image.naturalWidth)).toBeGreaterThan(0);
+  await page.screenshot({ path: 'test-results/managed-trace-desktop.png', fullPage: true });
 
   await page.getByRole('button', { name: '角色管理' }).click();
   await expect(page.getByText('菜单权限')).toBeVisible();
