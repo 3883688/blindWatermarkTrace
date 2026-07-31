@@ -27,6 +27,8 @@ from functools import lru_cache
 
 import cv2
 import numpy as np
+
+from .compute import get_compute_backend
 from PIL import Image
 
 from .config import V4Config
@@ -145,7 +147,7 @@ def _forward_dct_blocks(blocks: np.ndarray) -> np.ndarray:
     # 屏蔽溢出/无效警告：极端像素值可能触发中间告警，
     # 但最终结果由 _validated_output 统一把关，无需逐次打印。
     with np.errstate(over="ignore", invalid="ignore"):
-        result = basis @ values @ basis.T
+        result = get_compute_backend().forward_dct(values, basis)
     return _validated_output(result)
 
 
@@ -157,7 +159,7 @@ def _inverse_dct_blocks(blocks: np.ndarray) -> np.ndarray:
     values = _validated_blocks(blocks)
     basis = _dct_basis(CELL_SIZE)
     with np.errstate(over="ignore", invalid="ignore"):
-        result = basis.T @ values @ basis
+        result = get_compute_backend().inverse_dct(values, basis)
     return _validated_output(result)
 
 

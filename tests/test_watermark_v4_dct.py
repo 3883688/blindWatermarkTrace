@@ -188,6 +188,31 @@ def test_forward_inverse_round_trip_preserves_batch() -> None:
     np.testing.assert_allclose(restored, blocks, rtol=0.0, atol=1e-10)
 
 
+def test_forward_and_inverse_dct_use_compute_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    class BackendSpy:
+        def forward_dct(self, blocks: np.ndarray, basis: np.ndarray) -> np.ndarray:
+            calls.append("forward")
+            return basis @ blocks @ basis.T
+
+        def inverse_dct(self, blocks: np.ndarray, basis: np.ndarray) -> np.ndarray:
+            calls.append("inverse")
+            return basis.T @ blocks @ basis
+
+    monkeypatch.setattr(dct_module, "get_compute_backend", lambda: BackendSpy())
+    blocks = np.arange(2 * 16 * 16, dtype=np.float64).reshape(2, 16, 16)
+
+    restored = dct_module._inverse_dct_blocks(
+        dct_module._forward_dct_blocks(blocks)
+    )
+
+    assert calls == ["forward", "inverse"]
+    np.testing.assert_allclose(restored, blocks, rtol=1e-9, atol=1e-9)
+
+
 @pytest.mark.parametrize("transform", (_forward_dct_blocks, _inverse_dct_blocks))
 @pytest.mark.parametrize(
     "malformed",
