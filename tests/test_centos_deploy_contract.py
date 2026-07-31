@@ -19,6 +19,14 @@ def _install_body() -> str:
     return SCRIPT[SCRIPT.index("install_service()") : SCRIPT.index("run_server()")]
 
 
+def _python_install_body() -> str:
+    return SCRIPT[
+        SCRIPT.index("install_python_environment()") : SCRIPT.index(
+            "write_systemd_service()"
+        )
+    ]
+
+
 def test_shell_scripts_are_published_with_unix_line_endings() -> None:
     attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
     assert "*.sh text eol=lf" in attributes
@@ -101,6 +109,16 @@ def test_deployment_requires_and_reuses_python_310_or_newer() -> None:
     assert '"${PYTHON_BIN}" -m venv' in SCRIPT
 
 
+def test_cpu_requirements_install_before_optional_gpu_detection() -> None:
+    install_body = _python_install_body()
+    cpu = 'pip" install -r "${ROOT}/requirements.txt"'
+    gpu = "tools/install_optional_gpu.py"
+
+    assert cpu in install_body
+    assert gpu in install_body
+    assert install_body.index(cpu) < install_body.index(gpu)
+
+
 def test_environment_example_selects_v4_and_requires_private_credentials() -> None:
     assert ENV_EXAMPLE.count("ROBUST_WATERMARK_VERSION=4") == 1
     assert ENV_EXAMPLE.count("WATERMARK_AUTH_KEY=") == 1
@@ -109,6 +127,7 @@ def test_environment_example_selects_v4_and_requires_private_credentials() -> No
     assert "ADMIN_USER=\n" in ENV_EXAMPLE
     assert "ADMIN_PASS=\n" in ENV_EXAMPLE
     assert "DB_URL=\n" in ENV_EXAMPLE
+    assert ENV_EXAMPLE.count("TRACE_COMPUTE_DEVICE=auto") == 1
 
 
 def test_deployment_exposes_explicit_json_migration_command() -> None:
@@ -133,6 +152,15 @@ def test_readme_documents_preserving_v4_one_click_deployment() -> None:
     ):
         assert expected in README
     assert "MYSQL_ROOT_PASS" not in README
+
+
+def test_readme_documents_adaptive_gpu_install_and_cpu_isolation() -> None:
+    for expected in (
+        "TRACE_COMPUTE_DEVICE=auto|cpu|cuda",
+        "CPU 主机不会安装 GPU 软件包",
+        "自动回退到 CPU",
+    ):
+        assert expected in README
 
 
 def test_readme_uses_the_timestamped_release_filename() -> None:

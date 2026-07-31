@@ -19,6 +19,9 @@ if (-not (Test-Path ".env")) {
 python -m venv .venv
 & ".\.venv\Scripts\python.exe" -m pip install --upgrade pip
 & ".\.venv\Scripts\pip.exe" install -r requirements.txt
+& ".\.venv\Scripts\python.exe" "tools\install_optional_gpu.py" `
+  --python ".\.venv\Scripts\python.exe" `
+  --requirements "requirements-gpu.txt"
 
 New-Item -ItemType Directory -Force -Path "data","uploads","uploads\originals","uploads\watermarked" | Out-Null
 

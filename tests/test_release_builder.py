@@ -145,6 +145,15 @@ def test_moved_domain_modules_are_recursive_release_sources() -> None:
     } & set(ROOT_FILES)
 
 
+def test_release_contains_gpu_installer_without_polluting_cpu_requirements() -> None:
+    assert "requirements-gpu.txt" in ROOT_FILES
+    assert "tools/install_optional_gpu.py" in ROOT_FILES
+    cpu = (builder.ROOT / "requirements.txt").read_text(encoding="utf-8").lower()
+    assert "cupy" not in cpu
+    assert "cuda" not in cpu
+    assert "nvidia" not in cpu
+
+
 def test_release_collector_filters_nested_fixture_tree(tmp_path: Path) -> None:
     _write_required_root_files(tmp_path)
     allowed = {

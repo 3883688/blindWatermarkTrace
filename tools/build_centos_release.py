@@ -56,9 +56,11 @@ ROOT_FILES = (
     "index.html",
     "logo.png",
     "main.py",
+    "requirements-gpu.txt",
     "requirements.txt",
     "site-logo.png",
     "tools/migrate_json_to_mysql.py",
+    "tools/install_optional_gpu.py",
     "tools/prepare_deployment_env.py",
 )
 RECURSIVE_TREES = ("assets", "trace_app", "watermark_v4")
