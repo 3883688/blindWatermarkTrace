@@ -35,6 +35,7 @@ import numpy as np
 from PIL import Image
 
 from .config import V4Config
+from .compute import get_compute_backend
 
 
 # 导频分量个数，与 config.pilot_frequency_vectors 长度一致
@@ -363,7 +364,7 @@ def _analysis_spectrum(
     _check_deadline(deadline)
     # fftshift 把零频从数组角落搬到中心，这样峰的坐标就能用
     # "中心 + 频率×尺寸" 直观地算出来。
-    spectrum = np.fft.fftshift(np.fft.fft2(windowed))
+    spectrum = np.fft.fftshift(get_compute_backend().fft2(windowed))
     magnitude = np.abs(spectrum).astype(np.float64, copy=False)
     if not np.isfinite(spectrum).all() or not np.isfinite(magnitude).all():
         raise ValueError("analysis spectrum must contain only finite values")
@@ -808,7 +809,7 @@ def _estimate_tile_offset(
             ]
         ).astype(np.float64)
         blocks -= np.mean(blocks, axis=(1, 2), keepdims=True)
-        spectra = np.fft.fft2(blocks * window_2d, axes=(-2, -1))
+        spectra = get_compute_backend().fft2(blocks * window_2d, axes=(-2, -1))
         for component_index, (frequency_x, frequency_y) in enumerate(
             config.pilot_frequency_vectors
         ):

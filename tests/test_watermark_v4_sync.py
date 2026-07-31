@@ -500,6 +500,56 @@ def test_spectral_functions_stop_on_expired_deadline() -> None:
         pilot_peak_evidence(image, V4Config(), deadline=expired)
 
 
+def test_analysis_spectrum_uses_compute_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image = _synthetic_rgb("gradient")
+    config = V4Config()
+    expected_spectrum, expected_magnitude = _analysis_spectrum(image, config)
+    calls: list[tuple[tuple[int, ...], tuple[int, int]]] = []
+
+    class BackendSpy:
+        def fft2(
+            self,
+            values: np.ndarray,
+            axes: tuple[int, int] = (-2, -1),
+        ) -> np.ndarray:
+            calls.append((values.shape, axes))
+            return np.fft.fft2(values, axes=axes)
+
+    monkeypatch.setattr(sync_module, "get_compute_backend", lambda: BackendSpy())
+    spectrum, magnitude = _analysis_spectrum(image, config)
+
+    assert calls == [((image.height, image.width), (-2, -1))]
+    np.testing.assert_allclose(spectrum, expected_spectrum)
+    np.testing.assert_allclose(magnitude, expected_magnitude)
+
+
+def test_tile_offset_batch_fft_uses_compute_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image = embed_pilot(_synthetic_rgb("gradient", 384, 256), V4Config())
+    config = V4Config()
+    expected = sync_module._estimate_tile_offset(image, config, None)
+    calls: list[tuple[tuple[int, ...], tuple[int, int]]] = []
+
+    class BackendSpy:
+        def fft2(
+            self,
+            values: np.ndarray,
+            axes: tuple[int, int] = (-2, -1),
+        ) -> np.ndarray:
+            calls.append((values.shape, axes))
+            return np.fft.fft2(values, axes=axes)
+
+    monkeypatch.setattr(sync_module, "get_compute_backend", lambda: BackendSpy())
+    actual = sync_module._estimate_tile_offset(image, config, None)
+
+    assert calls
+    assert all(len(shape) == 3 and axes == (-2, -1) for shape, axes in calls)
+    assert actual == expected
+
+
 def test_peak_scoring_computes_color_and_fft_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -511,9 +561,12 @@ def test_peak_scoring_computes_color_and_fft_once(
         counts["color"] += 1
         return original_color(array, code)
 
-    def counted_fft(array: np.ndarray) -> np.ndarray:
+    def counted_fft(
+        array: np.ndarray,
+        axes: tuple[int, int] = (-2, -1),
+    ) -> np.ndarray:
         counts["fft"] += 1
-        return original_fft(array)
+        return original_fft(array, axes=axes)
 
     monkeypatch.setattr(sync_module.cv2, "cvtColor", counted_color)
     monkeypatch.setattr(sync_module.np.fft, "fft2", counted_fft)
