@@ -89,7 +89,9 @@ def test_gpu_requirement_is_separate_and_pinned() -> None:
     requirements = Path(__file__).resolve().parents[1] / "requirements-gpu.txt"
 
     assert requirements.read_text(encoding="utf-8") == (
-        "cupy-cuda12x[ctk]==13.6.0\n"
+        "cupy-cuda12x==13.6.0\n"
+        "nvidia-cuda-runtime-cu12==12.6.77\n"
+        "nvidia-cuda-nvrtc-cu12==12.6.85\n"
     )
 
 
