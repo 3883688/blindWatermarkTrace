@@ -18,6 +18,7 @@ def _record(owner_id: int = 7):
         source_group_id=UUID("20000000-0000-0000-0000-000000000002"),
         owner_user_id=owner_id,
         trace_id="trace-v4-only",
+        evidence_uuid=UUID("12345678-0000-0000-0000-000012345678"),
         output_media_id="opaque-output",
         thumbnail_media_id="opaque-thumb",
         original_filename="source.png",
@@ -115,6 +116,9 @@ def test_original_generation_and_images_use_only_opaque_v4_media_urls(tmp_path) 
     assert generated.json()["size"] == "2.5 MB"
     assert listed.status_code == 200
     assert listed.json()["items"][0]["size"] == "2.5 MB"
+    assert listed.json()["items"][0]["robust_watermark_version"] == 4
+    assert listed.json()["items"][0]["evidence_uuid_head"] == "12345678"
+    assert listed.json()["items"][0]["evidence_uuid_tail"] == "12345678"
     assert listed.json()["items"][0]["thumbnail_access_url"].startswith(
         "/api/media/opaque-thumb?"
     )
