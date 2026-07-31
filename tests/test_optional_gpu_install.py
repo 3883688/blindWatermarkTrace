@@ -88,7 +88,9 @@ class NvidiaScenario:
 def test_gpu_requirement_is_separate_and_pinned() -> None:
     requirements = Path(__file__).resolve().parents[1] / "requirements-gpu.txt"
 
-    assert requirements.read_text(encoding="utf-8") == "cupy-cuda12x==13.6.0\n"
+    assert requirements.read_text(encoding="utf-8") == (
+        "cupy-cuda12x[ctk]==13.6.0\n"
+    )
 
 
 def test_missing_nvidia_smi_never_accesses_gpu_requirements_or_runs_commands() -> None:
