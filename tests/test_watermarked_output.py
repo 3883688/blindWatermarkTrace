@@ -5,7 +5,9 @@ import pytest
 from PIL import Image, JpegImagePlugin
 
 from trace_app.imaging.output import (
+    JPEG_MAX_QUALITY,
     JPEG_MIN_QUALITY,
+    JPEG_TARGET_RATIO,
     WatermarkedOutput,
     encode_adaptive_jpeg,
     encode_jpeg,
@@ -55,21 +57,27 @@ def test_jpeg_subsampling_falls_back_for_non_jpeg() -> None:
     assert jpeg_subsampling(Image.new("RGB", (16, 16))) == 0
 
 
+def test_adaptive_jpeg_uses_compact_v4_output_policy() -> None:
+    assert JPEG_MIN_QUALITY == 88
+    assert JPEG_MAX_QUALITY == 92
+    assert JPEG_TARGET_RATIO == 1.10
+
+
 def test_adaptive_jpeg_selects_highest_quality_within_target() -> None:
     def sized_encoder(image: Image.Image, quality: int) -> bytes:
         return bytes(quality * 10)
 
     content, quality = encode_adaptive_jpeg(
         _image(),
-        source_size=744,
+        source_size=830,
         encoder=sized_encoder,
     )
 
-    assert quality == 93
-    assert len(content) == 930
+    assert quality == 91
+    assert len(content) == 910
 
 
-def test_adaptive_jpeg_never_drops_below_quality_90() -> None:
+def test_adaptive_jpeg_never_drops_below_quality_88() -> None:
     def sized_encoder(image: Image.Image, quality: int) -> bytes:
         return bytes(quality * 10)
 
@@ -79,8 +87,8 @@ def test_adaptive_jpeg_never_drops_below_quality_90() -> None:
         encoder=sized_encoder,
     )
 
-    assert quality == JPEG_MIN_QUALITY == 90
-    assert len(content) == 900
+    assert quality == JPEG_MIN_QUALITY == 88
+    assert len(content) == 880
 
 
 def test_adaptive_jpeg_converts_to_rgb_once_for_all_quality_candidates(
@@ -99,7 +107,7 @@ def test_adaptive_jpeg_converts_to_rgb_once_for_all_quality_candidates(
 
     _, quality = encode_adaptive_jpeg(source, source_size=1)
 
-    assert quality == JPEG_MIN_QUALITY == 90
+    assert quality == JPEG_MIN_QUALITY == 88
     assert rgb_conversions == ["RGBA"]
 
 
@@ -159,7 +167,7 @@ def test_save_watermarked_output_returns_persisted_jpeg(tmp_path: Path) -> None:
 
     assert isinstance(result, WatermarkedOutput)
     assert result.path.suffix == ".jpg"
-    assert result.quality == 90
+    assert result.quality == JPEG_MIN_QUALITY
     assert result.path.exists()
     with Image.open(result.path) as loaded:
         loaded.load()
