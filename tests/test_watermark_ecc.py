@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from watermark_ecc import (
+from trace_app.watermark.ecc import (
     RS_CODEWORD_BYTES,
     RS_DATA_BYTES,
     codeword_phase,

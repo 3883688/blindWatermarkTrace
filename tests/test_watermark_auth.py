@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from watermark_auth import (
+from trace_app.watermark.auth import (
     candidate_radius_probability,
     auth_code_from_trace,
     inverse_permutation,

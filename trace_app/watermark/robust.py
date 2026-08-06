@@ -41,8 +41,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from watermark_auth import permuted_code_bits, phase_permutation
-from watermark_ecc import codeword_phase, decode_expected_codeword, encode_codeword, tile_phase
+from trace_app.watermark.auth import permuted_code_bits, phase_permutation
+from trace_app.watermark.ecc import codeword_phase, decode_expected_codeword, encode_codeword, tile_phase
 from trace_app.config import (
     CODE_PAYLOAD_BITS,
     CODE_PHYSICAL_BITS,
@@ -801,7 +801,7 @@ def decode_aligned_robust_trace_v2(
     缺任一相位就意味着码字里整整 8 字节是纯噪声，RS(24,8) 的纠错预算
     会被这一段吃光，剩不下多少余量去对付真正的失真。
 
-    校验走 :func:`~watermark_ecc.decode_expected_codeword`——它拿期望载荷去
+    校验走 :func:`~trace_app.watermark.ecc.decode_expected_codeword`——它拿期望载荷去
     **验证**而不是自由解码：纠错结果必须同时等于期望载荷和期望码字才算通过，
     可信度列表用于按档位逐次尝试擦除。这么做是因为 v2 的码本身无密码学保护，
     自由解码出什么就信什么的话误报率压不住。

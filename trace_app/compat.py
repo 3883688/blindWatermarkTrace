@@ -22,8 +22,8 @@ import pywt
 
 cv2.setNumThreads(1)
 
-from watermark_ecc import codeword_phase, decode_expected_codeword, encode_codeword, tile_phase
-from watermark_auth import auth_code_from_trace, inverse_permutation, permuted_code_bits, phase_permutation
+from trace_app.watermark.auth import auth_code_from_trace, inverse_permutation, permuted_code_bits, phase_permutation
+from trace_app.watermark.ecc import codeword_phase, decode_expected_codeword, encode_codeword, tile_phase
 from trace_app.imaging.candidate_feature_index import (
     descriptor_match_score,
     extract_feature_descriptors,

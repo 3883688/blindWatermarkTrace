@@ -1,6 +1,6 @@
 """传统链路 robust 水印 v3 的认证层：HMAC 认证码与比特置换。
 
-v3 与 v2（``watermark_ecc.py``）的根本区别在于**嵌什么**：v2 嵌的是溯源号
+v3 与 v2（``trace_app.watermark.ecc``）的根本区别在于**嵌什么**：v2 嵌的是溯源号
 派生出的数据加 RS 校验，v3 嵌的是一段由服务端密钥算出的 8 字节 HMAC 认证码。
 
 **为什么要认证而不是直接嵌溯源号？** 认证码由密钥决定，攻击者即使完全掌握
@@ -92,7 +92,7 @@ def auth_code_from_trace(trace_id: str, key: str | bytes | None) -> bytes:
 def phase_permutation(phase: int) -> tuple[int, ...]:
     """生成某个相位的比特置换表：``逻辑位序 -> 物理位序``。
 
-    :param phase: 相位 0~2，由分块坐标经 ``watermark_ecc.tile_phase`` 算出。
+    :param phase: 相位 0~2，由分块坐标经 ``trace_app.watermark.ecc.tile_phase`` 算出。
     :return: 长度 64 的置换表，``表[逻辑位] = 物理位``。
     :raises ValueError: 相位不在 0~2。
 

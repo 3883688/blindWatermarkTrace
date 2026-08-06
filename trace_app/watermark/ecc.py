@@ -191,7 +191,7 @@ def codeword_phase(codeword: bytes, phase: int) -> bytes:
 
     切法是简单的连续分段（相位 0 取 ``[0:8]``、1 取 ``[8:16]``、2 取 ``[16:24]``），
     不做任何打散——v2 靠"每块只嵌 1/3 码字 + 16 字节 RS 校验"抗损伤，
-    比特级置换是 v3 才引入的手段（见 ``watermark_auth.py``）。
+    比特级置换是 v3 才引入的手段（见 ``trace_app.watermark.auth``）。
     分段边界属于格式契约，改了就解不出旧图。
     """
     if len(codeword) != RS_CODEWORD_BYTES:

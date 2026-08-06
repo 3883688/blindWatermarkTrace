@@ -33,7 +33,7 @@ from trace_app.imaging.candidate_feature_index import (
     save_feature_descriptors,
 )
 from PIL import Image
-from watermark_auth import auth_code_from_trace
+from trace_app.watermark.auth import auth_code_from_trace
 from watermark_v4 import (
     V4Config,
     authentication_tag as v4_authentication_tag,
