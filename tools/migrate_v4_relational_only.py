@@ -10,8 +10,8 @@ from typing import Any
 from sqlalchemy import MetaData, Table, create_engine, inspect, select, text
 from sqlalchemy.engine import Engine
 
-from database_store import DatabaseStore
 from trace_app.config import settings
+from trace_app.database.store import DatabaseStore
 from trace_app.v4.startup import initialize_v4_schema
 
 

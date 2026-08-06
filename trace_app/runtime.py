@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
 
-    from database_store import DatabaseStore
+    from trace_app.database.store import DatabaseStore
 
 
 @dataclass(slots=True)

@@ -1,10 +1,37 @@
 import json
+import subprocess
+import sys
 
 import pytest
 from sqlalchemy import create_engine, inspect, select
 
-from database_store import DatabaseStore
+from trace_app.database.store import DatabaseStore
 from trace_app.database.repositories import Repository
+
+
+def test_database_store_imports_in_a_fresh_python_process() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from trace_app.database.store import DatabaseStore; "
+                "from trace_app.auth.password_security import hash_password; "
+                "from trace_app.auth import AuthService; "
+                "from trace_app.database import Repository, create_runtime; "
+                "assert DatabaseStore.__module__ == 'trace_app.database.store'; "
+                "assert callable(hash_password); "
+                "assert AuthService.__module__ == 'trace_app.auth.service'; "
+                "assert Repository.__module__ == 'trace_app.database.repositories'; "
+                "assert callable(create_runtime)"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.fixture

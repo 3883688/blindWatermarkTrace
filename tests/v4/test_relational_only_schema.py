@@ -1,7 +1,7 @@
 from sqlalchemy import JSON, MetaData, create_engine
 from sqlalchemy.dialects.postgresql import JSONB
 
-from database_store import DatabaseStore
+from trace_app.database.store import DatabaseStore
 from trace_app.v4.schema import V4Tables
 
 

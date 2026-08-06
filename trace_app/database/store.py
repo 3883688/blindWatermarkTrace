@@ -21,7 +21,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine import Connection
 
-from password_security import hash_password, verify_password
+from trace_app.auth.password_security import hash_password, verify_password
 
 
 class DatabaseStore:

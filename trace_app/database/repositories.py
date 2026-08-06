@@ -3,7 +3,7 @@ from typing import Any, Callable
 
 from fastapi import HTTPException
 
-from database_store import DatabaseStore
+from trace_app.database.store import DatabaseStore
 
 
 class Repository:

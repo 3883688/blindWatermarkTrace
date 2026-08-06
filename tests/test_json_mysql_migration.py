@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, inspect, select, text
 
-from database_store import DatabaseStore
+from trace_app.database.store import DatabaseStore
 from tools.migrate_json_to_mysql import load_source_data, migrate
 
 

@@ -15,9 +15,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from password_security import verify_password
-
 from trace_app.auth.schemas import AuthenticatedUser
+from trace_app.auth.password_security import verify_password
 from trace_app.config import MENU_LABELS
 from trace_app.database.repositories import Repository
 from trace_app.v4.security import DatabaseSessionStore

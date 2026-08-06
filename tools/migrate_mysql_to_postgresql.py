@@ -29,8 +29,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from database_store import DatabaseStore  # noqa: E402
 from trace_app.config import DEFAULT_ROLES, MENU_LABELS  # noqa: E402
+from trace_app.database.store import DatabaseStore  # noqa: E402
 
 
 @dataclass(frozen=True)

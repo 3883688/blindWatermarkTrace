@@ -18,7 +18,7 @@ import pytest
 from sqlalchemy import create_engine
 
 import main
-from database_store import DatabaseStore
+from trace_app.database.store import DatabaseStore
 from trace_app.database.repositories import Repository
 
 

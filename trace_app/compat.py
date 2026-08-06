@@ -30,7 +30,7 @@ from candidate_feature_index import (
     load_feature_descriptors,
     save_feature_descriptors,
 )
-from database_store import DatabaseStore
+from trace_app.database.store import DatabaseStore
 from watermark_v4 import (
     V4Config,
     authentication_tag as v4_authentication_tag,

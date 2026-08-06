@@ -1,8 +1,8 @@
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 
-from database_store import DatabaseStore
 from trace_app.config import DEFAULT_ROLES, Settings
+from trace_app.database.store import DatabaseStore
 from trace_app.runtime import Runtime, dispose_engine
 from trace_app.v4.startup import initialize_v4_schema
 

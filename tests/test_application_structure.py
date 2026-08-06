@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import main
-from database_store import DatabaseStore
+from trace_app.database.store import DatabaseStore
 from fastapi import HTTPException, UploadFile
 from fastapi.testclient import TestClient
 import pytest

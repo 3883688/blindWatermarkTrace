@@ -2,7 +2,7 @@ import base64
 
 import pytest
 
-from password_security import hash_password, verify_password
+from trace_app.auth.password_security import hash_password, verify_password
 
 
 def test_hash_is_salted_versioned_and_not_plaintext() -> None:
@@ -46,7 +46,7 @@ def test_verify_rejects_untrusted_scrypt_parameters_before_hashing(
         )
     )
     monkeypatch.setattr(
-        "password_security.hashlib.scrypt",
+        "trace_app.auth.password_security.hashlib.scrypt",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("untrusted parameters reached scrypt")
         ),

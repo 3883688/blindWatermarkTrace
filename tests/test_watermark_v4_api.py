@@ -7,7 +7,7 @@ from PIL import Image, JpegImagePlugin
 from sqlalchemy import create_engine, select
 
 import main
-from database_store import DatabaseStore
+from trace_app.database.store import DatabaseStore
 from tests.test_watermark_v4_features import _feature_image
 from trace_app.database.repositories import Repository
 from watermark_v4 import V4Config
