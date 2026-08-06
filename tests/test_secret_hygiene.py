@@ -112,21 +112,16 @@ def test_release_source_matches_sanitized_root() -> None:
     root_sources = (
         ".env.example",
         "README_DEPLOY.md",
-        "candidate_feature_index.py",
-        "database_store.py",
         "deploy.sh",
         "favico.ico",
         "favicon.ico",
         "index.html",
         "logo.png",
         "main.py",
-        "password_security.py",
         "requirements.txt",
         "site-logo.png",
         "tools/migrate_json_to_mysql.py",
         "tools/prepare_deployment_env.py",
-        "watermark_auth.py",
-        "watermark_ecc.py",
     )
     package_sources = sorted(
         path.relative_to(ROOT).as_posix()

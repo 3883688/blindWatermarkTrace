@@ -37,7 +37,7 @@ def test_backup_script_declares_required_exclusions_and_archive_verification():
 
 def test_backup_script_excludes_sensitive_and_runtime_paths_from_fixture(tmp_path):
     included_paths = (
-        "watermark_auth.py",
+        "trace_app/watermark/auth.py",
         "src/keyframe.py",
         "docs/secret-handling.md",
         "frontend/assets/app.js",

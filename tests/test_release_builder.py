@@ -110,7 +110,7 @@ def test_release_source_filter_rejects_private_and_development_paths(
 @pytest.mark.parametrize(
     "relative",
     (
-        "trace_app/password_security.py",
+        "trace_app/auth/password_security.py",
         "trace_app/module.py",
         "watermark_v4/config.py",
         "assets/tabler-icons.css",
@@ -127,15 +127,29 @@ def test_release_source_filter_allows_compiled_frontend_javascript() -> None:
     assert is_release_source(Path("assets/app/app.js"))
 
 
-def test_root_password_security_module_remains_explicitly_allowed() -> None:
-    assert "password_security.py" in ROOT_FILES
+def test_moved_domain_modules_are_recursive_release_sources() -> None:
+    moved = {
+        "trace_app/imaging/candidate_feature_index.py",
+        "trace_app/database/store.py",
+        "trace_app/auth/password_security.py",
+        "trace_app/watermark/auth.py",
+        "trace_app/watermark/ecc.py",
+    }
+    assert moved <= {path.as_posix() for path in release_files()}
+    assert not {
+        "candidate_feature_index.py",
+        "database_store.py",
+        "password_security.py",
+        "watermark_auth.py",
+        "watermark_ecc.py",
+    } & set(ROOT_FILES)
 
 
 def test_release_collector_filters_nested_fixture_tree(tmp_path: Path) -> None:
     _write_required_root_files(tmp_path)
     allowed = {
         "trace_app/module.py",
-        "trace_app/password_security.py",
+        "trace_app/auth/password_security.py",
         "watermark_v4/config.py",
         "assets/fonts/tabler-icons.woff2",
     }
