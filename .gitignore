@@ -21,6 +21,7 @@ frontend/test-results/
 *.log
 
 # Generated runtime data
+/X/
 output/
 test_output/
 uploads/
