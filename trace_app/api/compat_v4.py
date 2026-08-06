@@ -13,6 +13,7 @@ from trace_app.api.v4 import _upload_bytes
 from trace_app.auth.schemas import AuthenticatedUser
 from trace_app.dependencies import (
     get_current_user,
+    get_repository,
     get_v4_detection_service,
     get_v4_generation_service,
     get_v4_media_service,
@@ -61,7 +62,30 @@ def _format_byte_size(value: object) -> str:
     return f"{value / 1024 / 1024:.1f} MB"
 
 
-def _image_payload(record: object, user: AuthenticatedUser, repository: Any, media: Any) -> dict[str, Any]:
+def _owner_username(
+    record: object,
+    users: Any,
+    cache: dict[int, str] | None = None,
+) -> str:
+    owner_user_id = int(getattr(record, "owner_user_id"))
+    if cache is not None and owner_user_id in cache:
+        return cache[owner_user_id]
+    identity = users.get_user_by_id(owner_user_id)
+    username = identity.get("username") if isinstance(identity, dict) else None
+    result = str(username).strip() if username else str(owner_user_id)
+    if cache is not None:
+        cache[owner_user_id] = result
+    return result
+
+
+def _image_payload(
+    record: object,
+    user: AuthenticatedUser,
+    repository: Any,
+    media: Any,
+    users: Any,
+    owner_names: dict[int, str] | None = None,
+) -> dict[str, Any]:
     group = _group(repository, _scope(user), record)
     output_media_id = getattr(record, "output_media_id", None)
     output_media = repository.get_media(output_media_id) if output_media_id else None
@@ -69,7 +93,7 @@ def _image_payload(record: object, user: AuthenticatedUser, repository: Any, med
         "id": str(getattr(record, "id")),
         "name": getattr(record, "original_filename", "image"),
         "size": _format_byte_size(getattr(output_media, "byte_size", None)),
-        "user_id": str(getattr(record, "owner_user_id")),
+        "user_id": _owner_username(record, users, owner_names),
         "trace_id": getattr(record, "trace_id"),
         "evidence_uuid_head": str(getattr(record, "evidence_uuid", ""))[:8],
         "evidence_uuid_tail": str(getattr(record, "evidence_uuid", ""))[-8:],
@@ -93,8 +117,14 @@ def _image_payload(record: object, user: AuthenticatedUser, repository: Any, med
     return result
 
 
-def _generation_payload(record: object, user: AuthenticatedUser, repository: Any, media: Any) -> dict[str, Any]:
-    item = _image_payload(record, user, repository, media)
+def _generation_payload(
+    record: object,
+    user: AuthenticatedUser,
+    repository: Any,
+    media: Any,
+    users: Any,
+) -> dict[str, Any]:
+    item = _image_payload(record, user, repository, media, users)
     return {
         **item,
         "evidence_uuid_head": str(getattr(record, "evidence_uuid", ""))[:8],
@@ -114,6 +144,7 @@ async def embed(
     service: Any = Depends(get_v4_generation_service),
     repository: Any = Depends(get_v4_record_repository),
     media: Any = Depends(get_v4_media_service),
+    users: Any = Depends(get_repository),
 ) -> dict[str, Any]:
     content_type = file.content_type or "application/octet-stream"
     filename = file.filename or "image"
@@ -123,15 +154,21 @@ async def embed(
         GenerationRequest(current_user.id, content, content_type, filename),
         Deadline.synchronous(),
     )
-    return _generation_payload(result.record, current_user, repository, media)
+    return _generation_payload(result.record, current_user, repository, media, users)
 
 
-def _detected_payload(result: Any, user: AuthenticatedUser, repository: Any, media: Any) -> dict[str, Any]:
+def _detected_payload(
+    result: Any,
+    user: AuthenticatedUser,
+    repository: Any,
+    media: Any,
+    users: Any,
+) -> dict[str, Any]:
     if result.outcome != DetectionOutcome.SUCCESS or result.record is None:
         raise HTTPException(status_code=404, detail="未检测到可验证的 V4 水印")
     record = result.record
     group = _group(repository, _scope(user), record)
-    payload = _image_payload(record, user, repository, media)
+    payload = _image_payload(record, user, repository, media, users)
     payload["extracted_at"] = datetime.now(UTC).isoformat()
     payload["matched_file_access_url"] = _url(
         media, getattr(group, "original_media_id", None), user
@@ -148,6 +185,7 @@ async def extract(
     service: Any = Depends(get_v4_detection_service),
     repository: Any = Depends(get_v4_record_repository),
     media: Any = Depends(get_v4_media_service),
+    users: Any = Depends(get_repository),
 ) -> dict[str, Any]:
     content = await _upload_bytes(file, request)
     result = await run_in_threadpool(
@@ -158,7 +196,7 @@ async def extract(
     repository.increment_counter(current_user.id, "detection_total")
     if result.outcome == DetectionOutcome.SUCCESS:
         repository.increment_counter(current_user.id, "detection_success")
-    return _detected_payload(result, current_user, repository, media)
+    return _detected_payload(result, current_user, repository, media, users)
 
 
 @router.post("/watermark/extract-url")
@@ -168,6 +206,7 @@ async def extract_url(
     service: Any = Depends(get_v4_detection_service),
     repository: Any = Depends(get_v4_record_repository),
     media: Any = Depends(get_v4_media_service),
+    users: Any = Depends(get_repository),
 ) -> dict[str, Any]:
     deadline = Deadline.synchronous()
     content, _content_type = await run_in_threadpool(
@@ -179,7 +218,7 @@ async def extract_url(
     repository.increment_counter(current_user.id, "detection_total")
     if result.outcome == DetectionOutcome.SUCCESS:
         repository.increment_counter(current_user.id, "detection_success")
-    return _detected_payload(result, current_user, repository, media)
+    return _detected_payload(result, current_user, repository, media, users)
 
 
 @router.get("/images")
@@ -187,10 +226,12 @@ def images(
     current_user: AuthenticatedUser = Depends(get_current_user),
     repository: Any = Depends(get_v4_record_repository),
     media: Any = Depends(get_v4_media_service),
+    users: Any = Depends(get_repository),
 ) -> dict[str, Any]:
     scope = _scope(current_user)
+    owner_names: dict[int, str] = {}
     items = [
-        _image_payload(record, current_user, repository, media)
+        _image_payload(record, current_user, repository, media, users, owner_names)
         for record in repository.list_records(scope)
     ]
     return {"items": items, "stats": repository.dashboard_stats(scope)}

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from trace_app.application import create_app
 from trace_app.auth.schemas import AuthenticatedUser
 from trace_app.config import Settings
-from trace_app.dependencies import get_current_user
+from trace_app.dependencies import get_current_user, get_repository
 from trace_app.v4.domain import DetectionOutcome, DetectionResult
 
 
@@ -62,6 +62,11 @@ class _Repository:
         return 1
 
 
+class _Users:
+    def get_user_by_id(self, user_id):
+        return {"id": user_id, "username": "operator", "role": "operator"}
+
+
 class _Media:
     def issue_url(self, media_id, *, requester_user_id, requester_is_admin):
         return f"/api/media/{media_id}?expires=999&signature=signed"
@@ -86,6 +91,7 @@ def _client(tmp_path) -> tuple[TestClient, object]:
         v4_record_repository_factory=lambda: repository,
         v4_media_service_factory=_Media,
     )
+    app.dependency_overrides[get_repository] = _Users
     return TestClient(app), app
 
 
@@ -138,6 +144,7 @@ def test_original_detection_and_dashboard_are_backed_by_v4(tmp_path) -> None:
     dashboard = client.get("/api/dashboard-stats")
 
     assert detected.status_code == 200
+    assert detected.json()["user_id"] == "operator"
     assert detected.json()["trace_id"] == "trace-v4-only"
     assert detected.json()["matched_file_access_url"].startswith(
         "/api/media/opaque-original?"
