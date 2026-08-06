@@ -13,7 +13,8 @@
   :class:`~watermark_v4.features.FeatureIndex` 数据类构建，索引里存关键点坐标、
   描述子和缩略图，能做"受约束匹配"（旋转缩放已由 FFT 导频给出，只求平移），
   质量闸门也更严（几何合理性、条件数、重投影误差）。
-* 本模块是历史实现，只存**裸描述子**（见 :mod:`candidate_feature_index`），
+* 本模块是历史实现，只存**裸描述子**（见
+  :mod:`trace_app.imaging.candidate_feature_index`），
   匹配时重新在灰度图上现提关键点。没有索引数据类，也没有受约束匹配，
   阈值以经验值直接写在代码里。
 
@@ -41,7 +42,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from candidate_feature_index import (
+from trace_app.imaging.candidate_feature_index import (
     descriptor_match_score,
     extract_feature_descriptors,
     load_feature_descriptors,

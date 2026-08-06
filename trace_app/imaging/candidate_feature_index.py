@@ -2,7 +2,8 @@
 
 这是水印检测的前置环节。检测一张来路不明的图时，不可能拿全库记录逐一做水印
 解码——那太慢。于是先用视觉特征把库里的记录粗排一遍，取最像的若干条作为候选，
-再交给水印层（``watermark_ecc.py`` / ``watermark_auth.py`` / ``watermark_v4``）
+再交给水印层（``trace_app.watermark.ecc`` / ``trace_app.watermark.auth`` /
+``watermark_v4``）
 做定向验证。本模块负责的就是"粗排"这一步的数据结构与打分。
 
 **为什么用 ORB 而不是感知哈希？** 目标场景是截图、裁剪、缩放后的图片，
@@ -14,8 +15,9 @@
 解码原图、重跑特征提取的开销。索引文件属于**可重建的缓存**，缺失或损坏时
 本模块一律静默降级为"没有特征"，绝不让整次检测失败。
 
-被 ``trace_app/imaging/feature_matching.py`` 与
-``trace_app/watermark/default_operations.py`` 使用。
+本模块的完整导入路径是 ``trace_app.imaging.candidate_feature_index``，被
+``trace_app.imaging.feature_matching`` 与
+``trace_app.watermark.default_operations`` 使用。
 """
 
 from pathlib import Path

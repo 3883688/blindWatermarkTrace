@@ -27,7 +27,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable
 
-from candidate_feature_index import (
+from trace_app.imaging.candidate_feature_index import (
     extract_feature_descriptors,
     load_feature_descriptors,
     save_feature_descriptors,

@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
-from candidate_feature_index import (
+from trace_app.imaging.candidate_feature_index import (
     descriptor_match_score,
     extract_feature_descriptors,
     load_feature_descriptors,
