@@ -2,7 +2,7 @@ export function createWatermarkForm(userId = '') {
   return {
     userId,
     robustWatermarkVersion: '4',
-    copyrightEnabled: false,
+    copyrightEnabled: true,
     copyrightText: '\u00a9 QQ:757675150',
     copyrightIrregularEnabled: true,
     copyrightProminentCornerEnabled: false,

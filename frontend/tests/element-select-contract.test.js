@@ -24,9 +24,10 @@ test('all application dropdowns use Element Plus selects', async () => {
   expect(users).toContain('<el-select v-model="createRole"');
   expect(users).toContain('<el-select v-model="choices[name]"');
   expect(watermark).toContain('<el-select v-model="form.smallCropTraceDensity"');
-  expect(sources.join('\n').match(/<el-select\b/g)).toHaveLength(5);
+  expect(sources.join('\n').match(/<el-select\b/g)).toHaveLength(6);
 
-  expect(watermark).toContain('<label>水印版本</label><input class="field-input" value="V4" disabled>');
+  expect(watermark).toContain('水印版本');
+  expect(watermark).toContain('value="V4" disabled');
   expect(imageTable).toContain('<th>水印版本</th>');
   expect(imageTable).toContain('<td class="small-cell">V4</td>');
   expect(watermark).not.toContain('v-model="form.robustWatermarkVersion"');

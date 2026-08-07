@@ -101,6 +101,12 @@ async def generate(
     request: Request,
     file: UploadFile = File(...),
     codec: str = Form(...),
+    copyright_enabled: str = Form(""),
+    copyright_text: str = Form(""),
+    copyright_opacity: str = Form(""),
+    copyright_complexity: str = Form(""),
+    copyright_irregular_enabled: str = Form(""),
+    copyright_prominent_corner_enabled: str = Form(""),
     user: AuthenticatedUser = Depends(get_current_user),
     service: Any = Depends(get_v4_generation_service),
     media: Any = Depends(get_v4_media_service),
@@ -111,7 +117,19 @@ async def generate(
     deadline = Deadline.synchronous()
     result = await run_in_threadpool(
         service.generate,
-        GenerationRequest(user.id, content, file.content_type or "application/octet-stream"),
+        GenerationRequest(
+            user.id,
+            content,
+            file.content_type or "application/octet-stream",
+            metadata={
+                "copyright_enabled": copyright_enabled,
+                "copyright_text": copyright_text,
+                "copyright_opacity": copyright_opacity,
+                "copyright_complexity": copyright_complexity,
+                "copyright_irregular_enabled": copyright_irregular_enabled,
+                "copyright_prominent_corner_enabled": copyright_prominent_corner_enabled,
+            },
+        ),
         deadline,
     )
     return {

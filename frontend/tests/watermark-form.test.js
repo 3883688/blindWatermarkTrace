@@ -8,7 +8,7 @@ describe('watermark form parity', () => {
     expect(form).toMatchObject({
       userId: 'BX100',
       robustWatermarkVersion: '4',
-      copyrightEnabled: false,
+      copyrightEnabled: true,
       copyrightText: '\u00a9 QQ:757675150',
       copyrightIrregularEnabled: true,
       copyrightProminentCornerEnabled: false,
@@ -29,7 +29,7 @@ describe('watermark form parity', () => {
 
     expect([...data.entries()].map(([key, value]) => [key, value instanceof File ? value.name : value])).toEqual([
       ['file', 'source.png'], ['user_id', 'BX100'],
-      ['copyright_enabled', 'false'], ['copyright_text', '\u00a9 QQ:757675150'],
+      ['copyright_enabled', 'true'], ['copyright_text', '\u00a9 QQ:757675150'],
       ['copyright_opacity', '0.16'], ['copyright_complexity', 'medium'],
       ['copyright_irregular_enabled', 'true'], ['copyright_prominent_corner_enabled', 'false'],
       ['fidelity_level', '0.75'], ['robust_watermark_version', '4'],
