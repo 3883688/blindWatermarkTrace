@@ -29,6 +29,12 @@ class Settings:
     v4_sync_p95_seconds: int = 120
     v4_sync_timeout_seconds: int = 300
     v4_deep_timeout_seconds: int = 1000
+    visible_copyright_enabled: bool = False
+    visible_copyright_text: str = "© QQ:757675150"
+    visible_copyright_opacity: float = 0.16
+    visible_copyright_complexity: str = "medium"
+    visible_copyright_irregular: bool = True
+    visible_copyright_prominent_corner: bool = False
 
     @property
     def original_dir(self) -> Path:
@@ -61,6 +67,12 @@ class Settings:
         v4_sync_p95_seconds: int = 120,
         v4_sync_timeout_seconds: int = 300,
         v4_deep_timeout_seconds: int = 1000,
+        visible_copyright_enabled: bool = False,
+        visible_copyright_text: str = "© QQ:757675150",
+        visible_copyright_opacity: float = 0.16,
+        visible_copyright_complexity: str = "medium",
+        visible_copyright_irregular: bool = True,
+        visible_copyright_prominent_corner: bool = False,
     ) -> "Settings":
         base_path = Path(base_dir).expanduser().resolve()
         upload_path = cls._resolve_path(base_path, upload_dir)
@@ -68,6 +80,8 @@ class Settings:
         manifest_path = cls._resolve_path(base_path, v4_model_manifest_path)
         normalized_environment = environment.strip().lower()
         normalized_db_url = db_url.strip()
+        if not 0.02 <= visible_copyright_opacity <= 0.90:
+            raise ValueError("visible copyright opacity must be between 0.02 and 0.90")
         if normalized_environment == "production":
             cls._validate_production_database_url(normalized_db_url)
         cls._validate_v4_limits(
@@ -97,6 +111,12 @@ class Settings:
             v4_sync_p95_seconds=v4_sync_p95_seconds,
             v4_sync_timeout_seconds=v4_sync_timeout_seconds,
             v4_deep_timeout_seconds=v4_deep_timeout_seconds,
+            visible_copyright_enabled=visible_copyright_enabled,
+            visible_copyright_text=visible_copyright_text.strip() or "© QQ:757675150",
+            visible_copyright_opacity=visible_copyright_opacity,
+            visible_copyright_complexity=visible_copyright_complexity.strip() or "medium",
+            visible_copyright_irregular=visible_copyright_irregular,
+            visible_copyright_prominent_corner=visible_copyright_prominent_corner,
         )
 
     @staticmethod
@@ -156,6 +176,17 @@ settings = Settings.from_values(
     v4_sync_p95_seconds=int(os.getenv("V4_SYNC_P95_SECONDS", "120")),
     v4_sync_timeout_seconds=int(os.getenv("V4_SYNC_TIMEOUT_SECONDS", "300")),
     v4_deep_timeout_seconds=int(os.getenv("V4_DEEP_TIMEOUT_SECONDS", "1000")),
+    visible_copyright_enabled=os.getenv("VISIBLE_COPYRIGHT_ENABLED", "false").lower()
+    in {"1", "true", "yes", "on"},
+    visible_copyright_text=os.getenv("VISIBLE_COPYRIGHT_TEXT", "© QQ:757675150"),
+    visible_copyright_opacity=float(os.getenv("VISIBLE_COPYRIGHT_OPACITY", "0.16")),
+    visible_copyright_complexity=os.getenv("VISIBLE_COPYRIGHT_COMPLEXITY", "medium"),
+    visible_copyright_irregular=os.getenv("VISIBLE_COPYRIGHT_IRREGULAR", "true").lower()
+    in {"1", "true", "yes", "on"},
+    visible_copyright_prominent_corner=os.getenv(
+        "VISIBLE_COPYRIGHT_PROMINENT_CORNER", "false"
+    ).lower()
+    in {"1", "true", "yes", "on"},
 )
 
 UPLOAD_DIR = settings.upload_dir

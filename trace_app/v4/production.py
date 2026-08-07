@@ -20,6 +20,7 @@ from trace_app.v4.generation import EncodedImages, GroupArtifacts, V4GenerationS
 from trace_app.v4.geometry import ConfirmedGroup, FeatureSet, match_orb_ransac
 from trace_app.v4.keys import KeyRing
 from trace_app.v4.recall import VIEW_POLICY_VERSION, build_dino_batch, recall_image
+from trace_app.imaging.visible_mark import apply_visible_copyright
 from trace_app.v4.repository import EmbeddingInput, FeatureInput
 from watermark_v4.config import V4Config
 from watermark_v4.dct import embed_codeword, extract_image_tiles
@@ -33,6 +34,16 @@ ORB_MODEL_VERSION = "opencv_orb_v1"
 SUPERPOINT_MODEL_VERSION = "superpoint_lightglue_v1"
 FEATURE_SCHEMA_VERSION = 1
 THUMBNAIL_MAX_SIDE = 512
+
+
+@dataclass(frozen=True, slots=True)
+class VisibleCopyrightConfig:
+    enabled: bool = False
+    text: str = "© QQ:757675150"
+    opacity: float = 0.16
+    complexity: str = "medium"
+    irregular: bool = True
+    prominent_corner: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +70,13 @@ def decode_rgb(content: bytes, deadline: Deadline) -> np.ndarray:
     return np.ascontiguousarray(rgb)
 
 
-def encode_v4_images(rgb: np.ndarray, tag: bytes, deadline: Deadline) -> EncodedImages:
+def encode_v4_images(
+    rgb: np.ndarray,
+    tag: bytes,
+    deadline: Deadline,
+    *,
+    visible_copyright: VisibleCopyrightConfig | None = None,
+) -> EncodedImages:
     """Embed a V4 HMAC64 tag and return lossless output plus a thumbnail."""
     array = np.asarray(rgb)
     if array.dtype != np.dtype("uint8") or array.ndim != 3 or array.shape[2] != 3:
@@ -69,6 +86,16 @@ def encode_v4_images(rgb: np.ndarray, tag: bytes, deadline: Deadline) -> Encoded
     deadline.check("embed_prepare")
     config = V4Config()
     source = Image.fromarray(np.ascontiguousarray(array))
+    if visible_copyright is not None:
+        source = apply_visible_copyright(
+            source,
+            visible_copyright.enabled,
+            visible_copyright.text,
+            visible_copyright.opacity,
+            visible_copyright.complexity,
+            visible_copyright.irregular,
+            visible_copyright.prominent_corner,
+        )
     marked = embed_codeword(embed_pilot(source, config), encode_codeword(tag), config)
     deadline.check("embed_complete")
 
@@ -137,6 +164,7 @@ def create_production_services(
     key_ring: KeyRing,
     dino_models: object,
     lightglue_matcher: object,
+    visible_copyright: VisibleCopyrightConfig | None = None,
 ) -> ProductionServices:
     """Wire the verified CPU models into the V4 service contracts."""
     confirmer = _GeometryConfirmer(repository, media, lightglue_matcher)
@@ -171,7 +199,12 @@ def create_production_services(
         build_group_artifacts=lambda rgb, deadline: build_group_artifacts(
             rgb, deadline, dino_models
         ),
-        embed=encode_v4_images,
+        embed=lambda rgb, tag, deadline: encode_v4_images(
+            rgb,
+            tag,
+            deadline,
+            visible_copyright=visible_copyright,
+        ),
         trace_id_factory=lambda: secrets.token_urlsafe(24),
     )
     detection = V4DetectionService(
@@ -358,6 +391,7 @@ __all__ = (
     "create_production_services",
     "decode_rgb",
     "encode_v4_images",
+    "VisibleCopyrightConfig",
     "extract_aligned_observation",
     "ProductionServices",
 )
