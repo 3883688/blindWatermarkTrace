@@ -20,6 +20,7 @@ RS_DATA_BYTES = 8
 RS_PARITY_BYTES = 8
 RS_CODEWORD_BYTES = 16
 RS_ERASURE_COUNTS = tuple(range(RS_PARITY_BYTES + 1))
+CANDIDATE_MAX_BIT_ERRORS = 16
 PHASE_COUNT = 4
 CODEWORD_BITS = RS_CODEWORD_BYTES * 8
 CARRIER_BITS = CODEWORD_BITS // 2
@@ -165,6 +166,20 @@ def decode_candidate_codeword(
                 (left ^ right).bit_count()
                 for left, right in zip(observed, expected_codeword)
             ),
+        )
+    bit_errors = sum(
+        (left ^ right).bit_count()
+        for left, right in zip(observed, expected_codeword)
+    )
+    if bit_errors <= CANDIDATE_MAX_BIT_ERRORS:
+        return CandidateDecode(
+            payload=expected_payload,
+            corrected_codeword=expected_codeword,
+            corrected_symbols=sum(
+                left != right for left, right in zip(observed, expected_codeword)
+            ),
+            erasure_count=0,
+            bit_errors=bit_errors,
         )
     return None
 

@@ -511,6 +511,22 @@ class V4Repository:
             ).mappings().first()
         return None if row is None else self._record(row)
 
+    def find_records_for_group(
+        self, scope: OwnerScope, *, source_group_id: UUID
+    ) -> tuple[StoredV4Record, ...]:
+        table = self.tables.v4_records
+        conditions = [
+            table.c.source_group_id == source_group_id,
+            table.c.status == "active",
+        ]
+        if scope.query_owner_id is not None:
+            conditions.append(table.c.owner_user_id == scope.query_owner_id)
+        with self.engine.connect() as connection:
+            rows = connection.execute(
+                select(*self._record_columns()).where(*conditions)
+            ).mappings()
+            return tuple(self._record(row) for row in rows)
+
     def list_records(self, scope: OwnerScope) -> tuple[StoredV4Record, ...]:
         table = self.tables.v4_records
         statement = select(table).where(table.c.status != "deleted")
