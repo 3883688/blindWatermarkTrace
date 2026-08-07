@@ -6,6 +6,7 @@ from PIL import Image
 from trace_app.v4.deadlines import Deadline
 from trace_app.v4.features import deserialize_features
 from trace_app.v4.production import (
+    VisibleCopyrightConfig,
     build_group_artifacts,
     create_production_services,
     decode_rgb,
@@ -54,6 +55,30 @@ def test_cpu_runtime_decodes_and_embeds_v4_codeword() -> None:
     assert Image.open(BytesIO(encoded.watermarked)).format == "PNG"
     assert Image.open(BytesIO(encoded.thumbnail)).format == "PNG"
     assert encoded.watermarked != _png()
+
+
+def test_cpu_runtime_can_enable_configured_visible_copyright_layer() -> None:
+    deadline = Deadline.after(30)
+    rgb = decode_rgb(_png(), deadline)
+    encoded = encode_v4_images(
+        rgb,
+        b"12345678",
+        deadline,
+        visible_copyright=VisibleCopyrightConfig(
+            enabled=True,
+            text="© 3883688",
+            prominent_corner=True,
+        ),
+    )
+
+    marked = decode_rgb(encoded.watermarked, deadline)
+    assert np.count_nonzero(marked != rgb) > np.count_nonzero(
+        decode_rgb(
+            encode_v4_images(rgb, b"12345678", deadline).watermarked,
+            deadline,
+        )
+        != rgb
+    )
 
 
 def test_group_artifacts_contain_dino_orb_and_superpoint_rows() -> None:

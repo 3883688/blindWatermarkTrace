@@ -225,11 +225,26 @@ curl -X POST http://127.0.0.1:8000/api/watermark/extract-url \
 | `ROBUST_WATERMARK_STRENGTH` | 鲁棒水印强度 | `0.74` |
 | `WATERMARK_AUTH_KEY` | V4 HMAC 密钥，至少 32 字节 | 空 |
 | `TRACE_COMPUTE_DEVICE` | `auto`、`cpu` 或 `cuda` | `auto` |
+| `VISIBLE_COPYRIGHT_ENABLED` | 是否在当前 V4 水印图中叠加明水印 | `false` |
+| `VISIBLE_COPYRIGHT_TEXT` | 明水印文字 | `© QQ:757675150` |
+| `VISIBLE_COPYRIGHT_OPACITY` | 明水印不透明度，范围 `0.02` 到 `0.90` | `0.16` |
+| `VISIBLE_COPYRIGHT_COMPLEXITY` | 明水印密度：`low`、`medium`、`high` 或 `extreme` | `medium` |
+| `VISIBLE_COPYRIGHT_IRREGULAR` | 是否使用不规则排布 | `true` |
+| `VISIBLE_COPYRIGHT_PROMINENT_CORNER` | 是否增加右下角高对比版权块 | `false` |
 | `WATERMARK_DETECTION_BUDGET_SECONDS` | 检测时间预算 | `5` |
 | `ENABLE_SMALL_CROP_TRACE_REDUNDANCY` | 小裁剪冗余层 | `true` |
 | `ENABLE_ALIGNED_AUTHENTICATED_DETECTION` | 配准认证检测 | `true` |
 
 完整变量列表见 `.env.example`。修改 V4 的格式契约参数会导致已有 V4 图片无法解码，应同步升级水印版本。
+
+明水印配置作用于当前 V4 生产链路，在 FFT 导频和 DCT 认证码字嵌入前叠加到水印图中，原图不会被修改。启用示例：
+
+```dotenv
+VISIBLE_COPYRIGHT_ENABLED=true
+VISIBLE_COPYRIGHT_TEXT=© 3883688
+VISIBLE_COPYRIGHT_OPACITY=0.16
+VISIBLE_COPYRIGHT_PROMINENT_CORNER=false
+```
 
 ## GPU 加速
 

@@ -28,7 +28,7 @@ from trace_app.v4.media import V4MediaService
 from trace_app.v4.jobs import DeepJobStore
 from trace_app.v4.keys import KeyRing
 from trace_app.v4.onnx_models import DinoOnnxModels, LightGlueOnnxMatcher
-from trace_app.v4.production import create_production_services
+from trace_app.v4.production import VisibleCopyrightConfig, create_production_services
 from trace_app.v4.repository import V4Repository
 from trace_app.v4.security import DatabaseSessionStore, LoginRateLimiter
 
@@ -160,6 +160,14 @@ def create_app(
                 key_ring=KeyRing({key_id: secret}, key_id),
                 dino_models=dino_models,
                 lightglue_matcher=lightglue,
+                visible_copyright=VisibleCopyrightConfig(
+                    enabled=settings.visible_copyright_enabled,
+                    text=settings.visible_copyright_text,
+                    opacity=settings.visible_copyright_opacity,
+                    complexity=settings.visible_copyright_complexity,
+                    irregular=settings.visible_copyright_irregular,
+                    prominent_corner=settings.visible_copyright_prominent_corner,
+                ),
             )
             app.state.v4_generation_service = services.generation
             app.state.v4_detection_service = services.detection
