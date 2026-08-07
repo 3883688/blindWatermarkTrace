@@ -6,6 +6,7 @@ import hashlib
 import secrets
 from dataclasses import dataclass
 from io import BytesIO
+from typing import Mapping
 from uuid import UUID
 
 import cv2
@@ -44,6 +45,36 @@ class VisibleCopyrightConfig:
     complexity: str = "medium"
     irregular: bool = True
     prominent_corner: bool = False
+
+
+def _parse_bool(value: object, default: bool) -> bool:
+    if value is None or str(value).strip() == "":
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "启用"}
+
+
+def visible_copyright_from_metadata(
+    default: VisibleCopyrightConfig,
+    metadata: Mapping[str, object],
+) -> VisibleCopyrightConfig:
+    """Apply per-request visible-watermark overrides to deployment defaults."""
+    try:
+        opacity = float(metadata.get("copyright_opacity", default.opacity))
+    except (TypeError, ValueError):
+        opacity = default.opacity
+    return VisibleCopyrightConfig(
+        enabled=_parse_bool(metadata.get("copyright_enabled"), default.enabled),
+        text=str(metadata.get("copyright_text") or default.text).strip() or default.text,
+        opacity=max(0.02, min(0.90, opacity)),
+        complexity=str(metadata.get("copyright_complexity") or default.complexity),
+        irregular=_parse_bool(
+            metadata.get("copyright_irregular_enabled"), default.irregular
+        ),
+        prominent_corner=_parse_bool(
+            metadata.get("copyright_prominent_corner_enabled"),
+            default.prominent_corner,
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,6 +222,18 @@ def create_production_services(
             deadline=deadline,
         )
 
+    default_visible_copyright = visible_copyright or VisibleCopyrightConfig()
+
+    def embed_with_metadata(rgb, tag, deadline, metadata):
+        return encode_v4_images(
+            rgb,
+            tag,
+            deadline,
+            visible_copyright=visible_copyright_from_metadata(
+                default_visible_copyright, metadata
+            ),
+        )
+
     generation = V4GenerationService(
         repository=repository,
         key_ring=key_ring,
@@ -205,6 +248,7 @@ def create_production_services(
             deadline,
             visible_copyright=visible_copyright,
         ),
+        embed_with_metadata=embed_with_metadata,
         trace_id_factory=lambda: secrets.token_urlsafe(24),
     )
     detection = V4DetectionService(
@@ -392,6 +436,7 @@ __all__ = (
     "decode_rgb",
     "encode_v4_images",
     "VisibleCopyrightConfig",
+    "visible_copyright_from_metadata",
     "extract_aligned_observation",
     "ProductionServices",
 )

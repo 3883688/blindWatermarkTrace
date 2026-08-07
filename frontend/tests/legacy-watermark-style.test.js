@@ -22,7 +22,7 @@ test('watermark view retains shared style baselines and exposes only the V4 meth
   expect([...view.matchAll(/<span class="method-name">/g)]).toHaveLength(1);
   expect(view).not.toContain('DCT 频域');
   expect(view).not.toContain('FFT 傅里叶');
-  expect([...view.matchAll(/class="card" style="margin-bottom:24px"/g)]).toHaveLength(2);
+  expect([...view.matchAll(/class="card" style="margin-bottom:24px"/g)]).toHaveLength(3);
   expect([...view.matchAll(/class="advanced-section-head"/g)]).toHaveLength(1);
   expect(view).toContain('<div class="cb-content"><div class="cb-title">启用小面积截图增强</div><div class="cb-desc">');
   expect(view).toContain('<div class="cb-content"><div class="cb-title">启用点阵追溯水印</div><div class="cb-desc">');

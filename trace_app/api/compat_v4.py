@@ -140,6 +140,12 @@ async def embed(
     request: Request,
     file: UploadFile = File(...),
     user_id: str = Form(""),
+    copyright_enabled: str = Form(""),
+    copyright_text: str = Form(""),
+    copyright_opacity: str = Form(""),
+    copyright_complexity: str = Form(""),
+    copyright_irregular_enabled: str = Form(""),
+    copyright_prominent_corner_enabled: str = Form(""),
     current_user: AuthenticatedUser = Depends(get_current_user),
     service: Any = Depends(get_v4_generation_service),
     repository: Any = Depends(get_v4_record_repository),
@@ -151,7 +157,20 @@ async def embed(
     content = await _upload_bytes(file, request)
     result = await run_in_threadpool(
         service.generate,
-        GenerationRequest(current_user.id, content, content_type, filename),
+        GenerationRequest(
+            current_user.id,
+            content,
+            content_type,
+            filename,
+            metadata={
+                "copyright_enabled": copyright_enabled,
+                "copyright_text": copyright_text,
+                "copyright_opacity": copyright_opacity,
+                "copyright_complexity": copyright_complexity,
+                "copyright_irregular_enabled": copyright_irregular_enabled,
+                "copyright_prominent_corner_enabled": copyright_prominent_corner_enabled,
+            },
+        ),
         Deadline.synchronous(),
     )
     return _generation_payload(result.record, current_user, repository, media, users)
