@@ -17,6 +17,7 @@ from trace_app.v4.domain import DetectionOutcome, OwnerScope
 from trace_app.v4.keys import KeyRing
 from trace_app.v4.models import ModelRegistryError
 from watermark_v4.payload import AuthContext, CODEC_ID, encode_codeword
+from watermark_v4.observation import CarrierEvidence, V4Observation
 
 
 KEYS = KeyRing({"key": b"k" * 32}, "key")
@@ -42,6 +43,11 @@ class Repo:
     def find_record_by_auth_tag(self, scope, *, source_group_id, auth_tag):
         self.lookups += 1
         return self.record if self.record and self.record.source_group_id == source_group_id and self.record.auth_tag == auth_tag else None
+
+    def find_records_for_group(self, scope, *, source_group_id):
+        if self.record and self.record.source_group_id == source_group_id:
+            return (self.record,)
+        return ()
 
 
 def _service(repo, events, *, groups=(UUID(int=1),), observe_tag=None):
@@ -89,6 +95,35 @@ def test_group_pipeline_authenticates_only_after_geometry_and_hmac() -> None:
         DetectionRequest(OwnerScope(7), b"query"), Deadline.after(10)
     )
     assert miss.outcome is DetectionOutcome.NOT_FOUND
+
+
+def test_group_pipeline_recovers_bit_sparse_damage_after_geometry() -> None:
+    record = _record("CROPPED")
+    damaged = bytearray(encode_codeword(record.auth_tag))
+    for index in range(10):
+        damaged[index] ^= 1 << (index % 2)
+    evidence = CarrierEvidence(0, 4, 2, 0.8, 0.5)
+    observation = V4Observation(
+        bytes(damaged),
+        (0.5,) * 16,
+        (evidence, CarrierEvidence(1, 4, 2, 0.8, 0.5)),
+        0.01,
+    )
+    service = V4DetectionService(
+        repository=Repo(record),
+        key_ring=KEYS,
+        decode_rgb=lambda content, deadline: object(),
+        recall_groups=lambda scope, image, deadline: (record.source_group_id,),
+        confirm_group=lambda image, group, deadline: object(),
+        extract_observation=lambda image, confirmed, deadline: observation,
+    )
+
+    result = service.detect(
+        DetectionRequest(OwnerScope(7), b"cropped"), Deadline.after(10)
+    )
+
+    assert result.outcome is DetectionOutcome.SUCCESS
+    assert result.record is record
 
 
 def test_zero_and_multiple_authenticated_groups_do_not_expose_a_record() -> None:

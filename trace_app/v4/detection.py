@@ -15,7 +15,7 @@ from trace_app.v4.domain import DetectionOutcome, DetectionResult, OwnerScope
 from trace_app.v4.features import FeatureEnvelopeError
 from trace_app.v4.keys import KeyRing
 from trace_app.v4.models import ModelRegistryError
-from watermark_v4.payload import AuthContext, CODEC_ID
+from watermark_v4.payload import AuthContext, CODEC_ID, decode_candidate_codeword
 from watermark_v4.observation import V4Observation
 
 
@@ -42,6 +42,9 @@ class DetectionRepository(Protocol):
     def find_record_by_auth_tag(
         self, scope: OwnerScope, *, source_group_id: UUID, auth_tag: bytes
     ) -> object | None: ...
+    def find_records_for_group(
+        self, scope: OwnerScope, *, source_group_id: UUID
+    ) -> Sequence[object]: ...
 
 
 def decode_observed_auth_tag(codeword: bytes) -> bytes | None:
@@ -116,14 +119,34 @@ class V4DetectionService:
                     else observed
                 )
                 tag = None if codeword is None else decode_observed_auth_tag(codeword)
-                if tag is None:
+                if codeword is None:
                     continue
-                record = self.repository.find_record_by_auth_tag(
-                    request.scope, source_group_id=group_id, auth_tag=tag
-                )
-                if record is None or not self._verify_record(request.scope, record, tag):
+                if tag is not None:
+                    record = self.repository.find_record_by_auth_tag(
+                        request.scope, source_group_id=group_id, auth_tag=tag
+                    )
+                    if record is not None and self._verify_record(
+                        request.scope, record, tag
+                    ):
+                        authenticated.append(record)
+                        continue
+                if not isinstance(observed, V4Observation):
                     continue
-                authenticated.append(record)
+                for record in self.repository.find_records_for_group(
+                    request.scope, source_group_id=group_id
+                ):
+                    candidate_tag = getattr(record, "auth_tag", None)
+                    if not isinstance(candidate_tag, bytes):
+                        continue
+                    decoded = decode_candidate_codeword(
+                        codeword,
+                        candidate_tag,
+                        observed.byte_confidences,
+                    )
+                    if decoded is not None and self._verify_record(
+                        request.scope, record, candidate_tag
+                    ):
+                        authenticated.append(record)
             unique = _unique_records(authenticated)
             if len(unique) == 1:
                 return DetectionResult(DetectionOutcome.SUCCESS, unique[0])
