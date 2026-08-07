@@ -1,0 +1,37 @@
+# Local environment and secrets
+.env
+.env.v4.test
+
+# Python bytecode and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local browser automation state
+.playwright-cli/
+
+# JavaScript dependencies
+node_modules/
+frontend/test-results/
+
+# Local Git worktrees
+.worktrees/
+
+# Runtime logs
+*.log
+
+# Generated runtime data
+/X/
+output/
+test_output/
+uploads/
+backups/
+data/detection_stats.json
+data/feature_index/
+data/feature_index_v4/
+data/images.json
+data/mark-dev.db
+data/roles.json
+data/users.json
+data/watermark_stats.json
+trace-private-migration-backups/

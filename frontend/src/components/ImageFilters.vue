@@ -1,0 +1,9 @@
+<script setup>
+defineProps({ state: { type: Object, required: true }, advanced: Boolean });
+const emit = defineEmits(['update:advanced', 'export']);
+const filters = [['全部', '全部'], ['保护中', '已保护'], ['泄露预警', '疑似泄露'], ['溯源命中', '溯源命中']];
+</script>
+<template>
+  <div class="table-toolbar"><div class="search-box"><i class="ti ti-search si" aria-hidden="true"></i><input v-model="state.search" placeholder="搜索文件名、用户、Trace ID…"></div><div class="filter-row"><button v-for="[value, label] in filters" :key="value" class="filter-btn" :class="{ on: state.activeFilter === value }" @click="state.activeFilter = value">{{ label }}</button><button class="btn-outline" style="margin-left:4px" @click="emit('update:advanced', !advanced)"><i class="ti ti-adjustments-horizontal" aria-hidden="true"></i> 筛选</button><button class="btn-outline" @click="emit('export')"><i class="ti ti-download" aria-hidden="true"></i> 导出</button></div></div>
+  <div class="advanced-filters" :class="{ show: advanced }"><div class="mini-field"><label>嵌入日期</label><input v-model="state.date" class="field-input" type="date"></div><div class="mini-field"><label>排序</label><el-select v-model="state.sort" class="app-select" popper-class="app-select-dropdown"><el-option label="最新在前" value="created_desc"/><el-option label="最早在前" value="created_asc"/><el-option label="置信度高到低" value="confidence_desc"/><el-option label="置信度低到高" value="confidence_asc"/></el-select></div></div>
+</template>

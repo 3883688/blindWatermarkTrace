@@ -1,0 +1,64 @@
+from sqlalchemy import create_engine
+from sqlalchemy.exc import SQLAlchemyError
+
+from trace_app.config import DEFAULT_ROLES, Settings
+from trace_app.database.store import DatabaseStore
+from trace_app.runtime import Runtime, dispose_engine
+from trace_app.v4.startup import initialize_v4_schema
+
+
+def seed_database_defaults(store: DatabaseStore, settings: Settings) -> None:
+    if not store.read_roles():
+        store.replace_roles(DEFAULT_ROLES)
+    if (
+        settings.admin_user
+        and settings.admin_pass
+        and settings.admin_user not in store.list_users()
+    ):
+        store.create_user(settings.admin_user, settings.admin_pass, "admin")
+
+
+def create_runtime(settings: Settings, *, enabled: bool = True) -> Runtime:
+    runtime = Runtime()
+    if not enabled:
+        return runtime
+
+    missing = [
+        name
+        for name, value in (
+            ("DB_URL", settings.db_url),
+            ("ADMIN_USER", settings.admin_user),
+            ("ADMIN_PASS", settings.admin_pass),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError(f"Missing required environment variable: {missing[0]}")
+
+    try:
+        runtime.engine = create_engine(
+            settings.db_url,
+            pool_pre_ping=True,
+            pool_recycle=1800,
+            future=True,
+        )
+        runtime.store = DatabaseStore(runtime.engine)
+        runtime.store.create_schema(identity_only=settings.environment == "production")
+        initialize_v4_schema(
+            runtime.engine,
+            require_postgres=settings.environment == "production",
+        )
+        seed_database_defaults(runtime.store, settings)
+        admin = runtime.store.get_user_by_username(settings.admin_user)
+        if admin is None:
+            raise RuntimeError("Configured administrator is unavailable")
+        if settings.environment != "production":
+            runtime.store.backfill_image_owners(int(admin["id"]))
+    except (SQLAlchemyError, RuntimeError) as exc:
+        runtime.db_error = type(exc).__name__
+        runtime.store = None
+        dispose_engine(runtime.engine)
+        error = RuntimeError("Database initialization failed")
+        setattr(error, "runtime", runtime)
+        raise error from exc
+    return runtime
