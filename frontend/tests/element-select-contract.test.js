@@ -29,7 +29,7 @@ test('all application dropdowns use Element Plus selects', async () => {
   expect(watermark).toContain('水印版本');
   expect(watermark).toContain('value="V4" disabled');
   expect(imageTable).toContain('<th>水印版本</th>');
-  expect(imageTable).toContain('<td class="small-cell">V4</td>');
+  expect(imageTable).toContain('<td class="small-cell" data-label="水印版本">V4</td>');
   expect(watermark).not.toContain('v-model="form.robustWatermarkVersion"');
   expect(main).toContain('ElOption');
   expect(main).toContain('ElSelect');

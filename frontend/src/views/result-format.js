@@ -9,6 +9,13 @@ export function safeImageUrl(value) {
   return /^(https?:\/\/|\/(?!\/))/i.test(url) ? url : '';
 }
 
+export function formatDateTime(value) {
+  const text = String(value || '').trim();
+  if (!text) return '-';
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/);
+  return match ? `${match[1]} ${match[2]}` : text;
+}
+
 export function createAsyncGuard() {
   let active = true;
   return { isActive: () => active, dispose: () => { active = false; } };
