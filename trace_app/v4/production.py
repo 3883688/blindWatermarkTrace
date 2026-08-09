@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from io import BytesIO
 from typing import Mapping
 from uuid import UUID
@@ -21,6 +21,7 @@ from trace_app.v4.generation import EncodedImages, GroupArtifacts, V4GenerationS
 from trace_app.v4.geometry import ConfirmedGroup, FeatureSet, match_orb_ransac
 from trace_app.v4.keys import KeyRing
 from trace_app.v4.recall import VIEW_POLICY_VERSION, build_dino_batch, recall_image
+from trace_app.v4.region_protection import detect_protected_regions, reinforced_tiles
 from trace_app.imaging.visible_mark import apply_visible_copyright
 from trace_app.v4.repository import EmbeddingInput, FeatureInput
 from watermark_v4.config import V4Config
@@ -107,6 +108,7 @@ def encode_v4_images(
     deadline: Deadline,
     *,
     visible_copyright: VisibleCopyrightConfig | None = None,
+    protected_region_enhancement: bool = False,
 ) -> EncodedImages:
     """Embed a V4 HMAC64 tag and return lossless output plus a thumbnail."""
     array = np.asarray(rgb)
@@ -116,6 +118,7 @@ def encode_v4_images(
         raise ValueError("V4 authentication tag must contain exactly 8 bytes")
     deadline.check("embed_prepare")
     config = V4Config()
+    regions = detect_protected_regions(array) if protected_region_enhancement else ()
     source = Image.fromarray(np.ascontiguousarray(array))
     if visible_copyright is not None:
         source = apply_visible_copyright(
@@ -127,7 +130,40 @@ def encode_v4_images(
             visible_copyright.irregular,
             visible_copyright.prominent_corner,
         )
-    marked = embed_codeword(embed_pilot(source, config), encode_codeword(tag), config)
+    pilot_source = embed_pilot(source, config)
+    codeword = encode_codeword(tag)
+    marked = embed_codeword(pilot_source, codeword, config)
+    if regions:
+        selected_tiles = reinforced_tiles(
+            regions,
+            image_width=source.width,
+            image_height=source.height,
+            tile_size=config.tile_size,
+        )
+        if selected_tiles:
+            reinforced_config = replace(
+                config,
+                dct_margin=min(config.dct_margin_range[1], config.dct_margin + 2.0),
+            )
+            reinforced = embed_codeword(
+                pilot_source,
+                codeword,
+                reinforced_config,
+                tile_coordinates=selected_tiles,
+            )
+            marked_array = np.asarray(marked).copy()
+            reinforced_array = np.asarray(reinforced)
+            for tile_x, tile_y in selected_tiles:
+                left = tile_x * config.tile_size
+                top = tile_y * config.tile_size
+                marked_array[
+                    top : top + config.tile_size,
+                    left : left + config.tile_size,
+                ] = reinforced_array[
+                    top : top + config.tile_size,
+                    left : left + config.tile_size,
+                ]
+            marked = Image.fromarray(marked_array)
     deadline.check("embed_complete")
 
     output = BytesIO()
@@ -231,6 +267,9 @@ def create_production_services(
             deadline,
             visible_copyright=visible_copyright_from_metadata(
                 default_visible_copyright, metadata
+            ),
+            protected_region_enhancement=_parse_bool(
+                metadata.get("protected_region_enhancement"), False
             ),
         )
 

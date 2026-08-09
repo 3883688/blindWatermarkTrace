@@ -211,6 +211,8 @@ def embed_codeword(
     image: Image.Image,
     codeword: bytes,
     config: V4Config = V4Config(),
+    *,
+    tile_coordinates: frozenset[tuple[int, int]] | None = None,
 ) -> Image.Image:
     """把 16 字节码字按 A/B 棋盘分片嵌入完整分块。
 
@@ -233,6 +235,21 @@ def embed_codeword(
         raise ValueError("codeword must contain exactly 16 bytes")
     _validate_config(config)
     tiles = _eligible_tiles(image, config)
+    if tile_coordinates is not None:
+        if type(tile_coordinates) is not frozenset or any(
+            type(item) is not tuple
+            or len(item) != 2
+            or any(type(value) is not int or value < 0 for value in item)
+            for item in tile_coordinates
+        ):
+            raise TypeError(
+                "tile coordinates must be a frozenset of nonnegative integer pairs"
+            )
+        tiles = tuple(
+            tile for tile in tiles if (tile[0], tile[1]) in tile_coordinates
+        )
+        if not tiles:
+            return image.copy()
 
     source = np.asarray(image)
     # 复制一份作为输出画布：source 是只读视图，且后续要按分块逐块覆盖，

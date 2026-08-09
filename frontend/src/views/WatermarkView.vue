@@ -153,6 +153,13 @@ onBeforeUnmount(() => {
             </div>
             <Range label="图片保真度" v-model="form.fidelityLevel" :value="range('fidelityLevel')" />
             <div class="checkbox-row">
+              <input v-model="form.protectedRegionEnhancement" type="checkbox">
+              <div class="cb-content">
+                <div class="cb-title">人物关键区域追溯增强</div>
+                <div class="cb-desc">自动识别人脸及特定区域，强化关键部位的水印追溯能力</div>
+              </div>
+            </div>
+            <div class="checkbox-row">
               <input v-model="form.smallCropTraceEnabled" type="checkbox">
               <div class="cb-content"><div class="cb-title">启用小面积截图增强</div><div class="cb-desc">增加局部截图 trace 冗余，会轻微增加隐藏扰动</div></div>
             </div>

@@ -28,7 +28,10 @@ def _record(owner_id: int = 7):
 
 
 class _Generation:
+    last_request = None
+
     def generate(self, request, deadline):
+        type(self).last_request = request
         return SimpleNamespace(record=_record(request.owner_user_id), source_group_created=True)
 
 
@@ -73,6 +76,7 @@ class _Media:
 
 
 def _client(tmp_path) -> tuple[TestClient, object]:
+    _Generation.last_request = None
     settings = Settings.from_values(
         base_dir=tmp_path,
         upload_dir="uploads",
@@ -112,11 +116,18 @@ def test_original_generation_and_images_use_only_opaque_v4_media_urls(tmp_path) 
     generated = client.post(
         "/api/watermark/embed",
         files={"file": ("source.png", b"image", "image/png")},
-        data={"user_id": "display-user", "mode": "dct"},
+        data={
+            "user_id": "display-user",
+            "mode": "dct",
+            "protected_region_enhancement": "true",
+        },
     )
     listed = client.get("/api/images")
 
     assert generated.status_code == 200, generated.text
+    assert _Generation.last_request.metadata[
+        "protected_region_enhancement"
+    ] == "true"
     assert generated.json()["download_access_url"].startswith("/api/media/opaque-output?")
     assert generated.json()["original_access_url"].startswith("/api/media/opaque-original?")
     assert generated.json()["size"] == "2.5 MB"

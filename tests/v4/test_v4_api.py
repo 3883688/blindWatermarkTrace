@@ -125,10 +125,15 @@ def test_generate_accepts_only_the_exact_v4_codec_and_hides_private_fields(conte
     files = {"file": ("source.png", b"image", "image/png")}
 
     assert client.post("/api/v4/generate", files=files, data={"codec": "v3"}).status_code == 422
-    response = client.post("/api/v4/generate", files=files, data={"codec": CODEC_ID})
+    response = client.post(
+        "/api/v4/generate",
+        files=files,
+        data={"codec": CODEC_ID, "protected_region_enhancement": "true"},
+    )
 
     assert response.status_code == 200
     assert generation.request.owner_user_id == 7
+    assert generation.request.metadata["protected_region_enhancement"] == "true"
     payload = response.json()
     assert payload["codec"] == CODEC_ID
     assert payload["output_access_url"].startswith("/api/media/out_opaque?")
