@@ -12,7 +12,7 @@ const previewPng = Buffer.from(
 
 function apiResponse(url) {
   if (url.pathname === '/api/dashboard-stats') {
-    return { today: 3, detection_success_rate: 98.5 };
+    return { today: 3, detected_today: 12 };
   }
   if (url.pathname === '/api/images') {
     return {

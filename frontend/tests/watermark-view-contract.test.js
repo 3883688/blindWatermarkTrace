@@ -50,6 +50,27 @@ describe('watermark and trace result contracts', () => {
     expect(traceView).not.toContain('pHash 匹配');
   });
 
+  test('exposes the current FFT pilot amplitude as a bounded control', () => {
+    expect(watermarkView).toContain('label="同步导频强度"');
+    expect(watermarkView).toContain('v-model="form.pilotAmplitude"');
+    expect(watermarkView).toContain(':min="0.25"');
+    expect(watermarkView).toContain(':max="1.25"');
+  });
+
+  test('exposes bounded JPEG output quality', () => {
+    expect(watermarkView).toContain('label="图片输出质量（JPEG）"');
+    expect(watermarkView).toContain('v-model="form.outputQuality"');
+    expect(watermarkView).toContain(':min="60"');
+    expect(watermarkView).toContain(':max="95"');
+  });
+
+  test('shows today detection count from the V4 dashboard field', () => {
+    expect(watermarkView).toContain('stats.detected_today ?? 0');
+    expect(watermarkView).toContain('{{ todayDetectionCount }}');
+    expect(watermarkView).toContain('今日检测次数');
+    expect(watermarkView).not.toContain('认证成功率');
+  });
+
   test('describes the production visual authentication pipeline', () => {
     expect(traceView).toContain('优先执行 V4 盲认证');
     expect(traceView).toContain('FFT Pilot 同步与校正');

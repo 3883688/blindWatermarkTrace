@@ -56,9 +56,59 @@ def test_cpu_runtime_decodes_and_embeds_v4_codeword() -> None:
     encoded = encode_v4_images(rgb, b"12345678", deadline)
 
     assert rgb.dtype == np.uint8 and rgb.shape == (384, 384, 3)
-    assert Image.open(BytesIO(encoded.watermarked)).format == "PNG"
+    assert Image.open(BytesIO(encoded.watermarked)).format == "JPEG"
+    assert encoded.watermarked_content_type == "image/jpeg"
     assert Image.open(BytesIO(encoded.thumbnail)).format == "PNG"
     assert encoded.watermarked != _png()
+
+
+def test_pilot_amplitude_metadata_defaults_and_clamps() -> None:
+    parse = production_module._pilot_amplitude_from_metadata
+
+    assert parse({}) == 0.75
+    assert parse({"pilot_amplitude": "invalid"}) == 0.75
+    assert parse({"pilot_amplitude": "nan"}) == 0.75
+    assert parse({"pilot_amplitude": "0.5"}) == 0.5
+    assert parse({"pilot_amplitude": "0.1"}) == 0.25
+    assert parse({"pilot_amplitude": "2"}) == 1.25
+
+
+def test_output_quality_metadata_defaults_and_clamps() -> None:
+    parse = production_module._output_quality_from_metadata
+
+    assert parse({}) == 80
+    assert parse({"output_quality": "invalid"}) == 80
+    assert parse({"output_quality": "80"}) == 80
+    assert parse({"output_quality": "40"}) == 60
+    assert parse({"output_quality": "100"}) == 95
+
+
+def test_cpu_runtime_applies_selected_pilot_amplitude() -> None:
+    deadline = Deadline.after(30)
+    rgb = decode_rgb(_png(), deadline)
+
+    default = encode_v4_images(rgb, b"12345678", deadline).watermarked
+    reduced = encode_v4_images(
+        rgb, b"12345678", deadline, pilot_amplitude=0.5
+    ).watermarked
+
+    assert reduced != default
+
+
+def test_cpu_runtime_applies_selected_jpeg_output_quality() -> None:
+    deadline = Deadline.after(30)
+    rgb = decode_rgb(_png(), deadline)
+
+    low_quality = encode_v4_images(
+        rgb, b"12345678", deadline, output_quality=60
+    ).watermarked
+    high_quality = encode_v4_images(
+        rgb, b"12345678", deadline, output_quality=95
+    ).watermarked
+
+    assert len(low_quality) < len(high_quality)
+    with pytest.raises(ValueError, match="JPEG output quality"):
+        encode_v4_images(rgb, b"12345678", deadline, output_quality=50)
 
 
 def test_cpu_runtime_can_enable_configured_visible_copyright_layer() -> None:

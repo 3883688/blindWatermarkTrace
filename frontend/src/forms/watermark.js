@@ -2,13 +2,15 @@ export function createWatermarkForm(userId = '') {
   return {
     userId,
     robustWatermarkVersion: '4',
-    copyrightEnabled: true,
+    copyrightEnabled: false,
     copyrightText: '\u00a9 QQ:757675150',
     copyrightIrregularEnabled: true,
     copyrightProminentCornerEnabled: false,
     copyrightOpacity: '0.16',
     copyrightComplexity: 'medium',
     fidelityLevel: '0.75',
+    outputQuality: '80',
+    pilotAmplitude: '0.75',
     protectedRegionEnhancement: false,
     smallCropTraceEnabled: true,
     smallCropTraceStrength: '1',
@@ -29,6 +31,8 @@ export function watermarkFormData(file, form) {
   data.append('copyright_irregular_enabled', String(form.copyrightIrregularEnabled));
   data.append('copyright_prominent_corner_enabled', String(form.copyrightProminentCornerEnabled));
   data.append('fidelity_level', form.fidelityLevel || '0.75');
+  data.append('output_quality', form.outputQuality || '80');
+  data.append('pilot_amplitude', form.pilotAmplitude || '0.75');
   data.append('protected_region_enhancement', String(form.protectedRegionEnhancement));
   data.append('robust_watermark_version', form.robustWatermarkVersion);
   data.append('small_crop_trace_enabled', String(form.smallCropTraceEnabled));

@@ -18,6 +18,11 @@ from trace_app.v4.domain import OwnerScope
 from trace_app.v4.schema import V4Tables
 
 
+def daily_counter_key(key: str, now: datetime | None = None) -> str:
+    active_time = datetime.now().astimezone() if now is None else now
+    return f"{key}:{active_time.date().isoformat()}"
+
+
 class AuthTagCollision(RuntimeError):
     """A transaction hit a retryable trace ID or group-local tag constraint."""
 
@@ -626,10 +631,12 @@ class V4Repository:
         values = {str(key): int(value) for key, value in rows}
         detected = values.get("detection_total", 0)
         succeeded = values.get("detection_success", 0)
+        daily_detection_key = daily_counter_key("detection_total")
         return {
             "total": total,
             "today": today,
             "detected": detected,
+            "detected_today": values.get(daily_detection_key, 0),
             "success_rate": round(100.0 * succeeded / detected, 2) if detected else 0.0,
         }
 
@@ -749,4 +756,5 @@ __all__ = (
     "StoredV4Record",
     "V4RecordInput",
     "V4Repository",
+    "daily_counter_key",
 )

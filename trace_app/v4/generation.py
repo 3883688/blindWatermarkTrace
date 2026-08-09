@@ -45,10 +45,13 @@ class GenerationRequest:
 class EncodedImages:
     watermarked: bytes
     thumbnail: bytes
+    watermarked_content_type: str = "image/png"
 
     def __post_init__(self) -> None:
         if not self.watermarked or not self.thumbnail:
             raise ValueError("encoded V4 output and thumbnail must be non-empty")
+        if self.watermarked_content_type not in {"image/jpeg", "image/png"}:
+            raise ValueError("encoded V4 output content type is unsupported")
 
 
 @dataclass(frozen=True, slots=True)
@@ -237,7 +240,7 @@ class V4GenerationService:
                     self.media.stage_bytes(
                         owner_user_id=request.owner_user_id,
                         variant="watermarked",
-                        content_type="image/png",
+                        content_type=encoded.watermarked_content_type,
                         content=encoded.watermarked,
                     )
                 )

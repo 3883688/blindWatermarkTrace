@@ -15,7 +15,7 @@ const result = ref(null);
 const dialogOpen = ref(false);
 const busy = ref(false);
 const todayWatermarkCount = ref(0);
-const detectionSuccessRate = ref('0.0%');
+const todayDetectionCount = ref(0);
 let closeTimer;
 const asyncGuard = createAsyncGuard();
 
@@ -41,7 +41,7 @@ async function refreshDashboard() {
     const stats = await dashboardStats();
     if (!asyncGuard.isActive()) return;
     todayWatermarkCount.value = stats.today ?? 0;
-    detectionSuccessRate.value = `${Number(stats.detection_success_rate || 0).toFixed(1)}%`;
+    todayDetectionCount.value = stats.detected_today ?? 0;
   } catch (_) {}
 }
 
@@ -152,6 +152,8 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <Range label="图片保真度" v-model="form.fidelityLevel" :value="range('fidelityLevel')" />
+            <Range label="图片输出质量（JPEG）" v-model="form.outputQuality" :value="String(form.outputQuality)" :min="60" :max="95" :step="1" />
+            <Range label="同步导频强度" v-model="form.pilotAmplitude" :value="range('pilotAmplitude')" :min="0.25" :max="1.25" :step="0.05" />
             <div class="checkbox-row">
               <input v-model="form.protectedRegionEnhancement" type="checkbox">
               <div class="cb-content">
@@ -198,7 +200,7 @@ onBeforeUnmount(() => {
           <button class="btn-primary embed-button" :disabled="busy" @click="embed"><i class="ti" :class="busy ? 'ti-loader' : 'ti-droplet-filled'"></i> {{ busy ? '正在生成...' : '生成 V4 水印' }}</button>
         </div>
         <div class="side-panel">
-          <div class="stat-row"><div class="stat-box"><div class="stat-num" style="color:#818cf8">{{ todayWatermarkCount }}</div><div class="stat-lbl">今日 V4 水印数</div></div><div class="stat-box"><div class="stat-num" style="color:#5eead4">{{ detectionSuccessRate }}</div><div class="stat-lbl">认证成功率</div></div></div>
+          <div class="stat-row"><div class="stat-box"><div class="stat-num" style="color:#818cf8">{{ todayWatermarkCount }}</div><div class="stat-lbl">今日 V4 水印数</div></div><div class="stat-box"><div class="stat-num" style="color:#5eead4">{{ todayDetectionCount }}</div><div class="stat-lbl">今日检测次数</div></div></div>
           <div class="section-title">生产水印版本</div>
           <div class="method-list"><div class="method-item"><div class="method-dot" style="background:#818cf8"></div><span class="method-name">V4 认证水印</span><span class="method-tag badge-blue">唯一版本</span></div></div>
         </div>

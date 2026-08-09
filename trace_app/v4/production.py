@@ -36,6 +36,7 @@ ORB_MODEL_VERSION = "opencv_orb_v1"
 SUPERPOINT_MODEL_VERSION = "superpoint_lightglue_v1"
 FEATURE_SCHEMA_VERSION = 1
 THUMBNAIL_MAX_SIDE = 512
+DEFAULT_WATERMARKED_JPEG_QUALITY = 80
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +53,24 @@ def _parse_bool(value: object, default: bool) -> bool:
     if value is None or str(value).strip() == "":
         return default
     return str(value).strip().lower() in {"1", "true", "yes", "on", "启用"}
+
+
+def _pilot_amplitude_from_metadata(metadata: Mapping[str, object]) -> float:
+    try:
+        value = float(metadata.get("pilot_amplitude", 0.75))
+    except (TypeError, ValueError):
+        return 0.75
+    if not np.isfinite(value):
+        return 0.75
+    return max(0.25, min(1.25, value))
+
+
+def _output_quality_from_metadata(metadata: Mapping[str, object]) -> int:
+    try:
+        value = int(str(metadata.get("output_quality", "80")).strip())
+    except (TypeError, ValueError):
+        return DEFAULT_WATERMARKED_JPEG_QUALITY
+    return max(60, min(95, value))
 
 
 def visible_copyright_from_metadata(
@@ -109,15 +128,19 @@ def encode_v4_images(
     *,
     visible_copyright: VisibleCopyrightConfig | None = None,
     protected_region_enhancement: bool = False,
+    pilot_amplitude: float = 0.75,
+    output_quality: int = DEFAULT_WATERMARKED_JPEG_QUALITY,
 ) -> EncodedImages:
-    """Embed a V4 HMAC64 tag and return lossless output plus a thumbnail."""
+    """Embed a V4 HMAC64 tag and return a compact JPEG plus a PNG thumbnail."""
     array = np.asarray(rgb)
     if array.dtype != np.dtype("uint8") or array.ndim != 3 or array.shape[2] != 3:
         raise ValueError("V4 embedding input must be uint8 RGB")
     if type(tag) is not bytes or len(tag) != 8:
         raise ValueError("V4 authentication tag must contain exactly 8 bytes")
+    if type(output_quality) is not int or not 60 <= output_quality <= 95:
+        raise ValueError("JPEG output quality must be an integer from 60 through 95")
     deadline.check("embed_prepare")
-    config = V4Config()
+    config = V4Config(pilot_amplitude=pilot_amplitude)
     regions = detect_protected_regions(array) if protected_region_enhancement else ()
     source = Image.fromarray(np.ascontiguousarray(array))
     if visible_copyright is not None:
@@ -167,13 +190,22 @@ def encode_v4_images(
     deadline.check("embed_complete")
 
     output = BytesIO()
-    marked.save(output, format="PNG", optimize=False)
+    marked.save(
+        output,
+        format="JPEG",
+        quality=output_quality,
+        subsampling=0,
+        optimize=True,
+        progressive=True,
+    )
     thumbnail = marked.copy()
     thumbnail.thumbnail((THUMBNAIL_MAX_SIDE, THUMBNAIL_MAX_SIDE), Image.Resampling.LANCZOS)
     thumbnail_output = BytesIO()
     thumbnail.save(thumbnail_output, format="PNG", optimize=False)
     deadline.check("embed_encode")
-    return EncodedImages(output.getvalue(), thumbnail_output.getvalue())
+    return EncodedImages(
+        output.getvalue(), thumbnail_output.getvalue(), "image/jpeg"
+    )
 
 
 def build_group_artifacts(
@@ -271,6 +303,8 @@ def create_production_services(
             protected_region_enhancement=_parse_bool(
                 metadata.get("protected_region_enhancement"), False
             ),
+            pilot_amplitude=_pilot_amplitude_from_metadata(metadata),
+            output_quality=_output_quality_from_metadata(metadata),
         )
 
     generation = V4GenerationService(

@@ -17,6 +17,7 @@ from trace_app.v4.repository import (
     SourceGroupInput,
     V4RecordInput,
     V4Repository,
+    daily_counter_key,
 )
 from trace_app.v4.schema import V4Tables
 
@@ -162,6 +163,11 @@ def test_group_lookup_and_dashboard_stats_are_owner_scoped(repository: V4Reposit
     repository.insert_record(_record(bob_group.id, 8, "TR-B", b"87654321"))
     repository.increment_counter(7, "detection_total", 2)
     repository.increment_counter(7, "detection_success", 1)
+    repository.increment_counter(
+        7,
+        daily_counter_key("detection_total"),
+        2,
+    )
 
     assert repository.get_source_group(OwnerScope(7), alice_group.id) == alice_group
     assert repository.get_source_group(OwnerScope(8), alice_group.id) is None
@@ -169,6 +175,7 @@ def test_group_lookup_and_dashboard_stats_are_owner_scoped(repository: V4Reposit
         "total": 1,
         "today": 1,
         "detected": 2,
+        "detected_today": 2,
         "success_rate": 50.0,
     }
     assert repository.dashboard_stats(OwnerScope(7, cross_owner=True))["total"] == 2
