@@ -92,6 +92,8 @@ def test_gpu_requirement_is_separate_and_pinned() -> None:
         "cupy-cuda12x==13.6.0\n"
         "nvidia-cuda-runtime-cu12==12.6.77\n"
         "nvidia-cuda-nvrtc-cu12==12.6.85\n"
+        "nvidia-cufft-cu12==11.3.0.4\n"
+        "nvidia-cublas-cu12==12.6.4.1\n"
     )
 
 
@@ -223,10 +225,13 @@ def test_visible_nvidia_gpu_installs_requirements_then_runs_bounded_smoke(
 
 
 def test_smoke_source_requires_device_squares_values_and_synchronizes() -> None:
+    assert "_prepare_windows_cuda_packages" in GPU_SMOKE_SOURCE
     assert "import cupy" in GPU_SMOKE_SOURCE
     assert "getDeviceCount()" in GPU_SMOKE_SOURCE
     assert "[1, 2, 3]" in GPU_SMOKE_SOURCE
     assert "values * values" in GPU_SMOKE_SOURCE
+    assert "matrix @ matrix" in GPU_SMOKE_SOURCE
+    assert "cupy.fft.fft2" in GPU_SMOKE_SOURCE
     assert "synchronize()" in GPU_SMOKE_SOURCE
     assert "[1, 4, 9]" in GPU_SMOKE_SOURCE
 

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
+import watermark_v4.compute as compute_module
 from watermark_v4 import dct as dct_module
 from watermark_v4.compute import AdaptiveComputeBackend, get_compute_backend
 
@@ -83,6 +85,57 @@ class FakeCupy:
 
     asarray = staticmethod(np.asarray)
     asnumpy = staticmethod(np.asarray)
+
+
+def test_windows_pip_cuda_packages_prepare_dll_search_paths(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime = tmp_path / "cuda_runtime"
+    nvrtc = tmp_path / "cuda_nvrtc"
+    cufft = tmp_path / "cufft"
+    cublas = tmp_path / "cublas"
+    (runtime / "bin").mkdir(parents=True)
+    (nvrtc / "bin").mkdir(parents=True)
+    (cufft / "bin").mkdir(parents=True)
+    (cublas / "bin").mkdir(parents=True)
+    handles = []
+
+    monkeypatch.setattr(
+        compute_module,
+        "_windows_cuda_package_roots",
+        lambda: (
+            ("cuda_runtime", runtime),
+            ("cuda_nvrtc", nvrtc),
+            ("cufft", cufft),
+            ("cublas", cublas),
+        ),
+    )
+    monkeypatch.setattr(compute_module, "_CUDA_ENV_PREPARED", False)
+    monkeypatch.setattr(compute_module, "_CUDA_DLL_HANDLES", [])
+    monkeypatch.setattr(
+        compute_module.os,
+        "add_dll_directory",
+        lambda path: handles.append(path) or object(),
+        raising=False,
+    )
+    monkeypatch.setenv("PATH", "C:\\Windows")
+    monkeypatch.delenv("CUDA_PATH", raising=False)
+
+    compute_module._prepare_windows_cuda_packages()
+
+    assert os.environ["CUDA_PATH"] == str(nvrtc)
+    assert os.environ["PATH"].split(os.pathsep)[:4] == [
+        str(runtime / "bin"),
+        str(nvrtc / "bin"),
+        str(cufft / "bin"),
+        str(cublas / "bin"),
+    ]
+    assert handles == [
+        str(runtime / "bin"),
+        str(nvrtc / "bin"),
+        str(cufft / "bin"),
+        str(cublas / "bin"),
+    ]
 
 
 def test_cpu_mode_never_loads_cupy() -> None:
@@ -208,7 +261,7 @@ def test_forward_and_inverse_dct_gpu_results_match_numpy() -> None:
 
 
 def test_cuda_runtime_failure_retries_cpu_and_permanently_degrades() -> None:
-    fake = FakeCupy(fail_on_call=2)
+    fake = FakeCupy(fail_on_call=3)
     backend = AdaptiveComputeBackend(
         requested="auto",
         module_loader=lambda _name: fake,
@@ -224,11 +277,28 @@ def test_cuda_runtime_failure_retries_cpu_and_permanently_degrades() -> None:
     assert isinstance(failed_result, np.ndarray)
     assert np.allclose(failed_result, expected)
     assert np.allclose(later_result, expected)
-    assert fake.fft.calls == 2
+    assert fake.fft.calls == 3
     status = backend.status()
     assert status.degraded
     assert status.selected == "cpu"
     assert status.fallback_reason == "CUDARuntimeError"
+    assert status.operations == {"fft2": "cpu"}
+
+
+def test_missing_cuda_library_retries_cpu_and_permanently_degrades() -> None:
+    fake = FakeCupy(fail_on_call=1, error_type=ImportError)
+    backend = AdaptiveComputeBackend(
+        requested="auto",
+        module_loader=lambda _name: fake,
+        clock=StepClock([0.0, 1.0]),
+    )
+
+    result = backend.fft2(np.eye(256))
+
+    assert np.allclose(result, np.fft.fft2(np.eye(256)))
+    status = backend.status()
+    assert status.degraded
+    assert status.fallback_reason == "ImportError"
     assert status.operations == {"fft2": "cpu"}
 
 

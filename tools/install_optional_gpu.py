@@ -9,13 +9,21 @@ from pathlib import Path
 
 
 GPU_SMOKE_SOURCE = """\
+from watermark_v4.compute import _prepare_windows_cuda_packages
+
+_prepare_windows_cuda_packages()
 import cupy
 
 assert cupy.cuda.runtime.getDeviceCount() > 0
 values = cupy.asarray([1, 2, 3])
 squared = values * values
+matrix = cupy.eye(4)
+product = matrix @ matrix
+spectrum = cupy.fft.fft2(matrix)
 cupy.cuda.get_current_stream().synchronize()
 assert cupy.asnumpy(squared).tolist() == [1, 4, 9]
+assert cupy.asnumpy(product).tolist() == cupy.asnumpy(matrix).tolist()
+assert spectrum.shape == (4, 4)
 """
 
 

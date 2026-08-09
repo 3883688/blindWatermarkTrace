@@ -1,17 +1,73 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import logging
 import os
 import time
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
 
 
 LOGGER = logging.getLogger(__name__)
+_CUDA_DLL_HANDLES: list[object] = []
+_CUDA_ENV_PREPARED = False
+
+
+def _windows_cuda_package_roots() -> tuple[tuple[str, Path], ...]:
+    if os.name != "nt":
+        return ()
+    roots = []
+    for package in ("cuda_runtime", "cuda_nvrtc", "cufft", "cublas"):
+        try:
+            spec = importlib.util.find_spec(f"nvidia.{package}")
+        except (ImportError, ModuleNotFoundError, ValueError):
+            continue
+        locations = () if spec is None else spec.submodule_search_locations or ()
+        if locations:
+            roots.append((package, Path(next(iter(locations)))))
+    return tuple(roots)
+
+
+def _prepare_windows_cuda_packages() -> None:
+    global _CUDA_ENV_PREPARED
+    if _CUDA_ENV_PREPARED:
+        return
+    roots = _windows_cuda_package_roots()
+    if not roots:
+        return
+
+    bin_paths = tuple(
+        root / "bin"
+        for _package, root in roots
+        if (root / "bin").is_dir()
+    )
+    nvrtc_root = next((root for package, root in roots if package == "cuda_nvrtc"), None)
+    if nvrtc_root is not None:
+        os.environ.setdefault("CUDA_PATH", str(nvrtc_root))
+
+    existing = os.environ.get("PATH", "").split(os.pathsep)
+    known = {os.path.normcase(os.path.abspath(value)) for value in existing if value}
+    prepend = [
+        str(path)
+        for path in bin_paths
+        if os.path.normcase(str(path.resolve())) not in known
+    ]
+    if prepend:
+        os.environ["PATH"] = os.pathsep.join((*prepend, os.environ.get("PATH", "")))
+
+    add_dll_directory = getattr(os, "add_dll_directory", None)
+    if add_dll_directory is not None:
+        for path in bin_paths:
+            try:
+                _CUDA_DLL_HANDLES.append(add_dll_directory(str(path)))
+            except OSError:
+                continue
+    _CUDA_ENV_PREPARED = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +103,7 @@ class AdaptiveComputeBackend:
 
     @staticmethod
     def _gpu_errors(cupy: object) -> tuple[type[BaseException], ...]:
-        candidates: list[type[BaseException]] = [MemoryError]
+        candidates: list[type[BaseException]] = [MemoryError, ImportError, OSError]
         for owner, name in (
             (cupy.cuda.runtime, "CUDARuntimeError"),  # type: ignore[attr-defined]
             (cupy.cuda.memory, "OutOfMemoryError"),  # type: ignore[attr-defined]
@@ -72,6 +128,8 @@ class AdaptiveComputeBackend:
         if self._load_attempted:
             return self._cupy
         self._load_attempted = True
+        if self._module_loader is importlib.import_module:
+            _prepare_windows_cuda_packages()
         try:
             cupy = self._module_loader("cupy")
         except (ImportError, OSError) as exc:
@@ -133,6 +191,9 @@ class AdaptiveComputeBackend:
         cpu_result = np.asarray(cpu_call())
         cpu_elapsed = self._clock() - cpu_start
         try:
+            # CUDA context and cuFFT/cuBLAS initialize lazily. Excluding one warm-up
+            # call prevents permanent CPU selection based only on first-use overhead.
+            gpu_call(cupy)
             cupy.cuda.runtime.deviceSynchronize()  # type: ignore[attr-defined]
             gpu_start = self._clock()
             gpu_value = gpu_call(cupy)
