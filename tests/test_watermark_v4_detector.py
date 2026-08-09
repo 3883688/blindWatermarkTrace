@@ -261,6 +261,20 @@ def test_detect_v4_tries_one_rounded_translation_refinement() -> None:
     assert result.record_id == candidate.record_id
 
 
+def test_translation_refinements_search_rounded_pixel_neighbors() -> None:
+    matrix = np.asarray(
+        [[1.0, 0.0, 447.812], [0.0, 1.0, 335.220], [0.0, 0.0, 1.0]],
+        dtype=np.float64,
+    )
+
+    translations = {
+        (float(item[0, 2]), float(item[1, 2]))
+        for item in detector_module._translation_refinements(matrix)
+    }
+
+    assert (448.0, 336.0) in translations
+
+
 def test_detect_v4_recovers_real_random_crop_at_half_scale() -> None:
     config = V4Config()
     tag = bytes.fromhex("a1b2c3d410203040")

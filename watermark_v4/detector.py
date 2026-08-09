@@ -438,27 +438,33 @@ def detect_v4(
             candidate.feature_index,
         )
         evidence = None
-        matches = [] if feature_match is None else [feature_match]
+        evidence_match = None
         # ---- 路径一：ORB 特征匹配 + 平移微调 ----
         # RANSAC 给出的平移量常有亚像素级偏差，而 DCT 网格对错位极其敏感——
-        # 差一个像素就可能整块解不出。因此围绕原始矩阵试探九宫格邻域，
+        # 差一个像素就可能整块解不出。因此围绕整数像素网格试探九宫格邻域，
         # 任一命中即停。
         if feature_match is not None:
             for matrix in _translation_refinements(feature_match.query_to_target):
                 _check_deadline(effective_deadline)
-                evidence = decode_aligned_candidate(
+                refined_evidence = decode_aligned_candidate(
                     image,
                     matrix,
                     candidate,
                     config,
                     deadline=effective_deadline,
                 )
-                if evidence is not None:
+                if refined_evidence is not None and (
+                    evidence is None
+                    or _evidence_quality(refined_evidence) < _evidence_quality(evidence)
+                ):
+                    evidence = refined_evidence
+                    evidence_match = feature_match
+                if evidence is not None and evidence.bit_errors == 0:
                     break
         # ---- 路径二：导频约束下的受限匹配 ----
-        # ORB 在低纹理图上会失败或给出错误矩阵；此时把导频估出的
-        # 旋转/缩放/偏移作为约束交给匹配器，大幅缩小搜索空间。
-        if evidence is None and sync is not None:
+        # ORB 在低纹理图上会失败或给出误差较大的矩阵；未解出或仍有
+        # 原始位误码时，把导频参数作为约束再匹配，并保留质量更好的结果。
+        if (evidence is None or evidence.bit_errors > 0) and sync is not None:
             constrained = match_feature_indexes_constrained(
                 query_index,
                 candidate.feature_index,
@@ -470,18 +476,26 @@ def detect_v4(
                 else None,
             )
             if constrained is not None:
-                matches.append(constrained)
-                _check_deadline(effective_deadline)
-                evidence = decode_aligned_candidate(
-                    image,
-                    constrained.query_to_target,
-                    candidate,
-                    config,
-                    deadline=effective_deadline,
-                )
-        if evidence is not None:
-            # matches[-1] 是最终奏效的那次匹配（受限匹配若成功会追加在后）
-            authenticated.append((evidence, matches[-1]))
+                for matrix in _translation_refinements(constrained.query_to_target):
+                    _check_deadline(effective_deadline)
+                    constrained_evidence = decode_aligned_candidate(
+                        image,
+                        matrix,
+                        candidate,
+                        config,
+                        deadline=effective_deadline,
+                    )
+                    if constrained_evidence is not None and (
+                        evidence is None
+                        or _evidence_quality(constrained_evidence)
+                        < _evidence_quality(evidence)
+                    ):
+                        evidence = constrained_evidence
+                        evidence_match = constrained
+                    if evidence is not None and evidence.bit_errors == 0:
+                        break
+        if evidence is not None and evidence_match is not None:
+            authenticated.append((evidence, evidence_match))
     # 严格要求**恰好一个**候选通过：
     #   0 个 —— 没检出；
     #   ≥2 个 —— 出现多重匹配，认证机制本不应允许这种情况发生，
@@ -513,8 +527,8 @@ def detect_v4(
 def _translation_refinements(matrix: np.ndarray) -> tuple[np.ndarray, ...]:
     """围绕给定单应矩阵生成一组平移微调版本，供逐一试解。
 
-    :return: 最多 11 个矩阵，按尝试优先级排列——原始矩阵、
-        平移取整版、以及八个方向各偏 1 像素的版本。
+    :return: 最多 10 个矩阵，按尝试优先级排列——原始矩阵、
+        平移取整版、以及围绕取整版八个方向各偏 1 像素的版本。
 
     只动矩阵的第三列（平移分量），旋转与缩放部分保持不变。
 
@@ -528,7 +542,8 @@ def _translation_refinements(matrix: np.ndarray) -> tuple[np.ndarray, ...]:
     # 原矩阵平移量本就是整数时，取整版与之相同，无需重复尝试
     if not np.array_equal(rounded, matrix):
         refinements.append(rounded)
-    # 八邻域：先四个正交方向（更常见），再四个对角方向
+    # DCT 分块锚定在整数像素网格上，因此八邻域必须围绕取整版展开。
+    # 若继续围绕原始亚像素平移展开，可能永远错过真实的相邻整数坐标。
     for offset_x, offset_y in (
         (-1, 0),
         (1, 0),
@@ -539,11 +554,20 @@ def _translation_refinements(matrix: np.ndarray) -> tuple[np.ndarray, ...]:
         (1, -1),
         (1, 1),
     ):
-        refined = matrix.copy()
+        refined = rounded.copy()
         refined[0, 2] += offset_x
         refined[1, 2] += offset_y
         refinements.append(refined)
     return tuple(refinements)
+
+
+def _evidence_quality(evidence: CandidateEvidence) -> tuple[int, int, int, float]:
+    return (
+        evidence.bit_errors,
+        evidence.corrected_symbols,
+        evidence.erasure_count,
+        -evidence.mean_abs_score,
+    )
 
 
 def _scores_to_bytes(scores: np.ndarray) -> bytes:
