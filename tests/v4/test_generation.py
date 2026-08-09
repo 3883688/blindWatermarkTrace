@@ -158,6 +158,7 @@ def test_generation_groups_by_canonical_rgb_per_owner_and_reuses_features() -> N
     assert len(build_calls) == 2
     assert all(item[0].codec == CODEC_ID for item in repository.records)
     assert all(len(item[0].auth_tag) == 8 for item in repository.records)
+    assert all(item.content_type == "image/png" for item in media.staged[1::3])
     assert len(media.promoted) == 9
 
 

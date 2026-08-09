@@ -10,6 +10,8 @@ test('production bundle has a stable FastAPI asset entry', () => {
 
 test('FastAPI entrypoint versions V4 frontend assets', () => {
   const html = readFileSync(resolve(process.cwd(), '../index.html'), 'utf8');
-  expect(html).toContain('/assets/app/app.css?v=20260730-mobile-v4');
-  expect(html).toContain('/assets/app/app.js?v=20260730-mobile-v4');
+  const cssVersion = html.match(/\/assets\/app\/app\.css\?v=([^"']+)/)?.[1];
+  const jsVersion = html.match(/\/assets\/app\/app\.js\?v=([^"']+)/)?.[1];
+  expect(cssVersion).toBeTruthy();
+  expect(jsVersion).toBe(cssVersion);
 });

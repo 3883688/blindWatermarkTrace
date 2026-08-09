@@ -24,7 +24,7 @@ test('reloading the current menu data after logout and login', async () => {
   }));
   const fetchMock = vi.fn(path => {
     if (path === '/api/dashboard-stats') {
-      return Promise.resolve(okJson({ today: 0, detection_success_rate: 0 }));
+      return Promise.resolve(okJson({ today: 0, detected_today: 0 }));
     }
     if (path === '/api/images') {
       return Promise.resolve(okJson({ items: [], stats: {} }));

@@ -1,11 +1,15 @@
 from io import BytesIO
 
 import numpy as np
+import pytest
 from PIL import Image
+
+import trace_app.v4.production as production_module
 
 from trace_app.v4.deadlines import Deadline
 from trace_app.v4.features import deserialize_features
 from trace_app.v4.production import (
+    VisibleCopyrightConfig,
     build_group_artifacts,
     create_production_services,
     decode_rgb,
@@ -16,6 +20,7 @@ from trace_app.v4.detection import V4DetectionService
 from trace_app.v4.generation import V4GenerationService
 from trace_app.v4.geometry import ConfirmedGroup
 from trace_app.v4.keys import KeyRing
+from trace_app.v4.region_protection import ProtectedRegion
 from watermark_v4.payload import encode_codeword
 
 
@@ -51,9 +56,113 @@ def test_cpu_runtime_decodes_and_embeds_v4_codeword() -> None:
     encoded = encode_v4_images(rgb, b"12345678", deadline)
 
     assert rgb.dtype == np.uint8 and rgb.shape == (384, 384, 3)
-    assert Image.open(BytesIO(encoded.watermarked)).format == "PNG"
+    assert Image.open(BytesIO(encoded.watermarked)).format == "JPEG"
+    assert encoded.watermarked_content_type == "image/jpeg"
     assert Image.open(BytesIO(encoded.thumbnail)).format == "PNG"
     assert encoded.watermarked != _png()
+
+
+def test_pilot_amplitude_metadata_defaults_and_clamps() -> None:
+    parse = production_module._pilot_amplitude_from_metadata
+
+    assert parse({}) == 0.75
+    assert parse({"pilot_amplitude": "invalid"}) == 0.75
+    assert parse({"pilot_amplitude": "nan"}) == 0.75
+    assert parse({"pilot_amplitude": "0.5"}) == 0.5
+    assert parse({"pilot_amplitude": "0.1"}) == 0.25
+    assert parse({"pilot_amplitude": "2"}) == 1.25
+
+
+def test_output_quality_metadata_defaults_and_clamps() -> None:
+    parse = production_module._output_quality_from_metadata
+
+    assert parse({}) == 80
+    assert parse({"output_quality": "invalid"}) == 80
+    assert parse({"output_quality": "80"}) == 80
+    assert parse({"output_quality": "40"}) == 60
+    assert parse({"output_quality": "100"}) == 95
+
+
+def test_cpu_runtime_applies_selected_pilot_amplitude() -> None:
+    deadline = Deadline.after(30)
+    rgb = decode_rgb(_png(), deadline)
+
+    default = encode_v4_images(rgb, b"12345678", deadline).watermarked
+    reduced = encode_v4_images(
+        rgb, b"12345678", deadline, pilot_amplitude=0.5
+    ).watermarked
+
+    assert reduced != default
+
+
+def test_cpu_runtime_applies_selected_jpeg_output_quality() -> None:
+    deadline = Deadline.after(30)
+    rgb = decode_rgb(_png(), deadline)
+
+    low_quality = encode_v4_images(
+        rgb, b"12345678", deadline, output_quality=60
+    ).watermarked
+    high_quality = encode_v4_images(
+        rgb, b"12345678", deadline, output_quality=95
+    ).watermarked
+
+    assert len(low_quality) < len(high_quality)
+    with pytest.raises(ValueError, match="JPEG output quality"):
+        encode_v4_images(rgb, b"12345678", deadline, output_quality=50)
+
+
+def test_cpu_runtime_can_enable_configured_visible_copyright_layer() -> None:
+    deadline = Deadline.after(30)
+    rgb = decode_rgb(_png(), deadline)
+    encoded = encode_v4_images(
+        rgb,
+        b"12345678",
+        deadline,
+        visible_copyright=VisibleCopyrightConfig(
+            enabled=True,
+            text="© 3883688",
+            prominent_corner=True,
+        ),
+    )
+    marked = decode_rgb(encoded.watermarked, deadline)
+    assert np.count_nonzero(marked != rgb) > np.count_nonzero(
+        decode_rgb(
+            encode_v4_images(rgb, b"12345678", deadline).watermarked,
+            deadline,
+        )
+        != rgb
+    )
+
+
+def test_region_enhancement_only_replaces_detected_complete_tiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deadline = Deadline.after(30)
+    rgb = decode_rgb(_png(), deadline)
+    monkeypatch.setattr(
+        production_module,
+        "detect_protected_regions",
+        lambda _rgb: (ProtectedRegion("face", 20, 20, 80, 80, 0.9),),
+    )
+
+    baseline = decode_rgb(
+        encode_v4_images(rgb, b"12345678", deadline).watermarked,
+        deadline,
+    )
+    reinforced = decode_rgb(
+        encode_v4_images(
+            rgb,
+            b"12345678",
+            deadline,
+            protected_region_enhancement=True,
+        ).watermarked,
+        deadline,
+    )
+
+    difference = np.any(baseline != reinforced, axis=2)
+    assert np.any(difference[:128, :128])
+    assert not np.any(difference[128:, :])
+    assert not np.any(difference[:128, 128:])
 
 
 def test_group_artifacts_contain_dino_orb_and_superpoint_rows() -> None:

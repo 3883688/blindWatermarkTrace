@@ -14,17 +14,16 @@ test('role management uses the legacy strict admin gate', () => {
   expect(state.visibleMenus).toEqual(['watermark', 'role']);
 });
 
-test('website branding uses the configured bilingual title', async () => {
+test('website title and visible product branding keep their separate contracts', async () => {
   const [html, navigation, login] = await Promise.all([
     readFile('../index.html', 'utf8'),
     readFile('src/components/AppNavigation.vue', 'utf8'),
     readFile('src/components/LoginOverlay.vue', 'utf8'),
   ]);
 
-  const title = '图片溯源系统（Watermark System）';
-  expect(html).toContain(`<title>${title}</title>`);
+  expect(html).toContain('<title>V4 数字水印认证与可信溯源平台 | Watermark System</title>');
   expect(navigation).toContain('data-brand-title="图片溯源系统 Watermark System"');
-  expect(login).toContain(title);
+  expect(login).toContain('data-brand-title="图片溯源系统（Watermark System）"');
 });
 
 test('shell controls retain the original selector contracts and dialog backdrops', async () => {
@@ -55,6 +54,7 @@ test('shell controls retain the original selector contracts and dialog backdrops
   expect(index).toContain('.s-icon.indigo{background:rgba(99,102,241,0.15);color:#818cf8}');
   expect(index).toContain('.img-table td.small-cell{font-size:12px}');
   expect(index).toContain('.img-table td.date-cell{color:rgba(255,255,255,0.45);font-size:12px}');
+  expect(index).toContain('[data-theme="light"] .img-table td.date-cell{color:#475569}');
   expect(index).toContain('.confidence{display:flex;align-items:center;gap:8px}');
   expect(index).toContain('.confidence .confidence-bar{width:60px}');
   expect(index).toContain('.page-info strong{color:#e2e8f0}');

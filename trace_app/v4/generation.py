@@ -45,10 +45,13 @@ class GenerationRequest:
 class EncodedImages:
     watermarked: bytes
     thumbnail: bytes
+    watermarked_content_type: str = "image/png"
 
     def __post_init__(self) -> None:
         if not self.watermarked or not self.thumbnail:
             raise ValueError("encoded V4 output and thumbnail must be non-empty")
+        if self.watermarked_content_type not in {"image/jpeg", "image/png"}:
+            raise ValueError("encoded V4 output content type is unsupported")
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +151,9 @@ class GenerationMedia(Protocol):
 DecodeRgb = Callable[[bytes, Deadline], np.ndarray]
 BuildArtifacts = Callable[[np.ndarray, Deadline], GroupArtifacts]
 Embed = Callable[[np.ndarray, bytes, Deadline], EncodedImages]
+EmbedWithMetadata = Callable[
+    [np.ndarray, bytes, Deadline, Mapping[str, object]], EncodedImages
+]
 
 
 def canonical_rgb_sha256(rgb: np.ndarray) -> bytes:
@@ -169,6 +175,7 @@ class V4GenerationService:
         decode_rgb: DecodeRgb,
         build_group_artifacts: BuildArtifacts,
         embed: Embed,
+        embed_with_metadata: EmbedWithMetadata | None = None,
         trace_id_factory: Callable[[], str],
         max_tag_attempts: int = 16,
     ) -> None:
@@ -180,6 +187,7 @@ class V4GenerationService:
         self.decode_rgb = decode_rgb
         self.build_group_artifacts = build_group_artifacts
         self.embed = embed
+        self.embed_with_metadata = embed_with_metadata
         self.trace_id_factory = trace_id_factory
         self.max_tag_attempts = max_tag_attempts
 
@@ -211,7 +219,11 @@ class V4GenerationService:
                 tag = self.key_ring.sign(context)
                 if existing is not None and self.repository.auth_tag_exists(existing.id, tag):
                     continue
-                encoded = self.embed(source_rgb, tag, deadline)
+                encoded = (
+                    self.embed_with_metadata(source_rgb, tag, deadline, request.metadata)
+                    if self.embed_with_metadata is not None
+                    else self.embed(source_rgb, tag, deadline)
+                )
                 watermarked_rgb = self.decode_rgb(encoded.watermarked, deadline)
                 canonical_rgb_sha256(watermarked_rgb)
                 self.decode_rgb(encoded.thumbnail, deadline)
@@ -228,7 +240,7 @@ class V4GenerationService:
                     self.media.stage_bytes(
                         owner_user_id=request.owner_user_id,
                         variant="watermarked",
-                        content_type="image/png",
+                        content_type=encoded.watermarked_content_type,
                         content=encoded.watermarked,
                     )
                 )

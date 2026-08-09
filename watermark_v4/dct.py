@@ -27,6 +27,8 @@ from functools import lru_cache
 
 import cv2
 import numpy as np
+
+from .compute import get_compute_backend
 from PIL import Image
 
 from .config import V4Config
@@ -145,7 +147,7 @@ def _forward_dct_blocks(blocks: np.ndarray) -> np.ndarray:
     # 屏蔽溢出/无效警告：极端像素值可能触发中间告警，
     # 但最终结果由 _validated_output 统一把关，无需逐次打印。
     with np.errstate(over="ignore", invalid="ignore"):
-        result = basis @ values @ basis.T
+        result = get_compute_backend().forward_dct(values, basis)
     return _validated_output(result)
 
 
@@ -157,7 +159,7 @@ def _inverse_dct_blocks(blocks: np.ndarray) -> np.ndarray:
     values = _validated_blocks(blocks)
     basis = _dct_basis(CELL_SIZE)
     with np.errstate(over="ignore", invalid="ignore"):
-        result = basis.T @ values @ basis
+        result = get_compute_backend().inverse_dct(values, basis)
     return _validated_output(result)
 
 
@@ -209,6 +211,8 @@ def embed_codeword(
     image: Image.Image,
     codeword: bytes,
     config: V4Config = V4Config(),
+    *,
+    tile_coordinates: frozenset[tuple[int, int]] | None = None,
 ) -> Image.Image:
     """把 16 字节码字按 A/B 棋盘分片嵌入完整分块。
 
@@ -231,6 +235,21 @@ def embed_codeword(
         raise ValueError("codeword must contain exactly 16 bytes")
     _validate_config(config)
     tiles = _eligible_tiles(image, config)
+    if tile_coordinates is not None:
+        if type(tile_coordinates) is not frozenset or any(
+            type(item) is not tuple
+            or len(item) != 2
+            or any(type(value) is not int or value < 0 for value in item)
+            for item in tile_coordinates
+        ):
+            raise TypeError(
+                "tile coordinates must be a frozenset of nonnegative integer pairs"
+            )
+        tiles = tuple(
+            tile for tile in tiles if (tile[0], tile[1]) in tile_coordinates
+        )
+        if not tiles:
+            return image.copy()
 
     source = np.asarray(image)
     # 复制一份作为输出画布：source 是只读视图，且后续要按分块逐块覆盖，

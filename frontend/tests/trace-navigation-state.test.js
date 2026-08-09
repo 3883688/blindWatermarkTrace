@@ -24,7 +24,7 @@ test('managed trace result is consumed after its first navigation', async () => 
   }));
   vi.stubGlobal('fetch', vi.fn(path => {
     if (path === '/api/dashboard-stats') {
-      return Promise.resolve(okJson({ today: 0, detection_success_rate: 0 }));
+      return Promise.resolve(okJson({ today: 0, detected_today: 0 }));
     }
     if (path === '/api/images') {
       return Promise.resolve(okJson({

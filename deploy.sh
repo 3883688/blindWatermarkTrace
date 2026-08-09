@@ -174,6 +174,9 @@ install_python_environment() {
   "${PYTHON_BIN}" -m venv "${ROOT}/.venv"
   "${ROOT}/.venv/bin/python" -m pip install --upgrade pip
   "${ROOT}/.venv/bin/pip" install -r "${ROOT}/requirements.txt"
+  "${ROOT}/.venv/bin/python" "${ROOT}/tools/install_optional_gpu.py" \
+    --python "${ROOT}/.venv/bin/python" \
+    --requirements "${ROOT}/requirements-gpu.txt"
   mkdir -p \
     "${ROOT}/data" \
     "${ROOT}/uploads/originals" \

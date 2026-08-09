@@ -28,7 +28,10 @@ def _record(owner_id: int = 7):
 
 
 class _Generation:
+    last_request = None
+
     def generate(self, request, deadline):
+        type(self).last_request = request
         return SimpleNamespace(record=_record(request.owner_user_id), source_group_created=True)
 
 
@@ -38,6 +41,9 @@ class _Detection:
 
 
 class _Repository:
+    def __init__(self):
+        self.incremented: list[str] = []
+
     def list_records(self, scope):
         return (_record(scope.user_id or 7),)
 
@@ -56,9 +62,16 @@ class _Repository:
         return True
 
     def dashboard_stats(self, scope):
-        return {"total": 1, "today": 1, "detected": 1, "success_rate": 100.0}
+        return {
+            "total": 1,
+            "today": 1,
+            "detected": 1,
+            "detected_today": 1,
+            "success_rate": 100.0,
+        }
 
     def increment_counter(self, owner_user_id, key, delta=1):
+        self.incremented.append(key)
         return 1
 
 
@@ -73,6 +86,7 @@ class _Media:
 
 
 def _client(tmp_path) -> tuple[TestClient, object]:
+    _Generation.last_request = None
     settings = Settings.from_values(
         base_dir=tmp_path,
         upload_dir="uploads",
@@ -91,6 +105,7 @@ def _client(tmp_path) -> tuple[TestClient, object]:
         v4_record_repository_factory=lambda: repository,
         v4_media_service_factory=_Media,
     )
+    app.state.test_v4_repository = repository
     app.dependency_overrides[get_repository] = _Users
     return TestClient(app), app
 
@@ -112,11 +127,22 @@ def test_original_generation_and_images_use_only_opaque_v4_media_urls(tmp_path) 
     generated = client.post(
         "/api/watermark/embed",
         files={"file": ("source.png", b"image", "image/png")},
-        data={"user_id": "display-user", "mode": "dct"},
+        data={
+            "user_id": "display-user",
+            "mode": "dct",
+            "output_quality": "85",
+            "pilot_amplitude": "0.5",
+            "protected_region_enhancement": "true",
+        },
     )
     listed = client.get("/api/images")
 
     assert generated.status_code == 200, generated.text
+    assert _Generation.last_request.metadata[
+        "protected_region_enhancement"
+    ] == "true"
+    assert _Generation.last_request.metadata["pilot_amplitude"] == "0.5"
+    assert _Generation.last_request.metadata["output_quality"] == "85"
     assert generated.json()["download_access_url"].startswith("/api/media/opaque-output?")
     assert generated.json()["original_access_url"].startswith("/api/media/opaque-original?")
     assert generated.json()["size"] == "2.5 MB"
@@ -149,10 +175,15 @@ def test_original_detection_and_dashboard_are_backed_by_v4(tmp_path) -> None:
     assert detected.json()["matched_file_access_url"].startswith(
         "/api/media/opaque-original?"
     )
+    counter_keys = app.state.test_v4_repository.incremented
+    assert "detection_total" in counter_keys
+    assert "detection_success" in counter_keys
+    assert any(key.startswith("detection_total:") for key in counter_keys)
     assert dashboard.json() == {
         "total": 1,
         "today": 1,
         "detected": 1,
+        "detected_today": 1,
         "success_rate": 100.0,
     }
 

@@ -48,6 +48,27 @@ def test_rs_16_8_uses_low_confidence_erasures() -> None:
     assert result.corrected_symbols == 8
 
 
+def test_candidate_distance_recovers_bit_sparse_symbol_damage() -> None:
+    damaged = bytearray(encode_codeword(TAG))
+    for index in range(16):
+        damaged[index] ^= 1 << (index % 2)
+
+    result = decode_candidate_codeword(bytes(damaged), TAG, [1.0] * 16)
+
+    assert result is not None
+    assert result.bit_errors == 16
+    assert result.corrected_symbols == 16
+
+
+def test_candidate_distance_rejects_damage_outside_bound() -> None:
+    damaged = bytearray(encode_codeword(TAG))
+    for index in range(16):
+        damaged[index] ^= 1
+    damaged[0] ^= 2
+
+    assert decode_candidate_codeword(bytes(damaged), TAG, [1.0] * 16) is None
+
+
 def test_rs_rejects_wrong_tag_and_malformed_observations() -> None:
     codeword = encode_codeword(TAG)
     assert decode_candidate_codeword(codeword, b"wrongtag", [1.0] * 16) is None

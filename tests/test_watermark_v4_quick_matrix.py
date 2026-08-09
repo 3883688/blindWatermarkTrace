@@ -13,7 +13,7 @@ from watermark_v4.sync import embed_pilot
 
 def test_v4_quick_positive_attack_matrix() -> None:
     config = V4Config()
-    tag = bytes.fromhex("1234abcd")
+    tag = bytes.fromhex("1234abcd5678ef90")
     source = _feature_image((1280, 960), seed=707)
     marked = embed_codeword(
         embed_pilot(source, config),

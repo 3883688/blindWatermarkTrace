@@ -102,3 +102,14 @@ sudo PORT=6868 SERVICE_NAME=trace-system ./deploy.sh install-service
 - `ADMIN_PASS`
 
 `.env.example` 只提供空字段，不提供账号、密码或连接串默认值。
+
+## 自适应 GPU 加速
+
+部署会先安装 CPU 基础依赖，再检测 NVIDIA 显卡。CPU 主机不会安装 GPU 软件包，
+也不会读取或解析 GPU 依赖；只有检测到有效 NVIDIA 设备后才会安装独立的
+`requirements-gpu.txt`。GPU 安装或运行烟测失败时，服务会自动回退到 CPU，
+不会阻止启动。
+
+通过 `.env` 中的 `TRACE_COMPUTE_DEVICE=auto|cpu|cuda` 选择计算模式：默认
+`auto` 会在数值一致且实测更快时采用 CUDA；`cpu` 强制 CPU 且不导入 CuPy；
+`cuda` 请求 CUDA，但设备或运行时不可用时仍会自动回退到 CPU。

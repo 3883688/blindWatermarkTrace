@@ -42,10 +42,21 @@ def test_postgres_migration_preserves_users_roles_and_normalizes_menus() -> None
     if not url:
         pytest.skip("TEST_POSTGRES_URL is not configured")
     schema = "test_v4_migration_" + uuid4().hex
+    fallback_schema = "test_v4_fallback_" + uuid4().hex
     admin = create_engine(url)
     with admin.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-    engine = create_engine(url, connect_args={"options": f"-csearch_path={schema}"})
+        connection.execute(text(f'CREATE SCHEMA "{fallback_schema}"'))
+        for table_name in LEGACY_TABLES:
+            connection.execute(
+                text(f'CREATE TABLE "{fallback_schema}"."{table_name}" (id integer)')
+            )
+    engine = create_engine(
+        url,
+        connect_args={
+            "options": f"-csearch_path={schema},{fallback_schema},public"
+        },
+    )
     try:
         with engine.begin() as connection:
             connection.execute(text("CREATE TABLE roles (role_key varchar(64) PRIMARY KEY, label varchar(128) NOT NULL, menus text NOT NULL)"))
@@ -55,9 +66,12 @@ def test_postgres_migration_preserves_users_roles_and_normalizes_menus() -> None
             connection.execute(text("CREATE TABLE image_records (id integer PRIMARY KEY, metadata_json jsonb)"))
         migrate(engine)
         migrate(engine)
-        names = set(inspect(engine).get_table_names())
+        names = set(inspect(engine).get_table_names(schema=schema))
         assert "image_records" not in names
         assert {"users", "roles", "role_menus", "v4_records", "source_groups"} <= names
+        assert set(inspect(engine).get_table_names(schema=fallback_schema)) == set(
+            LEGACY_TABLES
+        )
         with engine.connect() as connection:
             assert connection.execute(text("SELECT username,password_hash,role FROM users")).one() == (
                 "admin",
@@ -77,4 +91,7 @@ def test_postgres_migration_preserves_users_roles_and_normalizes_menus() -> None
         engine.dispose()
         with admin.begin() as connection:
             connection.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+            connection.execute(
+                text(f'DROP SCHEMA IF EXISTS "{fallback_schema}" CASCADE')
+            )
         admin.dispose()

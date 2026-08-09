@@ -1,0 +1,5 @@
+cupy-cuda12x==13.6.0
+nvidia-cuda-runtime-cu12==12.6.77
+nvidia-cuda-nvrtc-cu12==12.6.85
+nvidia-cufft-cu12==11.3.0.4
+nvidia-cublas-cu12==12.6.4.1

@@ -24,9 +24,17 @@ from trace_app.v4.deadlines import Deadline
 from trace_app.v4.detection import DetectionRequest
 from trace_app.v4.domain import DetectionOutcome, OwnerScope
 from trace_app.v4.generation import GenerationRequest
+from trace_app.v4.repository import daily_counter_key
 
 
 router = APIRouter(prefix="/api", tags=["original-v4-contract"])
+
+
+def _record_detection(repository: Any, owner_user_id: int, *, succeeded: bool) -> None:
+    repository.increment_counter(owner_user_id, "detection_total")
+    repository.increment_counter(owner_user_id, daily_counter_key("detection_total"))
+    if succeeded:
+        repository.increment_counter(owner_user_id, "detection_success")
 
 
 def _scope(user: AuthenticatedUser) -> OwnerScope:
@@ -140,6 +148,15 @@ async def embed(
     request: Request,
     file: UploadFile = File(...),
     user_id: str = Form(""),
+    copyright_enabled: str = Form(""),
+    copyright_text: str = Form(""),
+    copyright_opacity: str = Form(""),
+    copyright_complexity: str = Form(""),
+    copyright_irregular_enabled: str = Form(""),
+    copyright_prominent_corner_enabled: str = Form(""),
+    output_quality: str = Form("80"),
+    pilot_amplitude: str = Form("0.75"),
+    protected_region_enhancement: str = Form("false"),
     current_user: AuthenticatedUser = Depends(get_current_user),
     service: Any = Depends(get_v4_generation_service),
     repository: Any = Depends(get_v4_record_repository),
@@ -151,7 +168,23 @@ async def embed(
     content = await _upload_bytes(file, request)
     result = await run_in_threadpool(
         service.generate,
-        GenerationRequest(current_user.id, content, content_type, filename),
+        GenerationRequest(
+            current_user.id,
+            content,
+            content_type,
+            filename,
+            metadata={
+                "copyright_enabled": copyright_enabled,
+                "copyright_text": copyright_text,
+                "copyright_opacity": copyright_opacity,
+                "copyright_complexity": copyright_complexity,
+                "copyright_irregular_enabled": copyright_irregular_enabled,
+                "copyright_prominent_corner_enabled": copyright_prominent_corner_enabled,
+                "output_quality": output_quality,
+                "pilot_amplitude": pilot_amplitude,
+                "protected_region_enhancement": protected_region_enhancement,
+            },
+        ),
         Deadline.synchronous(),
     )
     return _generation_payload(result.record, current_user, repository, media, users)
@@ -193,9 +226,11 @@ async def extract(
         DetectionRequest(_scope(current_user), content),
         Deadline.synchronous(),
     )
-    repository.increment_counter(current_user.id, "detection_total")
-    if result.outcome == DetectionOutcome.SUCCESS:
-        repository.increment_counter(current_user.id, "detection_success")
+    _record_detection(
+        repository,
+        current_user.id,
+        succeeded=result.outcome == DetectionOutcome.SUCCESS,
+    )
     return _detected_payload(result, current_user, repository, media, users)
 
 
@@ -215,9 +250,11 @@ async def extract_url(
     result = await run_in_threadpool(
         service.detect, DetectionRequest(_scope(current_user), content), deadline
     )
-    repository.increment_counter(current_user.id, "detection_total")
-    if result.outcome == DetectionOutcome.SUCCESS:
-        repository.increment_counter(current_user.id, "detection_success")
+    _record_detection(
+        repository,
+        current_user.id,
+        succeeded=result.outcome == DetectionOutcome.SUCCESS,
+    )
     return _detected_payload(result, current_user, repository, media, users)
 
 

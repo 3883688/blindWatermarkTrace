@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 
 from trace_app.v4.startup import initialize_v4_schema
 
@@ -26,7 +26,27 @@ def _plan(connection, sql: str, parameters: dict[str, object]) -> str:
 
 
 def _seed_planner_statistics(connection) -> None:
-    connection.execute(text("INSERT INTO users (id) VALUES (7) ON CONFLICT DO NOTHING"))
+    user_columns = {
+        item["name"] for item in inspect(connection).get_columns("users")
+    }
+    if {"username", "password_hash", "role_key"} <= user_columns:
+        connection.execute(
+            text(
+                "INSERT INTO roles (role_key, label) VALUES "
+                "('v4-plan-test', 'V4 plan test') ON CONFLICT DO NOTHING"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO users (id, username, password_hash, role_key) VALUES "
+                "(7, 'v4-plan-test-user', 'not-used', 'v4-plan-test') "
+                "ON CONFLICT DO NOTHING"
+            )
+        )
+    else:
+        connection.execute(
+            text("INSERT INTO users (id) VALUES (7) ON CONFLICT DO NOTHING")
+        )
     connection.execute(
         text(
             "INSERT INTO source_groups ("
@@ -45,7 +65,7 @@ def _seed_planner_statistics(connection) -> None:
             "id, source_group_id, owner_user_id, trace_id, codec, auth_tag, key_id, "
             "original_file_md5, original_file_sha256, watermarked_file_md5, "
             "watermarked_file_sha256, original_pixel_sha256, watermarked_pixel_sha256, "
-            "evidence_uuid, status, metadata_json"
+            "evidence_uuid, original_filename, status"
             ") SELECT "
             "('00000000-0000-4000-8000-' || lpad(g::text, 12, '0'))::uuid, "
             "'00000000-0000-4000-8000-000000000001', 7, 'plan-' || g, 'test', "
@@ -56,7 +76,7 @@ def _seed_planner_statistics(connection) -> None:
             "decode(md5('op1' || g) || md5('op2' || g), 'hex'), "
             "decode(md5('wp1' || g) || md5('wp2' || g), 'hex'), "
             "('10000000-0000-4000-8000-' || lpad(g::text, 12, '0'))::uuid, "
-            "'active', '{}'::jsonb FROM generate_series(1, 1000) AS g"
+            "'plan-test.bin', 'active' FROM generate_series(1, 1000) AS g"
         )
     )
     connection.execute(text("ANALYZE v4_records"))

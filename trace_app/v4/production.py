@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from io import BytesIO
+from typing import Mapping
 from uuid import UUID
 
 import cv2
@@ -20,6 +21,8 @@ from trace_app.v4.generation import EncodedImages, GroupArtifacts, V4GenerationS
 from trace_app.v4.geometry import ConfirmedGroup, FeatureSet, match_orb_ransac
 from trace_app.v4.keys import KeyRing
 from trace_app.v4.recall import VIEW_POLICY_VERSION, build_dino_batch, recall_image
+from trace_app.v4.region_protection import detect_protected_regions, reinforced_tiles
+from trace_app.imaging.visible_mark import apply_visible_copyright
 from trace_app.v4.repository import EmbeddingInput, FeatureInput
 from watermark_v4.config import V4Config
 from watermark_v4.dct import embed_codeword, extract_image_tiles
@@ -33,6 +36,65 @@ ORB_MODEL_VERSION = "opencv_orb_v1"
 SUPERPOINT_MODEL_VERSION = "superpoint_lightglue_v1"
 FEATURE_SCHEMA_VERSION = 1
 THUMBNAIL_MAX_SIDE = 512
+DEFAULT_WATERMARKED_JPEG_QUALITY = 80
+
+
+@dataclass(frozen=True, slots=True)
+class VisibleCopyrightConfig:
+    enabled: bool = False
+    text: str = "© QQ:757675150"
+    opacity: float = 0.16
+    complexity: str = "medium"
+    irregular: bool = True
+    prominent_corner: bool = False
+
+
+def _parse_bool(value: object, default: bool) -> bool:
+    if value is None or str(value).strip() == "":
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "启用"}
+
+
+def _pilot_amplitude_from_metadata(metadata: Mapping[str, object]) -> float:
+    try:
+        value = float(metadata.get("pilot_amplitude", 0.75))
+    except (TypeError, ValueError):
+        return 0.75
+    if not np.isfinite(value):
+        return 0.75
+    return max(0.25, min(1.25, value))
+
+
+def _output_quality_from_metadata(metadata: Mapping[str, object]) -> int:
+    try:
+        value = int(str(metadata.get("output_quality", "80")).strip())
+    except (TypeError, ValueError):
+        return DEFAULT_WATERMARKED_JPEG_QUALITY
+    return max(60, min(95, value))
+
+
+def visible_copyright_from_metadata(
+    default: VisibleCopyrightConfig,
+    metadata: Mapping[str, object],
+) -> VisibleCopyrightConfig:
+    """Apply per-request visible-watermark overrides to deployment defaults."""
+    try:
+        opacity = float(metadata.get("copyright_opacity", default.opacity))
+    except (TypeError, ValueError):
+        opacity = default.opacity
+    return VisibleCopyrightConfig(
+        enabled=_parse_bool(metadata.get("copyright_enabled"), default.enabled),
+        text=str(metadata.get("copyright_text") or default.text).strip() or default.text,
+        opacity=max(0.02, min(0.90, opacity)),
+        complexity=str(metadata.get("copyright_complexity") or default.complexity),
+        irregular=_parse_bool(
+            metadata.get("copyright_irregular_enabled"), default.irregular
+        ),
+        prominent_corner=_parse_bool(
+            metadata.get("copyright_prominent_corner_enabled"),
+            default.prominent_corner,
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,27 +121,91 @@ def decode_rgb(content: bytes, deadline: Deadline) -> np.ndarray:
     return np.ascontiguousarray(rgb)
 
 
-def encode_v4_images(rgb: np.ndarray, tag: bytes, deadline: Deadline) -> EncodedImages:
-    """Embed a V4 HMAC64 tag and return lossless output plus a thumbnail."""
+def encode_v4_images(
+    rgb: np.ndarray,
+    tag: bytes,
+    deadline: Deadline,
+    *,
+    visible_copyright: VisibleCopyrightConfig | None = None,
+    protected_region_enhancement: bool = False,
+    pilot_amplitude: float = 0.75,
+    output_quality: int = DEFAULT_WATERMARKED_JPEG_QUALITY,
+) -> EncodedImages:
+    """Embed a V4 HMAC64 tag and return a compact JPEG plus a PNG thumbnail."""
     array = np.asarray(rgb)
     if array.dtype != np.dtype("uint8") or array.ndim != 3 or array.shape[2] != 3:
         raise ValueError("V4 embedding input must be uint8 RGB")
     if type(tag) is not bytes or len(tag) != 8:
         raise ValueError("V4 authentication tag must contain exactly 8 bytes")
+    if type(output_quality) is not int or not 60 <= output_quality <= 95:
+        raise ValueError("JPEG output quality must be an integer from 60 through 95")
     deadline.check("embed_prepare")
-    config = V4Config()
+    config = V4Config(pilot_amplitude=pilot_amplitude)
+    regions = detect_protected_regions(array) if protected_region_enhancement else ()
     source = Image.fromarray(np.ascontiguousarray(array))
-    marked = embed_codeword(embed_pilot(source, config), encode_codeword(tag), config)
+    if visible_copyright is not None:
+        source = apply_visible_copyright(
+            source,
+            visible_copyright.enabled,
+            visible_copyright.text,
+            visible_copyright.opacity,
+            visible_copyright.complexity,
+            visible_copyright.irregular,
+            visible_copyright.prominent_corner,
+        )
+    pilot_source = embed_pilot(source, config)
+    codeword = encode_codeword(tag)
+    marked = embed_codeword(pilot_source, codeword, config)
+    if regions:
+        selected_tiles = reinforced_tiles(
+            regions,
+            image_width=source.width,
+            image_height=source.height,
+            tile_size=config.tile_size,
+        )
+        if selected_tiles:
+            reinforced_config = replace(
+                config,
+                dct_margin=min(config.dct_margin_range[1], config.dct_margin + 2.0),
+            )
+            reinforced = embed_codeword(
+                pilot_source,
+                codeword,
+                reinforced_config,
+                tile_coordinates=selected_tiles,
+            )
+            marked_array = np.asarray(marked).copy()
+            reinforced_array = np.asarray(reinforced)
+            for tile_x, tile_y in selected_tiles:
+                left = tile_x * config.tile_size
+                top = tile_y * config.tile_size
+                marked_array[
+                    top : top + config.tile_size,
+                    left : left + config.tile_size,
+                ] = reinforced_array[
+                    top : top + config.tile_size,
+                    left : left + config.tile_size,
+                ]
+            marked = Image.fromarray(marked_array)
     deadline.check("embed_complete")
 
     output = BytesIO()
-    marked.save(output, format="PNG", optimize=False)
+    marked.save(
+        output,
+        format="JPEG",
+        quality=output_quality,
+        subsampling=0,
+        optimize=True,
+        progressive=True,
+    )
     thumbnail = marked.copy()
     thumbnail.thumbnail((THUMBNAIL_MAX_SIDE, THUMBNAIL_MAX_SIDE), Image.Resampling.LANCZOS)
     thumbnail_output = BytesIO()
     thumbnail.save(thumbnail_output, format="PNG", optimize=False)
     deadline.check("embed_encode")
-    return EncodedImages(output.getvalue(), thumbnail_output.getvalue())
+    return EncodedImages(
+        output.getvalue(), thumbnail_output.getvalue(), "image/jpeg"
+    )
 
 
 def build_group_artifacts(
@@ -137,6 +263,7 @@ def create_production_services(
     key_ring: KeyRing,
     dino_models: object,
     lightglue_matcher: object,
+    visible_copyright: VisibleCopyrightConfig | None = None,
 ) -> ProductionServices:
     """Wire the verified CPU models into the V4 service contracts."""
     confirmer = _GeometryConfirmer(repository, media, lightglue_matcher)
@@ -163,6 +290,23 @@ def create_production_services(
             deadline=deadline,
         )
 
+    default_visible_copyright = visible_copyright or VisibleCopyrightConfig()
+
+    def embed_with_metadata(rgb, tag, deadline, metadata):
+        return encode_v4_images(
+            rgb,
+            tag,
+            deadline,
+            visible_copyright=visible_copyright_from_metadata(
+                default_visible_copyright, metadata
+            ),
+            protected_region_enhancement=_parse_bool(
+                metadata.get("protected_region_enhancement"), False
+            ),
+            pilot_amplitude=_pilot_amplitude_from_metadata(metadata),
+            output_quality=_output_quality_from_metadata(metadata),
+        )
+
     generation = V4GenerationService(
         repository=repository,
         key_ring=key_ring,
@@ -171,7 +315,13 @@ def create_production_services(
         build_group_artifacts=lambda rgb, deadline: build_group_artifacts(
             rgb, deadline, dino_models
         ),
-        embed=encode_v4_images,
+        embed=lambda rgb, tag, deadline: encode_v4_images(
+            rgb,
+            tag,
+            deadline,
+            visible_copyright=visible_copyright,
+        ),
+        embed_with_metadata=embed_with_metadata,
         trace_id_factory=lambda: secrets.token_urlsafe(24),
     )
     detection = V4DetectionService(
@@ -358,6 +508,8 @@ __all__ = (
     "create_production_services",
     "decode_rgb",
     "encode_v4_images",
+    "VisibleCopyrightConfig",
+    "visible_copyright_from_metadata",
     "extract_aligned_observation",
     "ProductionServices",
 )

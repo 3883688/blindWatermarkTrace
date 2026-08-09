@@ -10,20 +10,202 @@ import { createAsyncGuard, safeImageUrl } from './result-format.js';
 
 const props = defineProps({ currentUser: Object });
 const form = ref(createWatermarkForm(props.currentUser?.username || ''));
-const file = ref(null); const result = ref(null); const dialogOpen = ref(false); const busy = ref(false);
-const todayWatermarkCount = ref(0); const detectionSuccessRate = ref('0.0%'); let closeTimer;
+const file = ref(null);
+const result = ref(null);
+const dialogOpen = ref(false);
+const busy = ref(false);
+const todayWatermarkCount = ref(0);
+const todayDetectionCount = ref(0);
+let closeTimer;
 const asyncGuard = createAsyncGuard();
+
 watch(() => props.currentUser?.username, userId => { form.value.userId = userId || ''; });
 const range = key => computed(() => Number(form.value[key]).toFixed(2));
-const resultRows = computed(() => { if (!result.value) return []; const r = result.value; return [['用户标识', r.user_id], ['Trace ID', r.trace_id], ['证据 UUID 前段', r.evidence_uuid_head || '-'], ['证据 UUID 后段', r.evidence_uuid_tail || '-'], ['水印版本', 'V4'], ['生成时间', r.created_at], ['置信度', `${Number(r.confidence || 0)}%`], ['认证载荷', 'V4 认证编码']]; });
-async function refreshDashboard() { try { const stats = await dashboardStats(); if (!asyncGuard.isActive()) return; todayWatermarkCount.value = stats.today ?? 0; detectionSuccessRate.value = `${Number(stats.detection_success_rate || 0).toFixed(1)}%`; } catch (_) {} }
-async function embed() { if (!file.value) { showAlert('请选择要生成水印的图片'); return; } busy.value = true; try { const response = await embedWatermark(watermarkFormData(file.value, form.value)); if (!asyncGuard.isActive()) return; result.value = response; await Promise.all([listImages(), refreshDashboard()]); if (!asyncGuard.isActive()) return; dialogOpen.value = true; clearTimeout(closeTimer); closeTimer = setTimeout(() => { if (asyncGuard.isActive()) dialogOpen.value = false; }, 3000); } catch (error) { if (asyncGuard.isActive()) showAlert(error.message); } finally { if (asyncGuard.isActive()) busy.value = false; } }
-onMounted(refreshDashboard); onBeforeUnmount(() => { asyncGuard.dispose(); clearTimeout(closeTimer); });
+const resultRows = computed(() => {
+  if (!result.value) return [];
+  const r = result.value;
+  return [
+    ['用户标识', r.user_id],
+    ['Trace ID', r.trace_id],
+    ['证据 UUID 前段', r.evidence_uuid_head || '-'],
+    ['证据 UUID 后段', r.evidence_uuid_tail || '-'],
+    ['水印版本', 'V4'],
+    ['生成时间', r.created_at],
+    ['置信度', `${Number(r.confidence || 0)}%`],
+    ['认证载荷', 'V4 认证编码'],
+  ];
+});
+
+async function refreshDashboard() {
+  try {
+    const stats = await dashboardStats();
+    if (!asyncGuard.isActive()) return;
+    todayWatermarkCount.value = stats.today ?? 0;
+    todayDetectionCount.value = stats.detected_today ?? 0;
+  } catch (_) {}
+}
+
+async function embed() {
+  if (!file.value) {
+    showAlert('请选择要生成水印的图片');
+    return;
+  }
+  busy.value = true;
+  try {
+    const response = await embedWatermark(watermarkFormData(file.value, form.value));
+    if (!asyncGuard.isActive()) return;
+    result.value = response;
+    await Promise.all([listImages(), refreshDashboard()]);
+    if (!asyncGuard.isActive()) return;
+    dialogOpen.value = true;
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(() => {
+      if (asyncGuard.isActive()) dialogOpen.value = false;
+    }, 3000);
+  } catch (error) {
+    if (asyncGuard.isActive()) showAlert(error.message);
+  } finally {
+    if (asyncGuard.isActive()) busy.value = false;
+  }
+}
+
+onMounted(refreshDashboard);
+onBeforeUnmount(() => {
+  asyncGuard.dispose();
+  clearTimeout(closeTimer);
+});
 </script>
+
 <template>
-<section class="page-content"><div class="page-header"><div class="page-title">生成水印</div><div class="page-subtitle">为图片嵌入 V4 认证水印，支持截图追踪与来源验证</div><div class="tag-row"><span class="tag tag-blue"><i class="ti ti-shield-check"></i> V4 认证水印</span><span class="tag tag-teal"><i class="ti ti-maximize"></i> 局部截图恢复</span><span class="tag tag-amber"><i class="ti ti-lock"></i> 来源组认证</span></div></div>
-<div class="grid-2"><div><div class="card" style="margin-bottom:24px"><div class="card-label">基础配置</div><div class="field-group"><label>用户标识 (user_id)</label><input v-model="form.userId" class="field-input" placeholder="输入用户 ID"></div><div class="field-group"><label>水印版本</label><input class="field-input" value="V4" disabled><div class="advanced-desc">V4：FFT Pilot 同步 + 全局/局部 DCT 载荷 + RS(8,4) 纠错，32-bit HMAC 认证码唯一绑定记录。</div></div></div>
-<div class="card"><div class="card-label">V4 鲁棒性调优</div>
-<div class="advanced-section"><div class="advanced-section-head"><div><div class="advanced-title">鲁棒性调优</div><div class="advanced-desc">平衡视觉保真、局部截图恢复和隐藏扰动强度。</div></div></div><Range label="图片保真度" v-model="form.fidelityLevel" :value="range('fidelityLevel')"/><div class="checkbox-row"><input v-model="form.smallCropTraceEnabled" type="checkbox"><div class="cb-content"><div class="cb-title">启用小面积截图增强</div><div class="cb-desc">增加局部截图 trace 冗余，会轻微增加隐藏扰动</div></div></div><Range label="小截图增强强度" v-model="form.smallCropTraceStrength" :value="range('smallCropTraceStrength')"/><div class="field-group"><label>小截图增强密度</label><el-select v-model="form.smallCropTraceDensity" class="app-select" popper-class="app-select-dropdown"><el-option label="低" value="low"/><el-option label="中" value="medium"/><el-option label="高" value="high"/></el-select></div><div class="checkbox-row"><input v-model="form.dotMatrixTraceEnabled" type="checkbox"><div class="cb-content"><div class="cb-title">启用点阵追溯水印</div><div class="cb-desc">写入类似打印机微点阵的 trace 冗余，提升局部截图追溯能力</div></div></div><Range label="点阵追溯强度" v-model="form.dotMatrixTraceStrength" :value="range('dotMatrixTraceStrength')"/></div></div></div>
-<div><div class="card" style="margin-bottom:24px"><div class="card-label">上传图片</div><FileDropzone v-model:file="file" label="将原始图片拖移至此" hint="支持 JPG、PNG、WEBP，最大 50MB"><template #after-preview><div v-if="result" class="result-box embed-result"><div class="result-title"><i class="ti ti-circle-check"></i> 水印数据</div><div v-for="([label, value]) in resultRows" :key="label" class="result-row"><span class="result-key">{{ label }}</span><span class="result-val">{{ value || '-' }}</span></div><div class="result-row"><span class="result-key">保护状态</span><span class="result-val"><span class="status-badge badge-green">{{ result.status }}</span></span></div><div class="result-actions"><a v-if="safeImageUrl(result.download_access_url || result.download_url)" class="result-link" :href="safeImageUrl(result.download_access_url || result.download_url)" target="_blank" rel="noopener"><i class="ti ti-download"></i> 打开水印图</a><a v-if="safeImageUrl(result.original_access_url || result.original_url)" class="result-link" :href="safeImageUrl(result.original_access_url || result.original_url)" target="_blank" rel="noopener"><i class="ti ti-photo"></i> 打开原图</a></div></div></template></FileDropzone><button class="btn-primary embed-button" :disabled="busy" @click="embed"><i class="ti" :class="busy ? 'ti-loader' : 'ti-droplet-filled'"></i> {{ busy ? '正在生成...' : '生成 V4 水印' }}</button></div><div class="side-panel"><div class="stat-row"><div class="stat-box"><div class="stat-num" style="color:#818cf8">{{ todayWatermarkCount }}</div><div class="stat-lbl">今日 V4 水印数</div></div><div class="stat-box"><div class="stat-num" style="color:#5eead4">{{ detectionSuccessRate }}</div><div class="stat-lbl">认证成功率</div></div></div><div class="section-title">生产水印版本</div><div class="method-list"><div class="method-item"><div class="method-dot" style="background:#818cf8"></div><span class="method-name">V4 认证水印</span><span class="method-tag badge-blue">唯一版本</span></div></div></div></div></div><ResultDialog :open="dialogOpen" @close="dialogOpen=false"/></section>
+  <section class="page-content">
+    <div class="page-header">
+      <div class="page-title">生成水印</div>
+      <div class="page-subtitle">为图片嵌入 V4 认证水印，支持截图追踪与来源验证</div>
+      <div class="tag-row">
+        <span class="tag tag-blue"><i class="ti ti-shield-check"></i> V4 认证水印</span>
+        <span class="tag tag-teal"><i class="ti ti-maximize"></i> 局部截图恢复</span>
+        <span class="tag tag-amber"><i class="ti ti-lock"></i> 来源组认证</span>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div>
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-label">基础配置</div>
+          <div class="field-group">
+            <label>用户标识 (user_id)</label>
+            <input v-model="form.userId" class="field-input" placeholder="输入用户 ID">
+          </div>
+          <div class="field-group">
+            <label>水印版本</label>
+            <input class="field-input" value="V4" disabled>
+            <div class="advanced-desc">V4：FFT Pilot 同步 + 全局/局部 DCT 载荷 + RS(8,4) 纠错，32-bit HMAC 认证码唯一绑定记录。</div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-label">明水印配置</div>
+          <div class="checkbox-row">
+            <input v-model="form.copyrightEnabled" type="checkbox">
+            <div class="cb-content">
+              <div class="cb-title">启用明水印</div>
+              <div class="cb-desc">在 V4 盲水印图上叠加可见版权文字</div>
+            </div>
+          </div>
+          <div class="field-group">
+            <label>水印文字</label>
+            <input v-model="form.copyrightText" class="field-input" placeholder="输入版权文字">
+          </div>
+          <Range label="明水印透明度" v-model="form.copyrightOpacity" :value="range('copyrightOpacity')" />
+          <div class="field-group">
+            <label>铺排密度</label>
+            <el-select v-model="form.copyrightComplexity" class="app-select" popper-class="app-select-dropdown">
+              <el-option label="低" value="low" />
+              <el-option label="中" value="medium" />
+              <el-option label="高" value="high" />
+              <el-option label="极高" value="extreme" />
+            </el-select>
+          </div>
+          <div class="checkbox-row">
+            <input v-model="form.copyrightIrregularEnabled" type="checkbox">
+            <div class="cb-content">
+              <div class="cb-title">不规则铺排</div>
+              <div class="cb-desc">降低固定网格擦除的风险</div>
+            </div>
+          </div>
+          <div class="checkbox-row">
+            <input v-model="form.copyrightProminentCornerEnabled" type="checkbox">
+            <div class="cb-content">
+              <div class="cb-title">增加角落版权块</div>
+              <div class="cb-desc">在右下角增加高对比度版权标识</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-label">V4 鲁棒性调优</div>
+          <div class="advanced-section">
+            <div class="advanced-section-head">
+              <div>
+                <div class="advanced-title">鲁棒性调优</div>
+                <div class="advanced-desc">平衡视觉保真、局部截图恢复和隐藏扰动强度。</div>
+              </div>
+            </div>
+            <Range label="图片保真度" v-model="form.fidelityLevel" :value="range('fidelityLevel')" />
+            <Range label="图片输出质量（JPEG）" v-model="form.outputQuality" :value="String(form.outputQuality)" :min="60" :max="95" :step="1" />
+            <Range label="同步导频强度" v-model="form.pilotAmplitude" :value="range('pilotAmplitude')" :min="0.25" :max="1.25" :step="0.05" />
+            <div class="checkbox-row">
+              <input v-model="form.protectedRegionEnhancement" type="checkbox">
+              <div class="cb-content">
+                <div class="cb-title">人物关键区域追溯增强</div>
+                <div class="cb-desc">自动识别人脸及特定区域，强化关键部位的水印追溯能力</div>
+              </div>
+            </div>
+            <div class="checkbox-row">
+              <input v-model="form.smallCropTraceEnabled" type="checkbox">
+              <div class="cb-content"><div class="cb-title">启用小面积截图增强</div><div class="cb-desc">增加局部截图 trace 冗余，会轻微增加隐藏扰动</div></div>
+            </div>
+            <Range label="小截图增强强度" v-model="form.smallCropTraceStrength" :value="range('smallCropTraceStrength')" />
+            <div class="field-group">
+              <label>小截图增强密度</label>
+              <el-select v-model="form.smallCropTraceDensity" class="app-select" popper-class="app-select-dropdown">
+                <el-option label="低" value="low" /><el-option label="中" value="medium" /><el-option label="高" value="high" />
+              </el-select>
+            </div>
+            <div class="checkbox-row">
+              <input v-model="form.dotMatrixTraceEnabled" type="checkbox">
+              <div class="cb-content"><div class="cb-title">启用点阵追溯水印</div><div class="cb-desc">写入微点阵 trace 冗余，提升局部截图追溯能力</div></div>
+            </div>
+            <Range label="点阵追溯强度" v-model="form.dotMatrixTraceStrength" :value="range('dotMatrixTraceStrength')" />
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card" style="margin-bottom:24px">
+          <div class="card-label">上传图片</div>
+          <FileDropzone v-model:file="file" label="将原始图片拖移至此" hint="支持 JPG、PNG、WEBP，最大 50MB">
+            <template #after-preview>
+              <div v-if="result" class="result-box embed-result">
+                <div class="result-title"><i class="ti ti-circle-check"></i> 水印数据</div>
+                <div v-for="([label, value]) in resultRows" :key="label" class="result-row"><span class="result-key">{{ label }}</span><span class="result-val">{{ value || '-' }}</span></div>
+                <div class="result-row"><span class="result-key">保护状态</span><span class="result-val"><span class="status-badge badge-green">{{ result.status }}</span></span></div>
+                <div class="result-actions">
+                  <a v-if="safeImageUrl(result.download_access_url || result.download_url)" class="result-link" :href="safeImageUrl(result.download_access_url || result.download_url)" target="_blank" rel="noopener"><i class="ti ti-download"></i> 打开水印图</a>
+                  <a v-if="safeImageUrl(result.original_access_url || result.original_url)" class="result-link" :href="safeImageUrl(result.original_access_url || result.original_url)" target="_blank" rel="noopener"><i class="ti ti-photo"></i> 打开原图</a>
+                </div>
+              </div>
+            </template>
+          </FileDropzone>
+          <button class="btn-primary embed-button" :disabled="busy" @click="embed"><i class="ti" :class="busy ? 'ti-loader' : 'ti-droplet-filled'"></i> {{ busy ? '正在生成...' : '生成 V4 水印' }}</button>
+        </div>
+        <div class="side-panel">
+          <div class="stat-row"><div class="stat-box"><div class="stat-num" style="color:#818cf8">{{ todayWatermarkCount }}</div><div class="stat-lbl">今日 V4 水印数</div></div><div class="stat-box"><div class="stat-num" style="color:#5eead4">{{ todayDetectionCount }}</div><div class="stat-lbl">今日检测次数</div></div></div>
+          <div class="section-title">生产水印版本</div>
+          <div class="method-list"><div class="method-item"><div class="method-dot" style="background:#818cf8"></div><span class="method-name">V4 认证水印</span><span class="method-tag badge-blue">唯一版本</span></div></div>
+        </div>
+      </div>
+    </div>
+    <ResultDialog :open="dialogOpen" @close="dialogOpen=false" />
+  </section>
 </template>
