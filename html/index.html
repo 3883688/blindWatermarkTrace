@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>V4 数字水印认证与可信溯源平台 | Watermark System</title>
+<link rel="icon" href="../favicon.ico" sizes="any">
+<link rel="stylesheet" href="../assets/tabler-icons/tabler-icons.min.css">
+<style>
+/* ===== RESET & TOKENS ===== */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg-primary:#0a0e17;
+  --bg-secondary:#111620;
+  --bg-card:rgba(255,255,255,0.03);
+  --border:rgba(255,255,255,0.08);
+  --text-primary:#f1f5f9;
+  --text-secondary:rgba(255,255,255,0.6);
+  --text-muted:rgba(255,255,255,0.4);
+  --accent-1:#6366f1;
+  --accent-2:#8b5cf6;
+  --accent-3:#06b6d4;
+  --accent-4:#f59e0b;
+  --accent-5:#ec4899;
+  --accent-6:#10b981;
+  --gradient-brand:linear-gradient(135deg,var(--accent-1),var(--accent-2));
+  --gradient-hero:linear-gradient(135deg,#0a0e17 0%,#111620 40%,#0f1420 100%);
+  --radius-sm:8px;
+  --radius-md:12px;
+  --radius-lg:20px;
+  --radius-xl:28px;
+  --shadow-card:0 1px 2px rgba(0,0,0,0.4),0 4px 24px rgba(0,0,0,0.3);
+  --shadow-glow:0 0 60px rgba(99,102,241,0.15);
+  --font-sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  --font-mono:'JetBrains Mono','Fira Code',monospace;
+  --transition:0.3s cubic-bezier(0.4,0,0.2,1);
+}
+[data-theme="light"]{
+  --bg-primary:#f8fafc;
+  --bg-secondary:#ffffff;
+  --bg-card:rgba(15,23,42,0.03);
+  --border:rgba(15,23,42,0.1);
+  --text-primary:#0f172a;
+  --text-secondary:rgba(15,23,42,0.6);
+  --text-muted:rgba(15,23,42,0.4);
+  --shadow-card:0 1px 3px rgba(0,0,0,0.06),0 8px 32px rgba(0,0,0,0.06);
+  --shadow-glow:0 0 80px rgba(99,102,241,0.08);
+}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--font-sans);
+  background:var(--bg-primary);
+  color:var(--text-primary);
+  line-height:1.6;
+  overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ===== NAVBAR ===== */
+.navbar{
+  position:fixed;top:0;left:0;right:0;z-index:1000;
+  display:flex;align-items:center;justify-content:space-between;
+  height:68px;padding:0 48px;
+  background:rgba(10,14,23,0.82);backdrop-filter:blur(20px) saturate(180%);
+  border-bottom:1px solid var(--border);
+  transition:all var(--transition);
+}
+.navbar.scrolled{box-shadow:0 4px 32px rgba(0,0,0,0.3)}
+[data-theme="light"] .navbar{background:rgba(255,255,255,0.82)}
+[data-theme="light"] .navbar.scrolled{box-shadow:0 4px 32px rgba(0,0,0,0.08)}
+.nav-brand{display:flex;align-items:center;gap:12px}
+.nav-logo{width:36px;height:36px;background:var(--gradient-brand);border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.nav-logo img{width:100%;height:100%;object-fit:cover}
+.nav-brand-text{font-size:17px;font-weight:600;color:var(--text-primary);letter-spacing:-0.01em}
+.nav-brand-text span{color:var(--text-secondary);font-weight:400;font-size:13px;margin-left:8px}
+.nav-links{display:flex;align-items:center;gap:4px;list-style:none}
+.nav-links a{
+  padding:8px 18px;border-radius:var(--radius-sm);font-size:14px;
+  color:var(--text-secondary);text-decoration:none;transition:all var(--transition);
+}
+.nav-links a:hover{background:var(--bg-card);color:var(--text-primary)}
+.nav-actions{display:flex;align-items:center;gap:12px}
+.theme-toggle{
+  width:38px;height:38px;border-radius:var(--radius-sm);border:1px solid var(--border);
+  background:var(--bg-card);color:var(--text-secondary);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:18px;transition:all var(--transition);
+}
+.theme-toggle:hover{color:var(--text-primary);border-color:var(--accent-1)}
+.btn-nav{
+  padding:9px 22px;border-radius:var(--radius-sm);font-size:14px;font-weight:500;
+  text-decoration:none;transition:all var(--transition);cursor:pointer;border:none;
+  background:var(--gradient-brand);color:#fff;
+}
+.btn-nav:hover{opacity:0.9;transform:translateY(-1px);box-shadow:0 4px 20px rgba(99,102,241,0.35)}
+.menu-toggle{display:none;background:none;border:none;color:var(--text-primary);font-size:24px;cursor:pointer;padding:8px}
+
+/* ===== HERO ===== */
+.hero{
+  position:relative;min-height:100vh;display:flex;align-items:center;
+  padding:120px 48px 80px;overflow:hidden;
+  background:var(--gradient-hero);
+}
+.hero::before{
+  content:'';position:absolute;top:-30%;right:-20%;width:800px;height:800px;
+  background:radial-gradient(circle,rgba(99,102,241,0.12) 0%,transparent 70%);
+  border-radius:50%;pointer-events:none;
+}
+.hero::after{
+  content:'';position:absolute;bottom:-20%;left:-10%;width:600px;height:600px;
+  background:radial-gradient(circle,rgba(6,182,212,0.08) 0%,transparent 70%);
+  border-radius:50%;pointer-events:none;
+}
+.hero-grid{
+  position:absolute;inset:0;opacity:0.03;
+  background-image:linear-gradient(rgba(255,255,255,0.5) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.5) 1px,transparent 1px);
+  background-size:60px 60px;pointer-events:none;
+}
+.hero-content{position:relative;z-index:1;max-width:800px}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;padding:6px 16px;
+  border-radius:100px;border:1px solid rgba(99,102,241,0.3);
+  background:rgba(99,102,241,0.08);color:#a5b4fc;font-size:13px;font-weight:500;margin-bottom:32px;
+}
+.hero-badge .dot{width:7px;height:7px;border-radius:50%;background:#10b981;animation:pulse-dot 2s infinite}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:0.4}}
+.hero h1{
+  font-size:clamp(40px,6vw,68px);font-weight:700;line-height:1.1;letter-spacing:-0.02em;
+  margin-bottom:24px;
+}
+.hero h1 .gradient-text{background:linear-gradient(135deg,#a5b4fc,#c084fc,#67e8f9);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-desc{font-size:18px;color:var(--text-secondary);max-width:560px;margin-bottom:40px;line-height:1.7}
+.hero-actions{display:flex;gap:16px;flex-wrap:wrap}
+.btn-primary{
+  display:inline-flex;align-items:center;gap:8px;padding:14px 32px;
+  background:var(--gradient-brand);border:none;border-radius:var(--radius-md);
+  font-size:16px;font-weight:500;color:#fff;cursor:pointer;text-decoration:none;
+  transition:all var(--transition);box-shadow:0 4px 24px rgba(99,102,241,0.3);
+}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 36px rgba(99,102,241,0.45)}
+.btn-outline{
+  display:inline-flex;align-items:center;gap:8px;padding:14px 32px;
+  background:transparent;border:1px solid var(--border);border-radius:var(--radius-md);
+  font-size:16px;font-weight:500;color:var(--text-primary);cursor:pointer;text-decoration:none;
+  transition:all var(--transition);
+}
+.btn-outline:hover{background:var(--bg-card);border-color:rgba(255,255,255,0.2)}
+.hero-visual{
+  position:absolute;right:5%;top:50%;transform:translateY(-50%);z-index:1;
+  width:420px;height:420px;pointer-events:none;display:flex;align-items:center;justify-content:center;
+}
+.hero-orb{
+  width:320px;height:320px;border-radius:50%;
+  background:radial-gradient(circle,rgba(99,102,241,0.2) 0%,rgba(139,92,246,0.1) 40%,transparent 70%);
+  animation:float 6s ease-in-out infinite;
+  position:relative;
+}
+.hero-orb::before{
+  content:'';position:absolute;inset:20px;border-radius:50%;
+  border:1px solid rgba(255,255,255,0.06);
+}
+.hero-orb::after{
+  content:'';position:absolute;inset:60px;border-radius:50%;
+  border:1px solid rgba(255,255,255,0.04);
+}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-20px)}}
+.hero-orb-ring{
+  position:absolute;width:380px;height:380px;border-radius:50%;
+  border:1px solid rgba(99,102,241,0.08);animation:spin 20s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ===== SECTION COMMON ===== */
+.section{padding:100px 48px;position:relative}
+.section-header{text-align:center;max-width:640px;margin:0 auto 64px}
+.section-tag{
+  display:inline-block;padding:4px 14px;border-radius:100px;
+  background:rgba(99,102,241,0.1);color:#a5b4fc;font-size:12px;font-weight:600;
+  text-transform:uppercase;letter-spacing:0.08em;margin-bottom:16px;
+}
+.section-title{font-size:clamp(28px,4vw,42px);font-weight:700;letter-spacing:-0.02em;margin-bottom:16px}
+.section-desc{font-size:16px;color:var(--text-secondary);line-height:1.7}
+
+/* ===== FEATURES ===== */
+.features-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;max-width:1200px;margin:0 auto}
+.feature-card{
+  padding:36px 28px;border-radius:var(--radius-lg);background:var(--bg-card);
+  border:1px solid var(--border);transition:all var(--transition);
+  position:relative;overflow:hidden;
+}
+.feature-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:var(--gradient-brand);opacity:0;transition:opacity var(--transition);
+}
+.feature-card:hover::before{opacity:1}
+.feature-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-card),var(--shadow-glow);border-color:rgba(99,102,241,0.2)}
+.feature-icon{
+  width:48px;height:48px;border-radius:var(--radius-md);margin-bottom:20px;
+  display:flex;align-items:center;justify-content:center;font-size:22px;
+}
+.feature-card:nth-child(1) .feature-icon{background:rgba(99,102,241,0.15);color:#a5b4fc}
+.feature-card:nth-child(2) .feature-icon{background:rgba(6,182,212,0.15);color:#67e8f9}
+.feature-card:nth-child(3) .feature-icon{background:rgba(245,158,11,0.15);color:#fcd34d}
+.feature-card:nth-child(4) .feature-icon{background:rgba(236,72,153,0.15);color:#f9a8d4}
+.feature-card h3{font-size:17px;font-weight:600;margin-bottom:10px}
+.feature-card p{font-size:14px;color:var(--text-secondary);line-height:1.65}
+
+/* ===== TECH ===== */
+.tech-section{background:var(--bg-secondary)}
+.tech-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;max-width:1100px;margin:0 auto}
+.tech-item{
+  display:flex;gap:18px;padding:28px;border-radius:var(--radius-lg);
+  background:var(--bg-card);border:1px solid var(--border);transition:all var(--transition);
+}
+.tech-item:hover{border-color:rgba(99,102,241,0.2);box-shadow:var(--shadow-card)}
+.tech-num{font-size:36px;font-weight:700;color:var(--accent-1);opacity:0.3;line-height:1;flex-shrink:0}
+.tech-item:nth-child(2) .tech-num{color:var(--accent-3)}
+.tech-item:nth-child(3) .tech-num{color:var(--accent-4)}
+.tech-item:nth-child(4) .tech-num{color:var(--accent-5)}
+.tech-item:nth-child(5) .tech-num{color:var(--accent-6)}
+.tech-item:nth-child(6) .tech-num{color:var(--accent-2)}
+.tech-body h4{font-size:15px;font-weight:600;margin-bottom:6px}
+.tech-body p{font-size:13px;color:var(--text-secondary);line-height:1.6}
+
+/* ===== WORKFLOW ===== */
+.workflow-steps{display:flex;align-items:flex-start;justify-content:center;gap:0;max-width:1100px;margin:0 auto;position:relative}
+.workflow-steps::before{
+  content:'';position:absolute;top:48px;left:calc(12.5% + 40px);right:calc(12.5% + 40px);height:2px;
+  background:linear-gradient(90deg,var(--accent-1),var(--accent-3),var(--accent-5));
+  opacity:0.3;
+}
+.workflow-step{
+  flex:1;text-align:center;position:relative;z-index:1;
+  display:flex;flex-direction:column;align-items:center;gap:20px;
+}
+.workflow-step-num{
+  width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:22px;font-weight:700;color:#fff;flex-shrink:0;
+  box-shadow:0 4px 20px rgba(0,0,0,0.3);
+}
+.workflow-step:nth-child(1) .workflow-step-num{background:linear-gradient(135deg,var(--accent-1),var(--accent-2))}
+.workflow-step:nth-child(2) .workflow-step-num{background:linear-gradient(135deg,#7c3aed,#6366f1)}
+.workflow-step:nth-child(3) .workflow-step-num{background:linear-gradient(135deg,#0e7490,var(--accent-3))}
+.workflow-step:nth-child(4) .workflow-step-num{background:linear-gradient(135deg,#b45309,var(--accent-4))}
+.workflow-step:nth-child(5) .workflow-step-num{background:linear-gradient(135deg,#be185d,var(--accent-5))}
+.workflow-step h4{font-size:15px;font-weight:600}
+.workflow-step p{font-size:13px;color:var(--text-secondary);max-width:160px}
+
+/* ===== USE CASES ===== */
+.usecases-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;max-width:1100px;margin:0 auto}
+.usecase-card{
+  padding:36px 28px;border-radius:var(--radius-lg);border:1px solid var(--border);
+  background:var(--bg-card);transition:all var(--transition);position:relative;overflow:hidden;
+}
+.usecase-card::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:3px;
+  opacity:0;transition:opacity var(--transition);
+}
+.usecase-card:nth-child(1)::after{background:linear-gradient(90deg,var(--accent-1),var(--accent-2))}
+.usecase-card:nth-child(2)::after{background:linear-gradient(90deg,var(--accent-3),var(--accent-1))}
+.usecase-card:nth-child(3)::after{background:linear-gradient(90deg,var(--accent-5),var(--accent-4))}
+.usecase-card:hover::after{opacity:1}
+.usecase-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-card)}
+.usecase-icon{font-size:28px;margin-bottom:18px}
+.usecase-card:nth-child(1) .usecase-icon{color:var(--accent-1)}
+.usecase-card:nth-child(2) .usecase-icon{color:var(--accent-3)}
+.usecase-card:nth-child(3) .usecase-icon{color:var(--accent-5)}
+.usecase-card h3{font-size:17px;font-weight:600;margin-bottom:10px}
+.usecase-card p{font-size:14px;color:var(--text-secondary);line-height:1.65}
+
+/* ===== STATS ===== */
+.stats-section{background:var(--bg-secondary);position:relative;overflow:hidden}
+.stats-section::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse at 30% 50%,rgba(99,102,241,0.06) 0%,transparent 60%),
+             radial-gradient(ellipse at 70% 50%,rgba(6,182,212,0.04) 0%,transparent 60%);
+  pointer-events:none;
+}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;max-width:1000px;margin:0 auto;position:relative;z-index:1}
+.stat-card{text-align:center;padding:40px 20px}
+.stat-number{
+  font-size:clamp(36px,5vw,52px);font-weight:700;letter-spacing:-0.02em;
+  background:linear-gradient(135deg,var(--accent-1),var(--accent-2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  margin-bottom:8px;font-variant-numeric:tabular-nums;
+}
+.stat-card:nth-child(2) .stat-number{background:linear-gradient(135deg,var(--accent-3),var(--accent-1));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.stat-card:nth-child(3) .stat-number{background:linear-gradient(135deg,var(--accent-4),var(--accent-5));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.stat-card:nth-child(4) .stat-number{background:linear-gradient(135deg,var(--accent-6),var(--accent-3));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.stat-label{font-size:14px;color:var(--text-secondary)}
+.stat-icon{font-size:24px;margin-bottom:12px;opacity:0.5}
+.stat-plus{font-size:28px;font-weight:600;background:linear-gradient(135deg,var(--accent-1),var(--accent-2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+
+/* ===== CTA ===== */
+.cta-section{text-align:center;padding:100px 48px;position:relative;overflow:hidden}
+.cta-section::before{
+  content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:600px;height:600px;
+  background:radial-gradient(circle,rgba(99,102,241,0.1) 0%,transparent 70%);
+  pointer-events:none;
+}
+.cta-box{
+  position:relative;z-index:1;max-width:640px;margin:0 auto;padding:56px 40px;
+  border-radius:var(--radius-xl);border:1px solid rgba(99,102,241,0.2);
+  background:linear-gradient(135deg,rgba(99,102,241,0.06),rgba(139,92,246,0.04));
+}
+.cta-box h2{font-size:clamp(26px,3.5vw,36px);font-weight:700;margin-bottom:14px}
+.cta-box p{font-size:16px;color:var(--text-secondary);margin-bottom:32px}
+.cta-box .btn-primary{font-size:16px;padding:16px 40px}
+
+/* ===== FOOTER ===== */
+.footer{
+  background:var(--bg-secondary);border-top:1px solid var(--border);
+  padding:56px 48px 32px;
+}
+.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:40px;max-width:1200px;margin:0 auto}
+.footer-brand{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.footer-brand .nav-logo{width:32px;height:32px}
+.footer-brand-text{font-size:15px;font-weight:600}
+.footer-about{font-size:13px;color:var(--text-muted);line-height:1.7;max-width:300px}
+.footer-col h4{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);margin-bottom:18px}
+.footer-col a{display:block;font-size:13px;color:var(--text-muted);text-decoration:none;margin-bottom:10px;transition:color var(--transition)}
+.footer-col a:hover{color:var(--text-primary)}
+.footer-bottom{
+  max-width:1200px;margin:40px auto 0;padding-top:24px;
+  border-top:1px solid var(--border);display:flex;justify-content:space-between;
+  font-size:12px;color:var(--text-muted);flex-wrap:wrap;gap:8px;
+}
+
+/* ===== REVEAL ANIMATION ===== */
+.reveal{opacity:0;transform:translateY(30px);transition:opacity 0.7s ease,transform 0.7s ease}
+.reveal.visible{opacity:1;transform:translateY(0)}
+
+/* ===== RESPONSIVE ===== */
+@media(max-width:1024px){
+  .features-grid{grid-template-columns:repeat(2,1fr)}
+  .tech-grid{grid-template-columns:repeat(2,1fr)}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .hero-visual{display:none}
+}
+@media(max-width:768px){
+  .navbar{padding:0 24px}
+  .nav-links{display:none}
+  .menu-toggle{display:block}
+  .nav-links.open{
+    display:flex;flex-direction:column;position:absolute;top:68px;left:0;right:0;
+    background:var(--bg-secondary);border-bottom:1px solid var(--border);padding:12px 24px;gap:0;
+  }
+  .nav-links.open a{padding:14px 0;border-bottom:1px solid var(--border);width:100%}
+  .hero{padding:100px 24px 60px}
+  .hero h1{font-size:32px}
+  .hero-actions{flex-direction:column}
+  .section{padding:64px 24px}
+  .features-grid{grid-template-columns:1fr}
+  .tech-grid{grid-template-columns:1fr}
+  .workflow-steps{flex-direction:column;align-items:center;gap:32px}
+  .workflow-steps::before{display:none}
+  .usecases-grid{grid-template-columns:1fr}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .footer-grid{grid-template-columns:1fr 1fr;gap:32px}
+}
+</style>
+</head>
+<body>
+
+<!-- ===== NAVBAR ===== -->
+<nav class="navbar" id="navbar">
+  <div class="nav-brand">
+    <div class="nav-logo"><img src="../logo.png" alt="Logo"></div>
+    <div class="nav-brand-text">BlindWatermark<span>溯源平台</span></div>
+  </div>
+  <ul class="nav-links" id="navLinks">
+    <li><a href="#features">核心功能</a></li>
+    <li><a href="#tech">技术优势</a></li>
+    <li><a href="#workflow">工作流程</a></li>
+    <li><a href="#usecases">应用场景</a></li>
+    <li><a href="#stats">平台数据</a></li>
+  </ul>
+  <div class="nav-actions">
+    <button class="theme-toggle" id="themeToggle" aria-label="切换主题" title="切换主题">
+      <i class="ti ti-sun"></i>
+    </button>
+    <a href="/" class="btn-nav">进入平台</a>
+    <button class="menu-toggle" id="menuToggle" aria-label="菜单"><i class="ti ti-menu-2"></i></button>
+  </div>
+</nav>
+
+<!-- ===== HERO ===== -->
+<section class="hero" id="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-content reveal">
+    <div class="hero-badge"><span class="dot"></span>V4 生产级水印引擎 · 已稳定运行</div>
+    <h1>不可见的<span class="gradient-text">数字水印</span><br>可信的溯源认证</h1>
+    <p class="hero-desc">
+      基于 DCT 码字与 FFT 同步导频的 V4 盲水印系统，支持压缩、缩放、旋转与裁剪场景下的鲁棒检测，
+      为每一张图片提供从生成到认证的完整证据链。
+    </p>
+    <div class="hero-actions">
+      <a href="/" class="btn-primary"><i class="ti ti-sparkles"></i> 立即使用</a>
+      <a href="#workflow" class="btn-outline"><i class="ti ti-arrow-down-circle"></i> 了解工作原理</a>
+    </div>
+  </div>
+  <div class="hero-visual reveal">
+    <div class="hero-orb-ring"></div>
+    <div class="hero-orb"></div>
+  </div>
+</section>
+
+<!-- ===== FEATURES ===== -->
+<section class="section" id="features">
+  <div class="section-header reveal">
+    <div class="section-tag">核心功能</div>
+    <h2 class="section-title">端到端水印解决方案</h2>
+    <p class="section-desc">从盲水印嵌入到溯源检测，覆盖图片全生命周期的认证能力</p>
+  </div>
+  <div class="features-grid">
+    <div class="feature-card reveal">
+      <div class="feature-icon"><i class="ti ti-droplet-filled"></i></div>
+      <h3>V4 盲水印生成</h3>
+      <p>DCT 码字 + FFT 同步导频，不可见嵌入亮度通道，支持自适应计算后端与 JPEG 质量控制。</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon"><i class="ti ti-radar"></i></div>
+      <h3>智能溯源检测</h3>
+      <p>多层检测管线：文件双哈希快速命中 → V4 认证码字 → 几何配准 → 视觉召回，确保高召回率。</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon"><i class="ti ti-fingerprint"></i></div>
+      <h3>文件指纹追踪</h3>
+      <p>MD5 + SHA-256 双哈希指纹，上传即记录，命中时无需完整图像推理，毫秒级响应。</p>
+    </div>
+    <div class="feature-card reveal">
+      <div class="feature-icon"><i class="ti ti-eyeglass"></i></div>
+      <h3>视觉匹配召回</h3>
+      <p>DINOv2 全局特征 + SuperPoint/LightGlue 局部匹配，应对裁剪、旋转等复杂变换场景。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== TECH ADVANTAGES ===== -->
+<section class="section tech-section" id="tech">
+  <div class="section-header reveal">
+    <div class="section-tag">技术优势</div>
+    <h2 class="section-title">工业级水印引擎</h2>
+    <p class="section-desc">V4 编码器融合多项鲁棒性设计，在各种攻击场景下保持高检测率</p>
+  </div>
+  <div class="tech-grid">
+    <div class="tech-item reveal">
+      <div class="tech-num">01</div>
+      <div class="tech-body">
+        <h4>DCT 分块编码</h4>
+        <p>8×8 DCT 块嵌入认证码字，Reed-Solomon 纠错冗余，容错率高达 25%</p>
+      </div>
+    </div>
+    <div class="tech-item reveal">
+      <div class="tech-num">02</div>
+      <div class="tech-body">
+        <h4>FFT 同步导频</h4>
+        <p>频域导频信号估计旋转、缩放和平移参数，自适应校正后再解码认证</p>
+      </div>
+    </div>
+    <div class="tech-item reveal">
+      <div class="tech-num">03</div>
+      <div class="tech-body">
+        <h4>抗压缩鲁棒</h4>
+        <p>JPEG 质量 60-95 下保持稳定检测，默认 4:4:4 色度采样输出</p>
+      </div>
+    </div>
+    <div class="tech-item reveal">
+      <div class="tech-num">04</div>
+      <div class="tech-body">
+        <h4>几何不变量</h4>
+        <p>对抗旋转（±30°）、缩放（50%-150%）、平移和局部裁剪攻击</p>
+      </div>
+    </div>
+    <div class="tech-item reveal">
+      <div class="tech-num">05</div>
+      <div class="tech-body">
+        <h4>人物区域增强</h4>
+        <p>可选人脸与关键区域识别，对重点区域 V4 tile 增强嵌入强度</p>
+      </div>
+    </div>
+    <div class="tech-item reveal">
+      <div class="tech-num">06</div>
+      <div class="tech-body">
+        <h4>自适应计算</h4>
+        <p>自动检测 CUDA 可用性，支持 CuPy 加速与 CPU 回退，无缝切换</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== WORKFLOW ===== -->
+<section class="section" id="workflow">
+  <div class="section-header reveal">
+    <div class="section-tag">工作流程</div>
+    <h2 class="section-title">五步完成水印认证</h2>
+    <p class="section-desc">从上传到溯源，每个环节都经过精心设计，简单而可靠</p>
+  </div>
+  <div class="workflow-steps">
+    <div class="workflow-step reveal">
+      <div class="workflow-step-num">1</div>
+      <h4>上传原图</h4>
+      <p>登录后上传图片，创建溯源 ID 与分组</p>
+    </div>
+    <div class="workflow-step reveal">
+      <div class="workflow-step-num">2</div>
+      <h4>嵌入水印</h4>
+      <p>V4 引擎将认证码字嵌入图片亮度通道</p>
+    </div>
+    <div class="workflow-step reveal">
+      <div class="workflow-step-num">3</div>
+      <h4>分发传播</h4>
+      <p>JPEG 成品输出，通过限时签名 URL 安全分发</p>
+    </div>
+    <div class="workflow-step reveal">
+      <div class="workflow-step-num">4</div>
+      <h4>上传检测</h4>
+      <p>对疑似图片上传或提交 URL，启动多层检测</p>
+    </div>
+    <div class="workflow-step reveal">
+      <div class="workflow-step-num">5</div>
+      <h4>溯源认证</h4>
+      <p>匹配证据记录，返回所有者、时间和证据链</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== USE CASES ===== -->
+<section class="section tech-section" id="usecases">
+  <div class="section-header reveal">
+    <div class="section-tag">应用场景</div>
+    <h2 class="section-title">多场景可信认证</h2>
+    <p class="section-desc">覆盖数字内容保护的各类需求</p>
+  </div>
+  <div class="usecases-grid">
+    <div class="usecase-card reveal">
+      <div class="usecase-icon"><i class="ti ti-copyright"></i></div>
+      <h3>版权保护</h3>
+      <p>为原创图片嵌入不可见版权标识，发现侵权时通过检测提取所有者信息，为维权提供技术证据。</p>
+    </div>
+    <div class="usecase-card reveal">
+      <div class="usecase-icon"><i class="ti ti-search"></i></div>
+      <h3>泄露溯源</h3>
+      <p>为不同接收方生成差异化水印副本，发生泄露时通过检测精确定位泄露源头和责任人。</p>
+    </div>
+    <div class="usecase-card reveal">
+      <div class="usecase-icon"><i class="ti ti-shield-check"></i></div>
+      <h3>内容认证</h3>
+      <p>验证图片是否来自可信来源，防止篡改和伪造，适用于新闻图片、司法证据等场景。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== STATS ===== -->
+<section class="section stats-section" id="stats">
+  <div class="section-header reveal">
+    <div class="section-tag">平台数据</div>
+    <h2 class="section-title">值得信赖的数字</h2>
+  </div>
+  <div class="stats-grid">
+    <div class="stat-card reveal">
+      <div class="stat-icon"><i class="ti ti-photo"></i></div>
+      <div class="stat-number"><span class="stat-counter" data-target="12860">0</span><span class="stat-plus">+</span></div>
+      <div class="stat-label">已生成水印图片</div>
+    </div>
+    <div class="stat-card reveal">
+      <div class="stat-icon"><i class="ti ti-radar-2"></i></div>
+      <div class="stat-number"><span class="stat-counter" data-target="4523">0</span><span class="stat-plus">+</span></div>
+      <div class="stat-label">累计检测次数</div>
+    </div>
+    <div class="stat-card reveal">
+      <div class="stat-icon"><i class="ti ti-percentage"></i></div>
+      <div class="stat-number"><span class="stat-counter" data-target="99">0</span><span class="stat-plus">%</span></div>
+      <div class="stat-label">检测准确率</div>
+    </div>
+    <div class="stat-card reveal">
+      <div class="stat-icon"><i class="ti ti-clock"></i></div>
+      <div class="stat-number">&lt;<span class="stat-counter" data-target="2">0</span><span class="stat-plus">s</span></div>
+      <div class="stat-label">平均检测耗时</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== CTA ===== -->
+<section class="cta-section" id="cta">
+  <div class="cta-box reveal">
+    <h2>准备好保护你的图片了吗？</h2>
+    <p>即刻体验 V4 盲水印技术，为每一张图片建立可信溯源链。</p>
+    <a href="/" class="btn-primary"><i class="ti ti-rocket"></i> 免费开始使用</a>
+  </div>
+</section>
+
+<!-- ===== FOOTER ===== -->
+<footer class="footer">
+  <div class="footer-grid">
+    <div>
+      <div class="footer-brand">
+        <div class="nav-logo"><img src="../logo.png" alt="Logo"></div>
+        <span class="footer-brand-text">BlindWatermarkTrace</span>
+      </div>
+      <p class="footer-about">基于 DCT/FFT 的数字盲水印系统，为图片提供从生成到认证的完整证据链。V4 生产级引擎，持续迭代优化中。</p>
+    </div>
+    <div class="footer-col">
+      <h4>产品</h4>
+      <a href="#features">核心功能</a>
+      <a href="#tech">技术优势</a>
+      <a href="#workflow">工作流程</a>
+      <a href="#usecases">应用场景</a>
+    </div>
+    <div class="footer-col">
+      <h4>资源</h4>
+      <a href="#">技术文档</a>
+      <a href="#">API 参考</a>
+      <a href="#">更新日志</a>
+      <a href="#">GitHub</a>
+    </div>
+    <div class="footer-col">
+      <h4>关于</h4>
+      <a href="#">关于我们</a>
+      <a href="#">联系方式</a>
+      <a href="#">使用协议</a>
+      <a href="#">隐私政策</a>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    <span>&copy; 2026 BlindWatermarkTrace. All rights reserved.</span>
+    <span>Apache 2.0 License</span>
+  </div>
+</footer>
+
+<script>
+// ===== THEME TOGGLE =====
+(function(){
+  const saved = localStorage.getItem('landing-theme');
+  if (saved) document.documentElement.dataset.theme = saved;
+  const isLight = document.documentElement.dataset.theme === 'light';
+  updateToggleIcon(isLight);
+})();
+
+document.getElementById('themeToggle').addEventListener('click',function(){
+  const isLight = document.documentElement.dataset.theme === 'light';
+  const next = isLight ? 'dark' : 'light';
+  document.documentElement.dataset.theme = isLight ? '' : 'light';
+  localStorage.setItem('landing-theme',next);
+  updateToggleIcon(!isLight);
+});
+
+function updateToggleIcon(isLight){
+  const btn = document.getElementById('themeToggle');
+  const icon = btn.querySelector('i');
+  icon.className = isLight ? 'ti ti-moon' : 'ti ti-sun';
+}
+
+// ===== NAVBAR SCROLL EFFECT =====
+window.addEventListener('scroll',function(){
+  const navbar = document.getElementById('navbar');
+  navbar.classList.toggle('scrolled',window.scrollY > 20);
+});
+
+// ===== MOBILE MENU =====
+document.getElementById('menuToggle').addEventListener('click',function(){
+  document.getElementById('navLinks').classList.toggle('open');
+  const isOpen = document.getElementById('navLinks').classList.contains('open');
+  this.querySelector('i').className = isOpen ? 'ti ti-x' : 'ti ti-menu-2';
+});
+
+// Close menu on link click
+document.querySelectorAll('#navLinks a').forEach(function(link){
+  link.addEventListener('click',function(){
+    document.getElementById('navLinks').classList.remove('open');
+    document.getElementById('menuToggle').querySelector('i').className = 'ti ti-menu-2';
+  });
+});
+
+// ===== SCROLL REVEAL =====
+var observer = new IntersectionObserver(function(entries){
+  entries.forEach(function(entry){
+    if(entry.isIntersecting){
+      entry.target.classList.add('visible');
+    }
+  });
+},{threshold:0.15});
+
+document.querySelectorAll('.reveal').forEach(function(el){observer.observe(el)});
+
+// ===== COUNTER ANIMATION =====
+var countersAnimated = false;
+var counterObserver = new IntersectionObserver(function(entries){
+  entries.forEach(function(entry){
+    if(entry.isIntersecting && !countersAnimated){
+      countersAnimated = true;
+      animateCounters();
+    }
+  });
+},{threshold:0.5});
+
+counterObserver.observe(document.querySelector('.stats-grid'));
+
+function animateCounters(){
+  document.querySelectorAll('.stat-counter').forEach(function(counter){
+    var target = parseInt(counter.dataset.target);
+    var duration = 2000;
+    var step = target / (duration / 16);
+    var current = 0;
+    function update(){
+      current += step;
+      if(current < target){
+        counter.textContent = Math.floor(current);
+        requestAnimationFrame(update);
+      }else{
+        counter.textContent = target;
+      }
+    }
+    update();
+  });
+}
+
+// ===== SMOOTH SCROLL FOR SAFARI =====
+document.querySelectorAll('a[href^="#"]').forEach(function(anchor){
+  anchor.addEventListener('click',function(e){
+    e.preventDefault();
+    var target = document.querySelector(this.getAttribute('href'));
+    if(target){
+      target.scrollIntoView({behavior:'smooth'});
+    }
+  });
+});
+</script>
+</body>
+</html>
